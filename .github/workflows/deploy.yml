@@ -42,8 +42,5 @@ jobs:
       - name: Push to Gandi
         run: |
           git add -f dist/
-          git stash
-          git stash pop || true
-          git add -f dist/
-          git diff --cached --quiet || git commit -m "chore: add built frontend for deployment"
+          git commit -m "chore: add built frontend for deployment" || echo "Nothing new to commit"
           git push --force git+ssh://ebde9514-30ea-11f1-bc87-00163eada87b@git.sd3.gpaas.net/trh.neos.live.git HEAD:master
