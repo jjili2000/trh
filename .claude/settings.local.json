@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs:/c/Users/John-JohnILI/AppData/Roaming/npm\")",
+      "Bash(npm --version)",
+      "Bash(cmd.exe /c \"node --version && npm --version\")",
+      "Bash(powershell.exe -Command \"node --version; npm --version\")",
+      "Bash(cmd.exe /c \"node --version\")",
+      "Bash(cmd /c \"where node 2>&1 && node --version 2>&1\")",
+      "Bash(powershell.exe -NoProfile -Command \"Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
+      "Bash(powershell.exe -NoProfile -Command \"[System.Environment]::GetEnvironmentVariable\\('PATH','Machine'\\)\")",
+      "Bash(powershell.exe -NoProfile -Command \"[System.Environment]::GetEnvironmentVariable\\('PATH','User'\\)\")",
+      "Bash(grep -iv \"^$\")",
+      "Bash(cmd.exe /c \"cd C:\\\\\\\\Code\\\\\\\\TRH && npm install 2>&1\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Set-Location 'C:\\\\Code\\\\TRH'; npm install\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm install:*)",
+      "Bash(command -v node)",
+      "Read(//c/Program Files/**)",
+      "Bash(cmd /c \"where node 2>&1\")",
+      "Bash(cmd /c \"where npm 2>&1\")",
+      "Bash(cmd /c \"node --version 2>&1\")",
+      "Bash(cmd /c \"npm --version 2>&1\")",
+      "Bash(cmd /c \"where npx 2>&1\")",
+      "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files\\\\MySQL\\\\\" /b 2>&1\")",
+      "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\MySQL\\\\\" /b 2>&1\")",
+      "Bash(cmd /c \"dir \\\\\"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\\\\\" 2>&1\")",
+      "Bash(cmd /c \"dir \\\\\"C:\\\\wamp64\\\\bin\\\\mysql\\\\\" /b 2>&1\")",
+      "Bash(cmd /c \"dir \\\\\"C:\\\\laragon\\\\bin\\\\mysql\\\\\" /b 2>&1\")",
+      "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\" /b /s 2>&1 | findstr /i mysql\")",
+      "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\" /b 2>&1\")",
+      "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\"  2>&1\")"
+    ]
+  }
+}
