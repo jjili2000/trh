@@ -30,7 +30,8 @@
       "Bash(cmd /c \"dir \\\\\"C:\\\\laragon\\\\bin\\\\mysql\\\\\" /b 2>&1\")",
       "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\" /b /s 2>&1 | findstr /i mysql\")",
       "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\" /b 2>&1\")",
-      "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\"  2>&1\")"
+      "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\"  2>&1\")",
+      "WebFetch(domain:docs.gandi.net)"
     ]
   }
 }
