@@ -10,8 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -25,23 +27,23 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Setup SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.GANDI_SSH_KEY }}
-
-      - name: Add Gandi to known hosts
-        run: ssh-keyscan -H git.sd3.gpaas.net >> ~/.ssh/known_hosts
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GANDI_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H git.sd3.gpaas.net >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Configure git
         run: |
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
 
-      - name: Deploy to Gandi
+      - name: Push to Gandi
         run: |
-          # Force-add dist/ (overrides .gitignore) for Gandi deployment
           git add -f dist/
-          git add server/ package.json package-lock.json .env.example 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "Deploy $(date +'%Y-%m-%d %H:%M:%S')"
-          git push --force git+ssh://ebde9514-30ea-11f1-bc87-00163eada87b@git.sd3.gpaas.net/default.git HEAD:master
+          git stash
+          git stash pop || true
+          git add -f dist/
+          git diff --cached --quiet || git commit -m "chore: add built frontend for deployment"
+          git push --force git+ssh://ebde9514-30ea-11f1-bc87-00163eada87b@git.sd3.gpaas.net/trh.neos.live.git HEAD:master

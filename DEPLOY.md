@@ -1,55 +1,80 @@
-# Déploiement — TRH Tennis Club
+# Guide de déploiement — TRH Tennis Club
 
 ## Architecture de production
-- Frontend React buildé → servi comme fichiers statiques par Express
-- Backend Node.js/Express sur Gandi Simple Hosting
-- Base de données MySQL sur Gandi
+- **Frontend** React + **Backend** Express → Gandi Simple Hosting (Node.js)
+- **Base de données** MySQL → Gandi Simple Hosting
+- **Déploiement** automatique via GitHub Actions → Git Gandi
+
+## Flux de déploiement
+`git push origin main` → GitHub Actions → build React → push vers Gandi git → Gandi démarre `npm start`
 
 ## Étapes initiales (une seule fois)
 
 ### 1. Créer le dépôt GitHub
+Sur github.com, créez le dépôt `jjili2000/trh`.
 ```bash
 git init
 git add .
 git commit -m "Initial commit"
 git remote add origin https://github.com/jjili2000/trh.git
+git branch -M main
 git push -u origin main
 ```
 
-### 2. Générer une clé SSH pour le déploiement
-```bash
-ssh-keygen -t ed25519 -C "github-actions-gandi" -f gandi_deploy -N ""
+### 2. Générer une clé SSH de déploiement
+```powershell
+ssh-keygen -t ed25519 -C "github-gandi-deploy" -f gandi_deploy -N '""'
 ```
-Cela crée deux fichiers :
-- `gandi_deploy` (clé privée → GitHub Secret)
-- `gandi_deploy.pub` (clé publique → Gandi)
+- **`gandi_deploy.pub`** → Gandi admin → **Administration et Sécurité** → **Clés SSH** → Ajouter
+- **`gandi_deploy`** → GitHub → Settings → Secrets → Actions → `GANDI_SSH_KEY`
+- Supprimez les fichiers locaux : `del gandi_deploy gandi_deploy.pub`
 
-### 3. Ajouter la clé publique à Gandi
-Dans l'espace admin Gandi → Simple Hosting → votre instance → SSH Keys
-Copiez le contenu de `gandi_deploy.pub` et ajoutez-le.
+### 3. Initialiser la base de données
+Via **phpMyAdmin** (lien dans le panneau de contrôle Gandi) :
+1. Créez la base `trh_tennis`
+2. Importez `server/setup.sql`
 
-### 4. Ajouter la clé privée à GitHub
-Sur github.com/jjili2000/trh → Settings → Secrets and variables → Actions → New repository secret
-- Name: `GANDI_SSH_KEY`
-- Value: contenu de `gandi_deploy` (la clé privée)
+Puis depuis votre machine locale avec les credentials Gandi dans `server/.env` :
+```bash
+cd server
+node seed.js
+```
 
-### 5. Variables d'environnement sur Gandi
-Dans l'espace admin Gandi → Simple Hosting → Environment variables, ajouter :
-- `DB_HOST` : hôte MySQL Gandi
-- `DB_PORT` : 3306
-- `DB_USER` : utilisateur MySQL
-- `DB_PASSWORD` : mot de passe MySQL
-- `DB_NAME` : trh_tennis
-- `JWT_SECRET` : chaîne aléatoire longue (ex: générer avec `openssl rand -hex 32`)
-- `NODE_ENV` : production
+### 4. Uploader le fichier `.env` sur Gandi via SFTP
+Créez `server/.env` avec vos credentials MySQL Gandi :
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=votre_user_mysql
+DB_PASSWORD=votre_mot_de_passe
+DB_NAME=trh_tennis
+JWT_SECRET=votre_cle_secrete_longue
+NODE_ENV=production
+```
+Générez le JWT_SECRET :
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
-### 6. Créer la base de données sur Gandi
-Via MySQL Workbench ou l'outil Gandi, exécuter `server/setup.sql` puis `node seed.js`.
+Via FileZilla (SFTP), uploadez ce fichier `.env` à la racine du vhost :
+`/lamp0/web/vhosts/trh.neos.live/.env`
+
+### 5. Secret GitHub Actions
+Sur github.com/jjili2000/trh → Settings → Secrets and variables → Actions :
+
+| Nom | Valeur |
+|-----|--------|
+| `GANDI_SSH_KEY` | Contenu de la clé privée `gandi_deploy` |
+
+### 6. Premier déploiement
+```bash
+git push origin main
+```
+Suivez l'avancement dans l'onglet **Actions** de votre dépôt GitHub.
 
 ## Déploiement continu
-Chaque `git push origin main` déclenche automatiquement le déploiement via GitHub Actions.
+Chaque `git push origin main` redéploie automatiquement l'application.
 
-## Supprimer les clés temporaires
-```bash
-del gandi_deploy gandi_deploy.pub
-```
+## URLs
+- Application : https://trh.neos.live
+- Suivi : https://github.com/jjili2000/trh/actions
