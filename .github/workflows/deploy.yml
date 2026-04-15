@@ -15,6 +15,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install & Build
+        run: |
+          npm install
+          npm run build
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -29,5 +40,7 @@ jobs:
 
       - name: Push to Gandi
         run: |
+          git add -f dist/
+          git commit -m "chore: deploy $(date +'%Y-%m-%d %H:%M')" || true
           GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
             git push --force git+ssh://ebde9514-30ea-11f1-bc87-00163eada87b@git.sd3.gpaas.net/trh.neos.live.git HEAD:master
