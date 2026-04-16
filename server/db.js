@@ -1,13 +1,15 @@
 require('dotenv').config();
 const mysql = require('mysql2/promise');
+const fs = require('fs');
 
-// Sur Gandi, MySQL est accessible via socket Unix, user root sans mot de passe
-const isGandi = !!process.env.GANDI;
+// Sur Gandi, MySQL est accessible via socket Unix (pas de mot de passe)
+const SOCKET_PATH = '/srv/run/mysqld/mysqld.sock';
+const useSocket = fs.existsSync(SOCKET_PATH);
 
 const pool = mysql.createPool(
-  isGandi
+  useSocket
     ? {
-        socketPath: '/srv/run/mysqld/mysqld.sock',
+        socketPath: SOCKET_PATH,
         user: 'root',
         password: '',
         database: process.env.DB_NAME || 'trh_tennis',
