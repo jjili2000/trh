@@ -362,8 +362,6 @@ export default function DocumentManagement() {
     return matchSearch && matchType && matchUser;
   });
 
-  const filtered = filterStatus === 'pending_validation' ? pending : filterStatus === 'validated' ? validated : [...pending, ...validated];
-
   const modalDoc = validatingDoc || editingDoc;
 
   return (
