@@ -172,7 +172,7 @@ export default function MyDocuments() {
           <p className="text-gray-400 text-sm mt-1">
             {search || filterType || filterYear
               ? 'Aucun document ne correspond à votre recherche.'
-              : 'Vos documents apparaîtront ici une fois validés par l'administration.'}
+              : "Vos documents apparaîtront ici une fois validés par l'administration."}
           </p>
         </div>
       ) : (
