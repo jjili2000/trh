@@ -6,6 +6,7 @@ import {
   AbsenceRequest,
   Expense,
   AppSettings,
+  HRDocument,
 } from '../types';
 import { api, setToken, clearToken, getToken } from '../api/client';
 
@@ -18,6 +19,7 @@ interface AppContextType {
   timeEntries: TimeEntry[];
   absenceRequests: AbsenceRequest[];
   expenses: Expense[];
+  documents: HRDocument[];
   appSettings: AppSettings;
   loading: boolean;
 
@@ -53,6 +55,11 @@ interface AppContextType {
   approveExpense: (id: string) => Promise<void>;
   rejectExpense: (id: string) => Promise<void>;
 
+  // Documents
+  addDocument: (data: { fileName: string; fileType: string; fileData: string }) => Promise<HRDocument>;
+  updateDocument: (id: string, data: Partial<HRDocument>) => Promise<HRDocument>;
+  deleteDocument: (id: string) => Promise<void>;
+
   // Settings
   updateSettings: (data: Partial<AppSettings>) => Promise<void>;
 }
@@ -70,6 +77,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [absenceRequests, setAbsenceRequests] = useState<AbsenceRequest[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [documents, setDocuments] = useState<HRDocument[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultSettings);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -83,6 +91,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         fetchedTimeEntries,
         fetchedAbsenceRequests,
         fetchedExpenses,
+        fetchedDocuments,
         fetchedSettings,
       ] = await Promise.all([
         api.get<User[]>('/users'),
@@ -90,6 +99,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         api.get<TimeEntry[]>('/time-entries'),
         api.get<AbsenceRequest[]>('/absence-requests'),
         api.get<Expense[]>('/expenses'),
+        api.get<HRDocument[]>('/documents'),
         api.get<AppSettings>('/settings'),
       ]);
       setUsers(fetchedUsers);
@@ -97,6 +107,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTimeEntries(fetchedTimeEntries);
       setAbsenceRequests(fetchedAbsenceRequests);
       setExpenses(fetchedExpenses);
+      setDocuments(fetchedDocuments);
       setAppSettings(fetchedSettings);
     } catch (err) {
       console.error('Failed to load data:', err);
@@ -146,6 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeEntries([]);
     setAbsenceRequests([]);
     setExpenses([]);
+    setDocuments([]);
     setAppSettings(defaultSettings);
   };
 
@@ -272,6 +284,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setExpenses(updated);
   };
 
+  // ── Documents ─────────────────────────────────────────────────────────────────
+
+  const addDocument = async (data: { fileName: string; fileType: string; fileData: string }): Promise<HRDocument> => {
+    const created = await api.post<HRDocument>('/documents', data);
+    const updated = await api.get<HRDocument[]>('/documents');
+    setDocuments(updated);
+    return created;
+  };
+
+  const updateDocument = async (id: string, data: Partial<HRDocument>): Promise<HRDocument> => {
+    const updated = await api.put<HRDocument>(`/documents/${id}`, data);
+    const list = await api.get<HRDocument[]>('/documents');
+    setDocuments(list);
+    return updated;
+  };
+
+  const deleteDocument = async (id: string) => {
+    await api.delete(`/documents/${id}`);
+    const updated = await api.get<HRDocument[]>('/documents');
+    setDocuments(updated);
+  };
+
   // ── Settings ──────────────────────────────────────────────────────────────────
 
   const updateSettings = async (data: Partial<AppSettings>) => {
@@ -288,6 +322,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         timeEntries,
         absenceRequests,
         expenses,
+        documents,
         appSettings,
         loading,
         login,
@@ -310,6 +345,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateExpense,
         approveExpense,
         rejectExpense,
+        addDocument,
+        updateDocument,
+        deleteDocument,
         updateSettings,
       }}
     >

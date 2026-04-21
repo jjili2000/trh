@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Clock, Calendar, Receipt, Users, TrendingUp, CheckCircle, AlertCircle } from 'lucide-react';
+import { Clock, Calendar, Receipt, Users, TrendingUp, CheckCircle, AlertCircle, FileText } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { ElementType } from 'react';
 
@@ -38,7 +38,7 @@ function StatCard({
 }
 
 export default function Dashboard() {
-  const { currentUser, timeEntries, absenceRequests, expenses, users } = useApp();
+  const { currentUser, timeEntries, absenceRequests, expenses, documents, users } = useApp();
   const navigate = useNavigate();
 
   const now = new Date();
@@ -85,6 +85,12 @@ export default function Dashboard() {
     return isOwn || isSubordinate;
   });
   const pendingExpenses = myExpenses.filter(e => e.status === 'pending').length;
+
+  // Documents
+  const pendingDocuments = documents.filter(d => d.status === 'pending_validation').length;
+  const myValidatedDocuments = documents.filter(d =>
+    d.userId === currentUser?.id && d.status === 'validated'
+  ).length;
 
   const isAdmin = currentUser?.role === 'admin';
   const isManagerOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
@@ -152,6 +158,25 @@ export default function Dashboard() {
           color="bg-orange-500"
           onClick={() => navigate('/expenses')}
         />
+        {isManagerOrAdmin ? (
+          <StatCard
+            title="Documents"
+            value={pendingDocuments}
+            subtitle="en attente de validation"
+            icon={FileText}
+            color="bg-teal-500"
+            onClick={() => navigate('/documents')}
+          />
+        ) : (
+          <StatCard
+            title="Mes documents"
+            value={myValidatedDocuments}
+            subtitle="documents disponibles"
+            icon={FileText}
+            color="bg-teal-500"
+            onClick={() => navigate('/my-documents')}
+          />
+        )}
         {isAdmin ? (
           <StatCard
             title="Utilisateurs"

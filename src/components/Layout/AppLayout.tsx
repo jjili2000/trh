@@ -8,6 +8,7 @@ import {
   LogOut,
   User,
   ChevronRight,
+  FileText,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -87,6 +88,18 @@ export default function AppLayout() {
             <Receipt size={18} />
             Notes de frais
           </NavLink>
+
+          {isAdminOrManager ? (
+            <NavLink to="/documents" className={navLinkClass}>
+              <FileText size={18} />
+              Documents
+            </NavLink>
+          ) : (
+            <NavLink to="/my-documents" className={navLinkClass}>
+              <FileText size={18} />
+              Mes documents
+            </NavLink>
+          )}
 
           {isAdminOrManager && (
             <>

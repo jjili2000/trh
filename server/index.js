@@ -23,6 +23,7 @@ app.use('/api/time-entries', require('./middleware/auth'), require('./routes/tim
 app.use('/api/absence-requests', require('./middleware/auth'), require('./routes/absenceRequests'));
 app.use('/api/expenses', require('./middleware/auth'), require('./routes/expenses'));
 app.use('/api/settings', require('./middleware/auth'), require('./routes/settings'));
+app.use('/api/documents', require('./middleware/auth'), require('./routes/documents'));
 
 // Serve React frontend in production
 const distPath = path.join(__dirname, '../dist');

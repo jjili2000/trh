@@ -9,6 +9,8 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import TimeTracking from './pages/time/TimeTracking';
 import AbsenceManagement from './pages/absences/AbsenceManagement';
 import ExpenseManagement from './pages/expenses/ExpenseManagement';
+import DocumentManagement from './pages/documents/DocumentManagement';
+import MyDocuments from './pages/documents/MyDocuments';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { currentUser } = useApp();
@@ -55,6 +57,8 @@ function AppRoutes() {
         <Route path="time" element={<TimeTracking />} />
         <Route path="absences" element={<AbsenceManagement />} />
         <Route path="expenses" element={<ExpenseManagement />} />
+        <Route path="documents" element={<DocumentManagement />} />
+        <Route path="my-documents" element={<MyDocuments />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

@@ -63,3 +63,22 @@ export interface AppSettings {
   clubName: string;
   clubLogo?: string;
 }
+
+export type DocumentStatus = 'pending_validation' | 'validated';
+
+export interface HRDocument {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileData?: string; // base64, only in detail view
+  documentType: string;
+  userId?: string;
+  detectedEmployeeName?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  notes?: string;
+  status: DocumentStatus;
+  uploadedBy: string;
+  validatedAt?: string;
+  createdAt: string;
+}
