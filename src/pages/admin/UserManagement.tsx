@@ -58,7 +58,7 @@ function Modal({ title, onClose, children }: ModalProps) {
 }
 
 export default function UserManagement() {
-  const { users, currentUser, addUser, updateUser, deleteUser } = useApp();
+  const { users, positions, currentUser, addUser, updateUser, deleteUser } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
   const [form, setForm] = useState<UserFormData>(emptyForm);
@@ -322,12 +322,16 @@ export default function UserManagement() {
 
             <div>
               <label className="label">Poste</label>
-              <input
+              <select
                 className="input"
                 value={form.position}
                 onChange={e => setForm(f => ({ ...f, position: e.target.value }))}
-                placeholder="Ex: Moniteur, Responsable..."
-              />
+              >
+                <option value="">— Aucun —</option>
+                {positions.map(p => (
+                  <option key={p.id} value={p.name}>{p.name}</option>
+                ))}
+              </select>
             </div>
 
             <div>

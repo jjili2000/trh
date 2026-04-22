@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 import {
   User,
   ActivityType,
+  Position,
   TimeEntry,
   AbsenceRequest,
   Expense,
@@ -16,6 +17,7 @@ interface AppContextType {
   currentUser: User | null;
   users: User[];
   activityTypes: ActivityType[];
+  positions: Position[];
   timeEntries: TimeEntry[];
   absenceRequests: AbsenceRequest[];
   expenses: Expense[];
@@ -36,6 +38,11 @@ interface AppContextType {
   addActivityType: (at: Omit<ActivityType, 'id'>) => Promise<void>;
   updateActivityType: (id: string, data: Partial<ActivityType>) => Promise<void>;
   deleteActivityType: (id: string) => Promise<void>;
+
+  // Positions
+  addPosition: (data: Omit<Position, 'id'>) => Promise<void>;
+  updatePosition: (id: string, data: Partial<Position>) => Promise<void>;
+  deletePosition: (id: string) => Promise<void>;
 
   // Time Entries
   addTimeEntry: (entry: Omit<TimeEntry, 'id' | 'createdAt' | 'status'>) => Promise<void>;
@@ -74,6 +81,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [absenceRequests, setAbsenceRequests] = useState<AbsenceRequest[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -88,6 +96,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const [
         fetchedUsers,
         fetchedActivityTypes,
+        fetchedPositions,
         fetchedTimeEntries,
         fetchedAbsenceRequests,
         fetchedExpenses,
@@ -96,6 +105,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ] = await Promise.all([
         api.get<User[]>('/users'),
         api.get<ActivityType[]>('/activity-types'),
+        api.get<Position[]>('/positions'),
         api.get<TimeEntry[]>('/time-entries'),
         api.get<AbsenceRequest[]>('/absence-requests'),
         api.get<Expense[]>('/expenses'),
@@ -104,6 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ]);
       setUsers(fetchedUsers);
       setActivityTypes(fetchedActivityTypes);
+      setPositions(fetchedPositions);
       setTimeEntries(fetchedTimeEntries);
       setAbsenceRequests(fetchedAbsenceRequests);
       setExpenses(fetchedExpenses);
@@ -184,6 +195,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await api.delete(`/users/${id}`);
     const updated = await api.get<User[]>('/users');
     setUsers(updated);
+  };
+
+  // ── Positions ─────────────────────────────────────────────────────────────────
+
+  const addPosition = async (data: Omit<Position, 'id'>) => {
+    await api.post('/positions', data);
+    const updated = await api.get<Position[]>('/positions');
+    setPositions(updated);
+  };
+
+  const updatePosition = async (id: string, data: Partial<Position>) => {
+    await api.put(`/positions/${id}`, data);
+    const updated = await api.get<Position[]>('/positions');
+    setPositions(updated);
+  };
+
+  const deletePosition = async (id: string) => {
+    await api.delete(`/positions/${id}`);
+    const updated = await api.get<Position[]>('/positions');
+    setPositions(updated);
   };
 
   // ── Activity Types ────────────────────────────────────────────────────────────
@@ -319,6 +350,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentUser,
         users,
         activityTypes,
+        positions,
         timeEntries,
         absenceRequests,
         expenses,
@@ -333,6 +365,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addActivityType,
         updateActivityType,
         deleteActivityType,
+        addPosition,
+        updatePosition,
+        deletePosition,
         addTimeEntry,
         updateTimeEntry,
         approveTimeEntry,

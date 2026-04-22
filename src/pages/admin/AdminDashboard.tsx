@@ -1,7 +1,8 @@
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Users, Tag, Settings } from 'lucide-react';
+import { Users, Tag, Settings, Briefcase } from 'lucide-react';
 import UserManagement from './UserManagement';
 import ActivityTypes from './ActivityTypes';
+import Positions from './Positions';
 import AppSettings from './AppSettings';
 
 export default function AdminDashboard() {
@@ -16,7 +17,7 @@ export default function AdminDashboard() {
     <div className="p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Administration</h1>
-        <p className="text-gray-500 mt-1">Gérez les utilisateurs, les types d'activités et les paramètres du club.</p>
+        <p className="text-gray-500 mt-1">Gérez les utilisateurs, les postes, les types d'activités et les paramètres du club.</p>
       </div>
 
       {/* Tab Navigation */}
@@ -30,6 +31,10 @@ export default function AdminDashboard() {
             <Tag size={16} />
             Types d'activités
           </NavLink>
+          <NavLink to="/admin/positions" className={tabClass}>
+            <Briefcase size={16} />
+            Types de postes
+          </NavLink>
           <NavLink to="/admin/settings" className={tabClass}>
             <Settings size={16} />
             Paramètres
@@ -41,6 +46,7 @@ export default function AdminDashboard() {
         <Route index element={<Navigate to="/admin/users" replace />} />
         <Route path="users" element={<UserManagement />} />
         <Route path="activity-types" element={<ActivityTypes />} />
+        <Route path="positions" element={<Positions />} />
         <Route path="settings" element={<AppSettings />} />
       </Routes>
     </div>

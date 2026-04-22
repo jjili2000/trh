@@ -18,6 +18,11 @@ export interface ActivityType {
   color: string;
 }
 
+export interface Position {
+  id: string;
+  name: string;
+}
+
 export interface TimeEntry {
   id: string;
   userId: string;
