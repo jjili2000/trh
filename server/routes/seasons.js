@@ -241,34 +241,22 @@ router.put('/:seasonId/assignments', checkAM, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
-// Apply Zone C holiday rule
+// Apply Zone C holiday rule — receives pre-calculated list of week dates from the browser
 router.post('/:seasonId/assignments/apply-rule', checkAM, async (req, res) => {
   try {
-    const { templateWeekId, holidays } = req.body;
-    if (!templateWeekId || !Array.isArray(holidays)) {
-      return res.status(400).json({ error: 'templateWeekId et holidays requis' });
+    const { templateWeekId, weekDates } = req.body;
+    if (!templateWeekId || !Array.isArray(weekDates)) {
+      return res.status(400).json({ error: 'templateWeekId et weekDates requis' });
     }
-    const [seasons] = await pool.execute('SELECT * FROM seasons WHERE id = ?', [req.params.seasonId]);
-    if (!seasons.length) return res.status(404).json({ error: 'Saison non trouvée' });
-    const s = seasons[0];
-    const weeks = generateSeasonWeeks(fmtDate(s.start_date), fmtDate(s.end_date));
     let count = 0;
-    for (const weekStart of weeks) {
-      const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
-      const isHoliday = holidays.some(h => {
-        const hs = new Date(h.startDate + 'T00:00:00');
-        const he = new Date(h.endDate + 'T00:00:00');
-        return weekStart <= he && weekEnd >= hs;
-      });
-      if (!isHoliday) {
-        const ws = weekStart.toISOString().substring(0, 10);
-        await pool.execute(
-          `INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date)
-           VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE template_week_id = ?`,
-          [uuidv4(), req.params.seasonId, templateWeekId, ws, templateWeekId]
-        );
-        count++;
-      }
+    for (const ws of weekDates) {
+      if (typeof ws !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(ws)) continue; // sécurité format
+      await pool.execute(
+        `INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date)
+         VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE template_week_id = ?`,
+        [uuidv4(), req.params.seasonId, templateWeekId, ws, templateWeekId]
+      );
+      count++;
     }
     res.json({ success: true, assignedWeeks: count });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }

@@ -419,7 +419,8 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   const [twError, setTWError] = useState('');
   const [courseForm, setCourseForm] = useState({ label: '', dayOfWeek: 1, startTime: '09:00', endTime: '10:00', teacherId: '' });
   const [courseError, setCourseError] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [twSaving, setTWSaving] = useState(false);
+  const [courseSaving, setCourseSaving] = useState(false);
 
   // Copy modal state
   const [copySourceSeasonId, setCopySourceSeasonId] = useState('');
@@ -438,9 +439,10 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   const openEditTW = (tw: TemplateWeek) => { setTWForm({ label: tw.label }); setTWError(''); setTWModal({ editing: tw }); };
 
   const saveTW = async (e: FormEvent) => {
-    e.preventDefault(); setTWError(''); setSaving(true);
+    e.preventDefault(); setTWError('');
+    if (!twForm.label.trim()) { setTWError('Libellé requis.'); return; }
+    setTWSaving(true);
     try {
-      if (!twForm.label.trim()) { setTWError('Libellé requis.'); return; }
       if (twModal?.editing) {
         await api.put(`/seasons/${season.id}/template-weeks/${twModal.editing.id}`, { label: twForm.label });
       } else {
@@ -448,8 +450,8 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
         setSelectedTWId(created.id);
       }
       await onRefresh(); setTWModal(null);
-    } catch { setTWError('Erreur lors de la sauvegarde.'); }
-    finally { setSaving(false); }
+    } catch (err) { console.error('saveTW error:', err); setTWError('Erreur lors de la sauvegarde.'); }
+    finally { setTWSaving(false); }
   };
 
   const deleteTW = async (twId: string) => {
@@ -468,25 +470,34 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   };
 
   const saveCourse = async (e: FormEvent) => {
-    e.preventDefault(); setCourseError(''); setSaving(true);
+    e.preventDefault();
+    if (!courseModal) return;
+    setCourseError('');
+    if (!courseForm.label.trim()) { setCourseError('Libellé requis.'); return; }
+    if (timeToMin(courseForm.endTime) <= timeToMin(courseForm.startTime)) {
+      setCourseError("L'heure de fin doit être après l'heure de début."); return;
+    }
+    // Capture modal state before any async operation to avoid stale closure
+    const twId    = courseModal.tw.id;
+    const editing = courseModal.editing;
+    const payload = {
+      label:      courseForm.label,
+      dayOfWeek:  Number(courseForm.dayOfWeek),
+      startTime:  courseForm.startTime,
+      endTime:    courseForm.endTime,
+      teacherId:  courseForm.teacherId || null,
+    };
+    setCourseSaving(true);
     try {
-      if (!courseForm.label.trim()) { setCourseError('Libellé requis.'); return; }
-      if (timeToMin(courseForm.endTime) <= timeToMin(courseForm.startTime)) {
-        setCourseError("L'heure de fin doit être après l'heure de début."); return;
-      }
-      const payload = {
-        label: courseForm.label, dayOfWeek: courseForm.dayOfWeek,
-        startTime: courseForm.startTime, endTime: courseForm.endTime,
-        teacherId: courseForm.teacherId || null,
-      };
-      if (courseModal?.editing) {
-        await api.put(`/seasons/${season.id}/template-weeks/${courseModal.tw.id}/courses/${courseModal.editing.id}`, payload);
+      if (editing) {
+        await api.put(`/seasons/${season.id}/template-weeks/${twId}/courses/${editing.id}`, payload);
       } else {
-        await api.post(`/seasons/${season.id}/template-weeks/${courseModal!.tw.id}/courses`, payload);
+        await api.post(`/seasons/${season.id}/template-weeks/${twId}/courses`, payload);
       }
-      await onRefresh(); setCourseModal(null);
-    } catch { setCourseError('Erreur lors de la sauvegarde.'); }
-    finally { setSaving(false); }
+      await onRefresh();
+      setCourseModal(null);
+    } catch (err) { console.error('saveCourse error:', err); setCourseError('Erreur lors de la sauvegarde.'); }
+    finally { setCourseSaving(false); }
   };
 
   const deleteCourse = async (twId: string, cId: string) => {
@@ -504,29 +515,70 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
 
   const handleCopy = async () => {
     if (!copySourceTWId) return;
-    setSaving(true);
+    setTWSaving(true);
     try {
       const created = await api.post<TemplateWeek>(`/seasons/${season.id}/template-weeks/copy`, { sourceTemplateWeekId: copySourceTWId });
       setSelectedTWId(created.id);
       await onRefresh(); setCopyModal(false);
-    } catch { /* ignore */ }
-    finally { setSaving(false); }
+    } catch (err) { console.error('handleCopy error:', err); }
+    finally { setTWSaving(false); }
   };
 
   const handleApplyRule = async () => {
     if (!applyModal) return;
     setApplyStatus('loading');
     try {
-      const holidays = await api.get<SchoolHoliday[]>(`/school-holidays?startDate=${season.startDate}&endDate=${season.endDate}`);
+      // Récupère les congés Zone C directement depuis le navigateur
+      const where = encodeURIComponent(
+        `zones like "%Zone C%" and end_date >= "${season.startDate}" and start_date <= "${season.endDate}"`
+      );
+      const eduUrl =
+        `https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/` +
+        `fr-en-calendrier-scolaire/records?where=${where}&limit=100&order_by=start_date`;
+
+      const resp = await fetch(eduUrl, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+
+      // Déduplication par couple (startDate, endDate)
+      const seen = new Set<string>();
+      const holidays: SchoolHoliday[] = [];
+      for (const r of (data.results || [])) {
+        const sd = String(r.start_date || '').substring(0, 10);
+        const ed = String(r.end_date   || '').substring(0, 10);
+        const key = `${sd}_${ed}`;
+        if (sd && ed && !seen.has(key)) {
+          seen.add(key);
+          holidays.push({ label: r.description || 'Vacances scolaires', startDate: sd, endDate: ed });
+        }
+      }
+
+      // Calcul côté navigateur : toutes les semaines de la saison hors congés Zone C
+      const allWeeks = getSeasonWeeks(season.startDate, season.endDate);
+      const nonHolidayDates = allWeeks
+        .filter(w => {
+          const wEnd = addDays(w, 6);
+          return !holidays.some(h => {
+            // Comparaison sur chaînes ISO YYYY-MM-DD — pas d'ambiguïté timezone
+            const wStartStr = isoDate(w);
+            const wEndStr   = isoDate(wEnd);
+            return wStartStr <= h.endDate && wEndStr >= h.startDate;
+          });
+        })
+        .map(w => isoDate(w));
+
+      console.log(`[Zone C] ${holidays.length} période(s) de congés, ${nonHolidayDates.length} semaines à affecter`);
+
       const result = await api.post<{ assignedWeeks: number }>(
         `/seasons/${season.id}/assignments/apply-rule`,
-        { templateWeekId: applyModal.tw.id, holidays }
+        { templateWeekId: applyModal.tw.id, weekDates: nonHolidayDates }
       );
-      setApplyResult(`${result.assignedWeeks} semaine(s) affectée(s).`);
+      setApplyResult(`${result.assignedWeeks} semaine(s) affectée(s) (${holidays.length} période(s) de congés Zone C trouvée(s)).`);
       setApplyStatus('success');
       await onRefresh();
-    } catch {
-      setApplyResult('Impossible de récupérer les vacances scolaires. Vérifiez votre connexion.');
+    } catch (err) {
+      console.error('handleApplyRule error:', err);
+      setApplyResult('Impossible de récupérer les vacances scolaires. Vérifiez votre connexion internet.');
       setApplyStatus('error');
     }
   };
@@ -657,7 +709,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button type="button" onClick={() => setTWModal(null)} className="btn-secondary">Annuler</button>
-              <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+              <button type="submit" disabled={twSaving} className="btn-primary">{twSaving ? 'Enregistrement…' : 'Enregistrer'}</button>
             </div>
           </form>
         </Modal>
@@ -708,7 +760,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button type="button" onClick={() => setCourseModal(null)} className="btn-secondary">Annuler</button>
-              <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+              <button type="submit" disabled={courseSaving} className="btn-primary">{courseSaving ? 'Enregistrement…' : 'Enregistrer'}</button>
             </div>
           </form>
         </Modal>
@@ -765,8 +817,8 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
             )}
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => setCopyModal(false)} className="btn-secondary">Annuler</button>
-              <button onClick={handleCopy} disabled={!copySourceTWId || saving} className="btn-primary">
-                {saving ? 'Import…' : 'Importer'}
+              <button onClick={handleCopy} disabled={!copySourceTWId || twSaving} className="btn-primary">
+                {twSaving ? 'Import…' : 'Importer'}
               </button>
             </div>
           </div>
