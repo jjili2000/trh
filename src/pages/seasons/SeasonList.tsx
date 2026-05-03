@@ -42,7 +42,7 @@ export default function SeasonList() {
     finally { setLoading(false); }
   };
 
-  const autoName = (m: number, y: number) => `Saison ${y}-${y + 1}`;
+  const autoName = (_m: number, y: number) => `Saison ${y}-${y + 1}`;
 
   const openNew = () => {
     let month = 9, year = new Date().getFullYear();
