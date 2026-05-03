@@ -1015,7 +1015,11 @@ export default function SeasonDetail() {
         </nav>
       </div>
 
-      {activeTab === 'calendar' && (
+      {/* Les deux panneaux restent montés (CSS display) pour que :
+          - CalendarView reçoive les mises à jour de templateWeeks en temps réel
+          - La position de navigation (viewMode, viewDate, weekIdx) soit préservée
+            quand l'utilisateur bascule entre les onglets */}
+      <div style={{ display: activeTab === 'calendar' ? 'block' : 'none' }}>
         <CalendarView
           season={season}
           templateWeeks={templateWeeks}
@@ -1023,9 +1027,9 @@ export default function SeasonDetail() {
           users={users}
           onAssign={handleAssign}
         />
-      )}
+      </div>
 
-      {activeTab === 'template-weeks' && (
+      <div style={{ display: activeTab === 'template-weeks' ? 'block' : 'none' }}>
         <TemplateWeeksPanel
           season={season}
           templateWeeks={templateWeeks}
@@ -1033,7 +1037,7 @@ export default function SeasonDetail() {
           allSeasons={allSeasons}
           onRefresh={loadData}
         />
-      )}
+      </div>
     </div>
   );
 }
