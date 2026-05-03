@@ -11,6 +11,8 @@ import AbsenceManagement from './pages/absences/AbsenceManagement';
 import ExpenseManagement from './pages/expenses/ExpenseManagement';
 import DocumentManagement from './pages/documents/DocumentManagement';
 import MyDocuments from './pages/documents/MyDocuments';
+import SeasonList from './pages/seasons/SeasonList';
+import SeasonDetail from './pages/seasons/SeasonDetail';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { currentUser } = useApp();
@@ -59,6 +61,8 @@ function AppRoutes() {
         <Route path="expenses" element={<ExpenseManagement />} />
         <Route path="documents" element={<DocumentManagement />} />
         <Route path="my-documents" element={<MyDocuments />} />
+        <Route path="seasons" element={<AdminRoute><SeasonList /></AdminRoute>} />
+        <Route path="seasons/:id" element={<AdminRoute><SeasonDetail /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

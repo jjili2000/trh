@@ -69,6 +69,51 @@ export interface AppSettings {
   clubLogo?: string;
 }
 
+// ─── Seasons ──────────────────────────────────────────────────────────────────
+
+export type SeasonStatus = 'draft' | 'published' | 'closed' | 'deleted';
+
+export interface Season {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: SeasonStatus;
+  createdAt: string;
+}
+
+export interface TemplateWeek {
+  id: string;
+  seasonId: string;
+  label: string;
+  courses: TemplateCourse[];
+  createdAt: string;
+}
+
+export interface TemplateCourse {
+  id: string;
+  templateWeekId: string;
+  label: string;
+  dayOfWeek: number; // 1=Lundi … 7=Dimanche
+  startTime: string; // HH:MM
+  endTime: string;   // HH:MM
+  teacherId: string | null;
+  createdAt: string;
+}
+
+export interface WeekAssignment {
+  id: string;
+  seasonId: string;
+  templateWeekId: string;
+  weekStartDate: string; // YYYY-MM-DD (lundi)
+}
+
+export interface SchoolHoliday {
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
 export type DocumentStatus = 'pending_validation' | 'validated';
 
 export interface HRDocument {

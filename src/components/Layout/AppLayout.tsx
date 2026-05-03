@@ -12,6 +12,7 @@ import {
   FileText,
   Menu,
   X,
+  GraduationCap,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -102,6 +103,13 @@ export default function AppLayout() {
           <NavLink to="/my-documents" className={navLinkClass} onClick={closeSidebar}>
             <FileText size={18} />
             Mes documents
+          </NavLink>
+        )}
+
+        {isAdminOrManager && (
+          <NavLink to="/seasons" className={navLinkClass} onClick={closeSidebar}>
+            <GraduationCap size={18} />
+            Saisons
           </NavLink>
         )}
 
