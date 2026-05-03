@@ -248,13 +248,19 @@ router.post('/:seasonId/assignments/apply-rule', checkAM, async (req, res) => {
     if (!templateWeekId || !Array.isArray(weekDates)) {
       return res.status(400).json({ error: 'templateWeekId et weekDates requis' });
     }
+    // Supprime toutes les affectations existantes de la saison pour repartir proprement.
+    // Sans ce DELETE, les semaines précédemment affectées (ex: vacances d'été d'une
+    // ancienne application) resteraient en base même si la règle ne les inclut plus.
+    await pool.execute(
+      'DELETE FROM season_week_assignments WHERE season_id = ?',
+      [req.params.seasonId]
+    );
     let count = 0;
     for (const ws of weekDates) {
-      if (typeof ws !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(ws)) continue; // sécurité format
+      if (typeof ws !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(ws)) continue;
       await pool.execute(
-        `INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date)
-         VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE template_week_id = ?`,
-        [uuidv4(), req.params.seasonId, templateWeekId, ws, templateWeekId]
+        'INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date) VALUES (?, ?, ?, ?)',
+        [uuidv4(), req.params.seasonId, templateWeekId, ws]
       );
       count++;
     }
