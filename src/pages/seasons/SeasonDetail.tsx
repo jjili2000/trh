@@ -103,6 +103,20 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 // ─── Week time grid ───────────────────────────────────────────────────────────
 
+function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCourse; col: number; totalCols: number }> {
+  const sorted = [...courses].sort((a, b) => timeToMin(a.startTime) - timeToMin(b.startTime));
+  const colEnds: number[] = [];
+  const assignments = sorted.map(c => {
+    const start = timeToMin(c.startTime);
+    let col = colEnds.findIndex(end => end <= start);
+    if (col === -1) { col = colEnds.length; colEnds.push(0); }
+    colEnds[col] = timeToMin(c.endTime);
+    return { course: c, col };
+  });
+  const totalCols = colEnds.length || 1;
+  return assignments.map(a => ({ ...a, totalCols }));
+}
+
 function WeekTimeGrid({ templateWeek, monday, users, color }: {
   templateWeek: TemplateWeek | null; monday: Date; users: User[]; color: string;
 }) {
@@ -145,13 +159,19 @@ function WeekTimeGrid({ templateWeek, monday, users, color }: {
                 <div key={i} className="absolute inset-x-0 border-t border-gray-100" style={{ top: (i + 1) * 60 * (SLOT_H / 30) }} />
               ))}
               {/* Courses */}
-              {dayCourses.map(c => {
+              {layoutCourses(dayCourses).map(({ course: c, col, totalCols }) => {
                 const top    = (timeToMin(c.startTime) - START_HOUR * 60) * (SLOT_H / 30);
                 const height = (timeToMin(c.endTime)   - timeToMin(c.startTime)) * (SLOT_H / 30);
                 const teacher = users.find(u => u.id === c.teacherId);
+                const pct = 100 / totalCols;
                 return (
-                  <div key={c.id} className="absolute inset-x-0.5 rounded p-1 overflow-hidden text-white text-xs"
-                    style={{ top: top + 1, height: height - 2, backgroundColor: color }}>
+                  <div key={c.id} className="absolute rounded p-1 overflow-hidden text-white text-xs"
+                    style={{
+                      top: top + 1, height: height - 2,
+                      left: `calc(${col * pct}% + 2px)`,
+                      width: `calc(${pct}% - 4px)`,
+                      backgroundColor: color,
+                    }}>
                     <div className="font-semibold truncate">{c.label}</div>
                     {height > 30 && <div className="opacity-80 truncate">{c.startTime} – {c.endTime}</div>}
                     {height > 50 && teacher && <div className="opacity-70 truncate">{teacher.firstName} {teacher.lastName}</div>}
