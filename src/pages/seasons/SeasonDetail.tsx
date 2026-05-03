@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, FormEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Edit2, Calendar, BookOpen, Plus, X, Trash2,
-  ChevronLeft, ChevronRight, Check, AlertCircle, Copy, Loader,
+  ChevronLeft, ChevronRight, Check, AlertCircle, AlertTriangle, Copy, Loader,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
@@ -10,7 +10,11 @@ import { Season, SeasonStatus, TemplateWeek, TemplateCourse, WeekAssignment, Sch
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TW_COLORS = ['#2d6a4f','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#f97316','#ec4899'];
+const TW_COLORS     = ['#2d6a4f','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#14b8a6','#f97316','#ec4899'];
+const COURSE_COLORS = [
+  '#2563eb','#16a34a','#dc2626','#9333ea','#ea580c',
+  '#0891b2','#be185d','#4f46e5','#b45309','#0f766e','#6d28d9','#be123c',
+];
 const MONTHS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 const DAYS_SHORT = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
 const STATUS_CFG: Record<SeasonStatus, { label: string; color: string }> = {
@@ -85,6 +89,25 @@ function groupByMonth(weeks: Date[]): Map<string, Date[]> {
   return map;
 }
 
+function courseColor(courseId: string): string {
+  let h = 0;
+  for (let i = 0; i < courseId.length; i++) h = (h * 31 + courseId.charCodeAt(i)) & 0x7fffffff;
+  return COURSE_COLORS[h % COURSE_COLORS.length];
+}
+
+function duration(s: string, e: string): string {
+  const m = timeToMin(e) - timeToMin(s);
+  return m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}` : `${m}min`;
+}
+
+function isConflictingCourse(course: TemplateCourse, allCourses: TemplateCourse[]): boolean {
+  return allCourses.some(o =>
+    o.id !== course.id &&
+    timeToMin(o.startTime) < timeToMin(course.endTime) &&
+    timeToMin(o.endTime)   > timeToMin(course.startTime),
+  );
+}
+
 // ─── Modal wrapper ────────────────────────────────────────────────────────────
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -103,7 +126,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 // ─── Week time grid ───────────────────────────────────────────────────────────
 
-function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCourse; col: number; totalCols: number }> {
+function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCourse; col: number; totalCols: number; isConflict: boolean }> {
   const sorted = [...courses].sort((a, b) => timeToMin(a.startTime) - timeToMin(b.startTime));
   const colEnds: number[] = [];
   const assignments = sorted.map(c => {
@@ -114,18 +137,46 @@ function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCours
     return { course: c, col };
   });
   const totalCols = colEnds.length || 1;
-  return assignments.map(a => ({ ...a, totalCols }));
+  return assignments.map(a => ({ ...a, totalCols, isConflict: isConflictingCourse(a.course, courses) }));
 }
 
-function WeekTimeGrid({ templateWeek, monday, users, color }: {
-  templateWeek: TemplateWeek | null; monday: Date; users: User[]; color: string;
+function WeekTimeGrid({ templateWeek, monday, users, onEditCourse, onAddCourse }: {
+  templateWeek: TemplateWeek | null;
+  monday: Date;
+  users: User[];
+  onEditCourse?: (course: TemplateCourse) => void;
+  onAddCourse?:  (dayOfWeek: number, startTime: string) => void;
 }) {
   const totalSlots = (END_HOUR - START_HOUR) * 2;
-  const totalH = totalSlots * SLOT_H;
-  const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const totalH     = totalSlots * SLOT_H;
+  const days       = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+
+  // Tooltip
+  const [tooltip, setTooltip] = useState<{
+    course: TemplateCourse; teacherName: string | null; isConflict: boolean; x: number; y: number;
+  } | null>(null);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mousePos     = useRef({ x: 0, y: 0 });
+
+  // Hovered time slot (for "+" creation)
+  const [hoverSlot, setHoverSlot] = useState<{ day: number; slotIndex: number; time: string } | null>(null);
+
+  const showTooltip = (course: TemplateCourse, teacherName: string | null, isConflict: boolean) => {
+    if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+    tooltipTimer.current = setTimeout(() => {
+      setTooltip({ course, teacherName, isConflict, x: mousePos.current.x, y: mousePos.current.y });
+    }, 500);
+  };
+  const hideTooltip = () => {
+    if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+    setTooltip(null);
+  };
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-100">
+    <div
+      className="overflow-x-auto rounded-xl border border-gray-100"
+      onMouseMove={e => { mousePos.current = { x: e.clientX, y: e.clientY }; }}
+    >
       {/* Day headers */}
       <div className="flex border-b border-gray-100">
         <div className="w-12 flex-shrink-0" />
@@ -154,86 +205,133 @@ function WeekTimeGrid({ templateWeek, monday, users, color }: {
           const dayCourses = templateWeek?.courses.filter(c => c.dayOfWeek === di + 1) || [];
           return (
             <div key={di} className="flex-1 min-w-20 relative border-l border-gray-100" style={{ height: totalH }}>
-              {/* Grid lines */}
+              {/* Hour grid lines */}
               {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => (
-                <div key={i} className="absolute inset-x-0 border-t border-gray-100" style={{ top: (i + 1) * 60 * (SLOT_H / 30) }} />
+                <div key={i} className="absolute inset-x-0 border-t border-gray-100"
+                  style={{ top: (i + 1) * 60 * (SLOT_H / 30) }} />
               ))}
-              {/* Courses */}
-              {layoutCourses(dayCourses).map(({ course: c, col, totalCols }) => {
-                const top    = (timeToMin(c.startTime) - START_HOUR * 60) * (SLOT_H / 30);
-                const height = (timeToMin(c.endTime)   - timeToMin(c.startTime)) * (SLOT_H / 30);
-                const teacher = users.find(u => u.id === c.teacherId);
-                const pct = 100 / totalCols;
+
+              {/* Clickable 30-min slots — behind courses (z-0) */}
+              {onAddCourse && Array.from({ length: totalSlots }, (_, si) => {
+                const startMin = START_HOUR * 60 + si * 30;
+                const h = Math.floor(startMin / 60);
+                const m = startMin % 60;
+                const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                const isHov   = hoverSlot?.day === di + 1 && hoverSlot.slotIndex === si;
                 return (
-                  <div key={c.id} className="absolute rounded p-1 overflow-hidden text-white text-xs"
+                  <div key={si}
+                    className={`absolute inset-x-0 z-0 cursor-crosshair transition-colors ${isHov ? 'bg-tennis-green/5' : ''}`}
+                    style={{ top: si * SLOT_H, height: SLOT_H }}
+                    onMouseEnter={() => setHoverSlot({ day: di + 1, slotIndex: si, time: timeStr })}
+                    onMouseLeave={() => setHoverSlot(null)}
+                    onClick={() => onAddCourse(di + 1, timeStr)}
+                  >
+                    {isHov && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-4 h-4 rounded-full bg-tennis-green/40 flex items-center justify-center">
+                          <Plus size={9} className="text-tennis-green" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Course blocks — above slots (z-10) */}
+              {layoutCourses(dayCourses).map(({ course: c, col, totalCols, isConflict }) => {
+                const top        = (timeToMin(c.startTime) - START_HOUR * 60) * (SLOT_H / 30);
+                const height     = (timeToMin(c.endTime)   - timeToMin(c.startTime)) * (SLOT_H / 30);
+                const teacher    = users.find(u => u.id === c.teacherId);
+                const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : null;
+                const pct        = 100 / totalCols;
+                const bg         = courseColor(c.id);
+                return (
+                  <div key={c.id}
+                    className={`absolute z-10 rounded p-1 overflow-hidden text-white text-xs select-none
+                      ${onEditCourse ? 'cursor-pointer hover:brightness-110 active:brightness-90' : ''}`}
                     style={{
                       top: top + 1, height: height - 2,
                       left: `calc(${col * pct}% + 2px)`,
                       width: `calc(${pct}% - 4px)`,
-                      backgroundColor: color,
-                    }}>
-                    <div className="font-semibold truncate">{c.label}</div>
+                      backgroundColor: bg,
+                    }}
+                    onMouseEnter={() => showTooltip(c, teacherName, isConflict)}
+                    onMouseLeave={hideTooltip}
+                    onClick={e => { e.stopPropagation(); onEditCourse?.(c); }}
+                  >
+                    <div className="flex items-start gap-0.5">
+                      <div className="font-semibold truncate flex-1">{c.label}</div>
+                      {isConflict && <AlertTriangle size={10} className="text-yellow-300 flex-shrink-0 mt-0.5" />}
+                    </div>
                     {height > 30 && <div className="opacity-80 truncate">{c.startTime} – {c.endTime}</div>}
-                    {height > 50 && teacher && <div className="opacity-70 truncate">{teacher.firstName} {teacher.lastName}</div>}
+                    {height > 50 && teacherName && <div className="opacity-70 truncate">{teacherName}</div>}
                   </div>
                 );
               })}
-              {dayCourses.length === 0 && (
-                <div className="h-full bg-gray-50/50" />
-              )}
+
+              {dayCourses.length === 0 && <div className="h-full bg-gray-50/50" />}
             </div>
           );
         })}
       </div>
+
+      {/* Floating tooltip (500 ms delay) */}
+      {tooltip && (
+        <div className="fixed z-[9999] pointer-events-none"
+          style={{ left: tooltip.x + 14, top: tooltip.y - 8 }}>
+          <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl max-w-52 space-y-0.5">
+            <div className="font-semibold">{tooltip.course.label}</div>
+            <div className="text-gray-300">{tooltip.course.startTime} – {tooltip.course.endTime} · {duration(tooltip.course.startTime, tooltip.course.endTime)}</div>
+            {tooltip.teacherName && <div className="text-gray-400">{tooltip.teacherName}</div>}
+            {tooltip.isConflict && (
+              <div className="flex items-center gap-1 text-yellow-400 pt-0.5">
+                <AlertTriangle size={10} /> Conflit d'agenda
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Calendar View ────────────────────────────────────────────────────────────
 
-type ViewMode = 'year' | 'semester' | 'quarter' | 'month' | 'week';
-const VIEW_MONTHS: Record<ViewMode, number> = { year: 99, semester: 6, quarter: 3, month: 1, week: 0 };
-const VIEW_LABELS: Record<ViewMode, string> = { year: 'Année', semester: 'Semestre', quarter: 'Trimestre', month: 'Mois', week: 'Semaine' };
+type ViewMode = 'year' | 'week';
+const VIEW_LABELS: Record<ViewMode, string> = { year: 'Année', week: 'Semaine' };
 
-function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
+function CalendarView({ season, templateWeeks, assignments, users, onAssign, onRefresh, onEditTemplateWeek }: {
   season: Season;
   templateWeeks: TemplateWeek[];
   assignments: WeekAssignment[];
   users: User[];
   onAssign: (weekStartDate: string, templateWeekId: string | null) => Promise<void>;
+  onRefresh: () => Promise<void>;
+  onEditTemplateWeek: (twId: string) => void;
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>('year');
-  const [viewDate, setViewDate] = useState(() => new Date(season.startDate + 'T00:00:00'));
-  const [weekIdx, setWeekIdx] = useState(0);
+  const [weekIdx, setWeekIdx]   = useState(0);
   const [assignModal, setAssignModal] = useState<{ weekDate: Date; current: string | null } | null>(null);
-  const [assigning, setAssigning] = useState(false);
+  const [assigning, setAssigning]     = useState(false);
 
-  const allWeeks = getSeasonWeeks(season.startDate, season.endDate);
-  const assignMap = Object.fromEntries(assignments.map(a => [a.weekStartDate, a.templateWeekId]));
-  const twColorMap = Object.fromEntries(templateWeeks.map((tw, i) => [tw.id, TW_COLORS[i % TW_COLORS.length]]));
+  // Course modal (create/edit directly from calendar)
+  const [calCourseModal, setCalCourseModal] = useState<{
+    tw: TemplateWeek; editing: TemplateCourse | null;
+  } | null>(null);
+  const [calCourseForm, setCalCourseForm] = useState({
+    label: '', dayOfWeek: 1, startTime: '09:00', endTime: '10:00', teacherId: '',
+  });
+  const [calCourseError, setCalCourseError] = useState('');
+  const [calCourseSaving, setCalCourseSaving] = useState(false);
 
-  // Filtered months for current view
+  const allWeeks      = getSeasonWeeks(season.startDate, season.endDate);
+  const assignMap     = Object.fromEntries(assignments.map(a => [a.weekStartDate, a.templateWeekId]));
+  const twColorMap    = Object.fromEntries(templateWeeks.map((tw, i) => [tw.id, TW_COLORS[i % TW_COLORS.length]]));
   const allMonthGroups = groupByMonth(allWeeks);
-  const allMonthKeys = Array.from(allMonthGroups.keys());
+  const allMonthKeys   = Array.from(allMonthGroups.keys());
 
-  const getVisibleMonthKeys = (): string[] => {
-    if (viewMode === 'year') return allMonthKeys;
-    if (viewMode === 'week') return [];
-    const startKey = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
-    const startIdx = Math.max(0, allMonthKeys.indexOf(startKey));
-    return allMonthKeys.slice(startIdx, startIdx + VIEW_MONTHS[viewMode]);
-  };
-
-  const navigate = (dir: 1 | -1) => {
-    if (viewMode === 'week') {
-      setWeekIdx(i => Math.max(0, Math.min(allWeeks.length - 1, i + dir)));
-      return;
-    }
-    const n = VIEW_MONTHS[viewMode];
-    const d = new Date(viewDate);
-    d.setMonth(d.getMonth() + dir * n);
-    setViewDate(d);
-  };
+  const navigateWeek = (dir: 1 | -1) =>
+    setWeekIdx(i => Math.max(0, Math.min(allWeeks.length - 1, i + dir)));
 
   const handleAssign = async (twId: string | null) => {
     if (!assignModal || assigning) return;
@@ -247,14 +345,65 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
   const currentTWId = currentWeek ? assignMap[isoDate(currentWeek)] : null;
   const currentTW   = templateWeeks.find(tw => tw.id === currentTWId) || null;
 
-  const visibleKeys = getVisibleMonthKeys();
+  // Course handlers
+  const handleEditCourse = (course: TemplateCourse) => {
+    if (!currentTW) return;
+    setCalCourseForm({
+      label: course.label, dayOfWeek: course.dayOfWeek,
+      startTime: course.startTime, endTime: course.endTime,
+      teacherId: course.teacherId || '',
+    });
+    setCalCourseError('');
+    setCalCourseModal({ tw: currentTW, editing: course });
+  };
+
+  const handleAddCourse = (dayOfWeek: number, startTime: string) => {
+    if (!currentTW) return;
+    const endMin = Math.min(timeToMin(startTime) + 60, END_HOUR * 60);
+    const endH   = Math.floor(endMin / 60);
+    const endM   = endMin % 60;
+    setCalCourseForm({
+      label: '', dayOfWeek, startTime,
+      endTime: `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`,
+      teacherId: '',
+    });
+    setCalCourseError('');
+    setCalCourseModal({ tw: currentTW, editing: null });
+  };
+
+  const saveCalCourse = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!calCourseModal) return;
+    setCalCourseError('');
+    if (!calCourseForm.label.trim()) { setCalCourseError('Libellé requis.'); return; }
+    if (timeToMin(calCourseForm.endTime) <= timeToMin(calCourseForm.startTime)) {
+      setCalCourseError("L'heure de fin doit être après l'heure de début."); return;
+    }
+    const { tw, editing } = calCourseModal;
+    const payload = {
+      label: calCourseForm.label, dayOfWeek: Number(calCourseForm.dayOfWeek),
+      startTime: calCourseForm.startTime, endTime: calCourseForm.endTime,
+      teacherId: calCourseForm.teacherId || null,
+    };
+    setCalCourseSaving(true);
+    try {
+      if (editing) {
+        await api.put(`/seasons/${season.id}/template-weeks/${tw.id}/courses/${editing.id}`, payload);
+      } else {
+        await api.post(`/seasons/${season.id}/template-weeks/${tw.id}/courses`, payload);
+      }
+      await onRefresh();
+      setCalCourseModal(null);
+    } catch (err) { console.error('saveCalCourse error:', err); setCalCourseError('Erreur lors de la sauvegarde.'); }
+    finally { setCalCourseSaving(false); }
+  };
 
   return (
     <div>
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-          {(['year','semester','quarter','month','week'] as ViewMode[]).map(v => (
+          {(['year', 'week'] as ViewMode[]).map(v => (
             <button key={v} onClick={() => setViewMode(v)}
               className={`px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === v ? 'bg-tennis-green text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
               {VIEW_LABELS[v]}
@@ -262,15 +411,15 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
           ))}
         </div>
 
-        {viewMode !== 'year' && (
+        {viewMode === 'week' && (
           <div className="flex items-center gap-2">
-            <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronLeft size={16} /></button>
-            <span className="text-sm font-medium text-gray-700 min-w-32 text-center">
-              {viewMode === 'week' && currentWeek
+            <button onClick={() => navigateWeek(-1)} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronLeft size={16} /></button>
+            <span className="text-sm font-medium text-gray-700 min-w-44 text-center">
+              {currentWeek
                 ? `S${getWeekNum(currentWeek)} · ${fmtShort(currentWeek)} – ${fmtShort(addDays(currentWeek, 6))}`
-                : `${MONTHS_FR[viewDate.getMonth()]} ${viewDate.getFullYear()}`}
+                : '—'}
             </span>
-            <button onClick={() => navigate(1)} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronRight size={16} /></button>
+            <button onClick={() => navigateWeek(1)} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronRight size={16} /></button>
           </div>
         )}
 
@@ -287,18 +436,22 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
         )}
       </div>
 
-      {/* Week view */}
+      {/* ── Week view ────────────────────────────────────────────────────────── */}
       {viewMode === 'week' && currentWeek && (
         <div>
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <h3 className="font-semibold text-gray-800">
               Semaine {getWeekNum(currentWeek)} · {fmtFull(currentWeek)} → {fmtFull(addDays(currentWeek, 6))}
             </h3>
             {currentTW ? (
-              <span className="text-xs px-2 py-1 rounded-full text-white font-medium"
-                style={{ backgroundColor: twColorMap[currentTW.id] }}>
+              <button
+                className="text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
+                style={{ backgroundColor: twColorMap[currentTW.id] }}
+                onClick={() => onEditTemplateWeek(currentTW.id)}
+                title="Modifier cette semaine type"
+              >
                 {currentTW.label}
-              </span>
+              </button>
             ) : (
               <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">Non planifiée</span>
             )}
@@ -308,7 +461,13 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
             </button>
           </div>
           {currentTW ? (
-            <WeekTimeGrid templateWeek={currentTW} monday={currentWeek} users={users} color={twColorMap[currentTW.id]} />
+            <WeekTimeGrid
+              templateWeek={currentTW}
+              monday={currentWeek}
+              users={users}
+              onEditCourse={handleEditCourse}
+              onAddCourse={handleAddCourse}
+            />
           ) : (
             <div className="card text-center py-12 text-gray-400">
               <Calendar size={36} className="mx-auto mb-3 opacity-30" />
@@ -322,12 +481,12 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
         </div>
       )}
 
-      {/* Month-grouped views */}
-      {viewMode !== 'week' && (
+      {/* ── Year view ─────────────────────────────────────────────────────────── */}
+      {viewMode === 'year' && (
         <div className="space-y-6">
-          {visibleKeys.map(key => {
+          {allMonthKeys.map(key => {
             const [y, m] = key.split('-').map(Number);
-            const weeks = allMonthGroups.get(key) || [];
+            const weeks  = allMonthGroups.get(key) || [];
             return (
               <div key={key}>
                 <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
@@ -348,25 +507,52 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
                         const wKey = isoDate(w);
                         const twId = assignMap[wKey] || null;
                         const tw   = templateWeeks.find(t => t.id === twId);
+                        // Check if any course of that TW has a conflict on a given day
+                        const hasConflict = tw
+                          ? DAYS_SHORT.some((_, di) => {
+                              const dc = tw.courses.filter(c => c.dayOfWeek === di + 1);
+                              return dc.some(c => isConflictingCourse(c, dc));
+                            })
+                          : false;
                         return (
-                          <tr key={wKey} className="hover:bg-gray-50 cursor-pointer"
-                            onClick={() => setAssignModal({ weekDate: w, current: twId })}>
+                          <tr key={wKey} className="hover:bg-gray-50">
                             <td className="px-4 py-2.5 text-gray-400 font-mono text-xs">{getWeekNum(w)}</td>
-                            <td className="px-4 py-2.5 text-gray-600">
+                            <td
+                              className="px-4 py-2.5 text-gray-600 cursor-pointer"
+                              onClick={() => setAssignModal({ weekDate: w, current: twId })}
+                            >
                               {fmtShort(w)} → {fmtShort(addDays(w, 6))}
                             </td>
                             <td className="px-4 py-2.5">
                               {tw ? (
-                                <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full text-white font-medium"
-                                  style={{ backgroundColor: twColorMap[tw.id] }}>
-                                  {tw.label}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
+                                    style={{ backgroundColor: twColorMap[tw.id] }}
+                                    onClick={() => onEditTemplateWeek(tw.id)}
+                                    title="Modifier cette semaine type"
+                                  >
+                                    {tw.label}
+                                  </button>
+                                  {hasConflict && (
+                                    <span title="Un ou plusieurs cours sont en conflit d'agenda">
+                                      <AlertTriangle size={13} className="text-yellow-500" />
+                                    </span>
+                                  )}
+                                </div>
                               ) : (
-                                <span className="text-gray-300 text-xs">—</span>
+                                <span
+                                  className="text-gray-300 text-xs cursor-pointer hover:text-gray-400"
+                                  onClick={() => setAssignModal({ weekDate: w, current: twId })}
+                                >—</span>
                               )}
                             </td>
                             <td className="px-2 py-2.5">
-                              <Edit2 size={13} className="text-gray-300" />
+                              <Edit2
+                                size={13}
+                                className="text-gray-300 cursor-pointer hover:text-gray-500"
+                                onClick={() => setAssignModal({ weekDate: w, current: twId })}
+                              />
                             </td>
                           </tr>
                         );
@@ -377,9 +563,6 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
               </div>
             );
           })}
-          {visibleKeys.length === 0 && (
-            <div className="text-center py-12 text-gray-400">Aucune semaine dans cette période.</div>
-          )}
         </div>
       )}
 
@@ -423,20 +606,84 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign }: {
           {assigning && <div className="text-center mt-4 text-sm text-gray-400">Enregistrement…</div>}
         </Modal>
       )}
+
+      {/* Course create / edit modal (from calendar) */}
+      {calCourseModal && (
+        <Modal
+          title={calCourseModal.editing ? 'Modifier le cours' : 'Nouveau cours'}
+          onClose={() => setCalCourseModal(null)}
+        >
+          <p className="text-xs text-gray-400 mb-4">
+            Semaine type : <strong>{calCourseModal.tw.label}</strong>
+          </p>
+          <form onSubmit={saveCalCourse} className="space-y-4">
+            {calCourseError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{calCourseError}</div>
+            )}
+            <div>
+              <label className="label">Intitulé du cours *</label>
+              <input className="input" value={calCourseForm.label}
+                onChange={e => setCalCourseForm(f => ({ ...f, label: e.target.value }))}
+                placeholder="Ex: Tennis débutants" autoFocus required />
+            </div>
+            <div>
+              <label className="label">Jour *</label>
+              <select className="input" value={calCourseForm.dayOfWeek}
+                onChange={e => setCalCourseForm(f => ({ ...f, dayOfWeek: parseInt(e.target.value) }))}>
+                {DAYS_SHORT.map((d, i) => <option key={i + 1} value={i + 1}>{d}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="label">Début *</label>
+                <input type="time" className="input" value={calCourseForm.startTime}
+                  onChange={e => setCalCourseForm(f => ({ ...f, startTime: e.target.value }))} required />
+              </div>
+              <div>
+                <label className="label">Fin *</label>
+                <input type="time" className="input" value={calCourseForm.endTime}
+                  onChange={e => setCalCourseForm(f => ({ ...f, endTime: e.target.value }))} required />
+              </div>
+              <div>
+                <label className="label">Durée</label>
+                <div className="input bg-gray-50 text-gray-500 text-sm flex items-center">
+                  {calCourseForm.startTime && calCourseForm.endTime
+                    ? duration(calCourseForm.startTime, calCourseForm.endTime) : '—'}
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="label">Enseignant</label>
+              <select className="input" value={calCourseForm.teacherId}
+                onChange={e => setCalCourseForm(f => ({ ...f, teacherId: e.target.value }))}>
+                <option value="">— Aucun —</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setCalCourseModal(null)} className="btn-secondary">Annuler</button>
+              <button type="submit" disabled={calCourseSaving} className="btn-primary">
+                {calCourseSaving ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
 
 // ─── Template Weeks Panel ─────────────────────────────────────────────────────
 
-function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefresh }: {
+function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefresh, selectedTWId, onSelectedTWChange }: {
   season: Season;
   templateWeeks: TemplateWeek[];
   users: User[];
   allSeasons: Season[];
   onRefresh: () => Promise<void>;
+  selectedTWId: string | null;
+  onSelectedTWChange: (id: string | null) => void;
 }) {
-  const [selectedTWId, setSelectedTWId] = useState<string | null>(null);
   const [twModal, setTWModal]       = useState<{ editing: TemplateWeek | null } | null>(null);
   const [courseModal, setCourseModal] = useState<{ tw: TemplateWeek; editing: TemplateCourse | null } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'tw' | 'course'; id: string; twId?: string } | null>(null);
@@ -475,7 +722,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
         await api.put(`/seasons/${season.id}/template-weeks/${twModal.editing.id}`, { label: twForm.label });
       } else {
         const created = await api.post<TemplateWeek>(`/seasons/${season.id}/template-weeks`, { label: twForm.label });
-        setSelectedTWId(created.id);
+        onSelectedTWChange(created.id);
       }
       await onRefresh(); setTWModal(null);
     } catch (err) { console.error('saveTW error:', err); setTWError('Erreur lors de la sauvegarde.'); }
@@ -484,7 +731,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
 
   const deleteTW = async (twId: string) => {
     await api.delete(`/seasons/${season.id}/template-weeks/${twId}`);
-    if (selectedTWId === twId) setSelectedTWId(null);
+    if (selectedTWId === twId) onSelectedTWChange(null);
     await onRefresh(); setDeleteConfirm(null);
   };
 
@@ -546,7 +793,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
     setTWSaving(true);
     try {
       const created = await api.post<TemplateWeek>(`/seasons/${season.id}/template-weeks/copy`, { sourceTemplateWeekId: copySourceTWId });
-      setSelectedTWId(created.id);
+      onSelectedTWChange(created.id);
       await onRefresh(); setCopyModal(false);
     } catch (err) { console.error('handleCopy error:', err); }
     finally { setTWSaving(false); }
@@ -619,10 +866,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
     }
   };
 
-  const duration = (s: string, e: string) => {
-    const m = timeToMin(e) - timeToMin(s);
-    return m >= 60 ? `${Math.floor(m/60)}h${m%60 ? String(m%60).padStart(2,'0') : ''}` : `${m}min`;
-  };
+  // duration() est défini au niveau module
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -648,7 +892,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
             const isSelected = (selectedTW?.id || templateWeeks[0]?.id) === tw.id;
             return (
               <div key={tw.id}
-                onClick={() => setSelectedTWId(tw.id)}
+                onClick={() => onSelectedTWChange(tw.id)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer border-2 transition-colors ${
                   isSelected ? 'border-tennis-green bg-tennis-green/5' : 'border-transparent hover:border-gray-100 bg-white'
                 }`}
@@ -702,11 +946,21 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
                     <div key={di}>
                       <div className="text-xs font-semibold text-gray-400 uppercase mb-1 px-1">{day}</div>
                       {dayCourses.map(c => {
-                        const teacher = users.find(u => u.id === c.teacherId);
+                        const teacher    = users.find(u => u.id === c.teacherId);
+                        const conflict   = isConflictingCourse(c, dayCourses);
+                        const cColor     = courseColor(c.id);
                         return (
-                          <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 bg-white rounded-xl border border-gray-100 hover:shadow-sm mb-1.5">
+                          <div key={c.id} className={`flex items-center gap-3 px-4 py-2.5 bg-white rounded-xl border hover:shadow-sm mb-1.5 ${conflict ? 'border-yellow-300' : 'border-gray-100'}`}>
+                            <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: cColor }} />
                             <div className="flex-1 min-w-0">
-                              <div className="font-medium text-gray-800 text-sm truncate">{c.label}</div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium text-gray-800 text-sm truncate">{c.label}</span>
+                                {conflict && (
+                                  <span title="Conflit d'agenda">
+                                    <AlertTriangle size={13} className="text-yellow-500 flex-shrink-0" />
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-xs text-gray-400">
                                 {c.startTime} – {c.endTime} · {duration(c.startTime, c.endTime)}
                                 {teacher && ` · ${teacher.firstName} ${teacher.lastName}`}
@@ -921,6 +1175,7 @@ export default function SeasonDetail() {
   const [allSeasons, setAllSeasons] = useState<Season[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'calendar' | 'template-weeks'>('calendar');
+  const [panelSelectedTWId, setPanelSelectedTWId] = useState<string | null>(null);
 
   // Status edit
   const [statusEditing, setStatusEditing] = useState(false);
@@ -960,6 +1215,11 @@ export default function SeasonDetail() {
     if (!id || !nameVal.trim()) return;
     const updated = await api.put<Season>(`/seasons/${id}`, { name: nameVal });
     setSeason(updated); setNameEditing(false);
+  };
+
+  const handleEditTemplateWeek = (twId: string) => {
+    setPanelSelectedTWId(twId);
+    setActiveTab('template-weeks');
   };
 
   if (loading) return <div className="p-8 text-center text-gray-400">Chargement…</div>;
@@ -1046,6 +1306,8 @@ export default function SeasonDetail() {
           assignments={assignments}
           users={users}
           onAssign={handleAssign}
+          onRefresh={loadData}
+          onEditTemplateWeek={handleEditTemplateWeek}
         />
       </div>
 
@@ -1056,6 +1318,8 @@ export default function SeasonDetail() {
           users={users}
           allSeasons={allSeasons}
           onRefresh={loadData}
+          selectedTWId={panelSelectedTWId}
+          onSelectedTWChange={setPanelSelectedTWId}
         />
       </div>
     </div>
