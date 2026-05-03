@@ -542,32 +542,40 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
 
       // Déduplication par couple (startDate, endDate)
       const seen = new Set<string>();
-      const holidays: SchoolHoliday[] = [];
+      const rawHolidays: SchoolHoliday[] = [];
       for (const r of (data.results || [])) {
         const sd = String(r.start_date || '').substring(0, 10);
         const ed = String(r.end_date   || '').substring(0, 10);
         const key = `${sd}_${ed}`;
         if (sd && ed && !seen.has(key)) {
           seen.add(key);
-          holidays.push({ label: r.description || 'Vacances scolaires', startDate: sd, endDate: ed });
+          rawHolidays.push({ label: r.description || 'Vacances scolaires', startDate: sd, endDate: ed });
         }
       }
 
-      // Calcul côté navigateur : toutes les semaines de la saison hors congés Zone C
+      // Correction : les "Vacances d'été" n'ont pas de date de fin explicite dans le
+      // jeu de données (end_date = start_date). On les étend jusqu'à la fin de la saison.
+      // Critère : end_date <= start_date ET start_date >= 1er juin de l'année de fin de saison.
+      const summerThreshold = season.endDate.substring(0, 4) + '-06-01';
+      const holidays: SchoolHoliday[] = rawHolidays.map(h =>
+        (h.endDate <= h.startDate && h.startDate >= summerThreshold)
+          ? { ...h, endDate: season.endDate }
+          : h
+      );
+
+      // Règle d'exclusion : une semaine est "de congés" si son LUNDI tombe dans une
+      // période de congés (pas un test de chevauchement). Cela évite d'exclure les
+      // semaines partielles où l'école a lieu du lundi au jeudi (congés le vendredi).
       const allWeeks = getSeasonWeeks(season.startDate, season.endDate);
       const nonHolidayDates = allWeeks
         .filter(w => {
-          const wEnd = addDays(w, 6);
-          return !holidays.some(h => {
-            // Comparaison sur chaînes ISO YYYY-MM-DD — pas d'ambiguïté timezone
-            const wStartStr = isoDate(w);
-            const wEndStr   = isoDate(wEnd);
-            return wStartStr <= h.endDate && wEndStr >= h.startDate;
-          });
+          const mondayStr = isoDate(w);
+          return !holidays.some(h => mondayStr >= h.startDate && mondayStr <= h.endDate);
         })
         .map(w => isoDate(w));
 
-      console.log(`[Zone C] ${holidays.length} période(s) de congés, ${nonHolidayDates.length} semaines à affecter`);
+      console.log(`[Zone C] ${holidays.length} période(s) de congés :`, holidays.map(h => `${h.label} (${h.startDate} → ${h.endDate})`));
+      console.log(`[Zone C] ${nonHolidayDates.length} semaines à affecter sur ${allWeeks.length} au total`);
 
       const result = await api.post<{ assignedWeeks: number }>(
         `/seasons/${season.id}/assignments/apply-rule`,
