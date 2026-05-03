@@ -32,7 +32,15 @@ function getMonday(date: Date): Date {
   return d;
 }
 
-function isoDate(d: Date): string { return d.toISOString().substring(0, 10); }
+function isoDate(d: Date): string {
+  // Utilise les getters locaux (pas toISOString qui repasse en UTC) pour éviter
+  // qu'un lundi à 00h00 heure française (UTC+1/+2) n'apparaisse comme le dimanche
+  // précédent en UTC et soit comparé à tort à la fin d'une période de vacances.
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
 
 function getSeasonWeeks(startDate: string, endDate: string): Date[] {
   const weeks: Date[] = [];
