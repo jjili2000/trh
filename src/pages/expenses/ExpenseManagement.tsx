@@ -162,6 +162,7 @@ export default function ExpenseManagement() {
     if (!form.date) { setFormError('La date est obligatoire.'); return; }
     if (isNaN(amount) || amount <= 0) { setFormError('Le montant doit être supérieur à 0.'); return; }
     if (!form.reason.trim()) { setFormError('Le motif est obligatoire.'); return; }
+    if (!form.receiptFile) { setFormError('Le justificatif est obligatoire.'); return; }
 
     const expenseData = {
       userId: currentUser!.id,
@@ -464,7 +465,7 @@ export default function ExpenseManagement() {
             </div>
 
             <div>
-              <label className="label">Justificatif (optionnel)</label>
+              <label className="label">Justificatif *</label>
               <div
                 onClick={() => fileInputRef.current?.click()}
                 className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center cursor-pointer hover:border-tennis-green hover:bg-tennis-green/5 transition-colors"
