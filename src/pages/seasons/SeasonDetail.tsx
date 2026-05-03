@@ -101,8 +101,10 @@ function duration(s: string, e: string): string {
 }
 
 function isConflictingCourse(course: TemplateCourse, allCourses: TemplateCourse[]): boolean {
+  if (!course.teacherId) return false; // pas d'enseignant → pas de conflit détectable
   return allCourses.some(o =>
     o.id !== course.id &&
+    o.teacherId === course.teacherId &&   // même enseignant
     timeToMin(o.startTime) < timeToMin(course.endTime) &&
     timeToMin(o.endTime)   > timeToMin(course.startTime),
   );
