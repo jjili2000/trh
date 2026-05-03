@@ -89,9 +89,10 @@ function groupByMonth(weeks: Date[]): Map<string, Date[]> {
   return map;
 }
 
-function courseColor(courseId: string): string {
+function userColor(userId: string | null): string {
+  if (!userId) return '#94a3b8'; // slate-400 — cours sans enseignant
   let h = 0;
-  for (let i = 0; i < courseId.length; i++) h = (h * 31 + courseId.charCodeAt(i)) & 0x7fffffff;
+  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) & 0x7fffffff;
   return COURSE_COLORS[h % COURSE_COLORS.length];
 }
 
@@ -246,7 +247,7 @@ function WeekTimeGrid({ templateWeek, monday, users, onEditCourse, onAddCourse }
                 const teacher    = users.find(u => u.id === c.teacherId);
                 const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : null;
                 const pct        = 100 / totalCols;
-                const bg         = courseColor(c.id);
+                const bg         = userColor(c.teacherId);
                 return (
                   <div key={c.id}
                     className={`absolute z-10 rounded p-1 overflow-hidden text-white text-xs select-none
@@ -950,7 +951,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
                       {dayCourses.map(c => {
                         const teacher    = users.find(u => u.id === c.teacherId);
                         const conflict   = isConflictingCourse(c, dayCourses);
-                        const cColor     = courseColor(c.id);
+                        const cColor     = userColor(c.teacherId);
                         return (
                           <div key={c.id} className={`flex items-center gap-3 px-4 py-2.5 bg-white rounded-xl border hover:shadow-sm mb-1.5 ${conflict ? 'border-yellow-300' : 'border-gray-100'}`}>
                             <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: cColor }} />
