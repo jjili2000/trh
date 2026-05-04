@@ -77,6 +77,12 @@ function fmtFull(d: Date): string {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+// ISO day of week: 1=Mon … 7=Sun
+function getDayOfWeek(d: Date): number {
+  const day = d.getDay();
+  return day === 0 ? 7 : day;
+}
+
 // Group weeks by month (using Wednesday's month)
 function groupByMonth(weeks: Date[]): Map<string, Date[]> {
   const map = new Map<string, Date[]>();
@@ -166,16 +172,17 @@ function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCours
   }));
 }
 
-function WeekTimeGrid({ templateWeek, monday, users, onEditCourse, onAddCourse }: {
+function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, onEditCourse, onAddCourse }: {
   templateWeek: TemplateWeek | null;
-  monday: Date;
+  startDay: Date;
+  numDays?: number;
   users: User[];
   onEditCourse?: (course: TemplateCourse) => void;
   onAddCourse?:  (dayOfWeek: number, startTime: string) => void;
 }) {
   const totalSlots = (END_HOUR - START_HOUR) * 2;
   const totalH     = totalSlots * SLOT_H;
-  const days       = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const days       = Array.from({ length: numDays }, (_, i) => addDays(startDay, i));
 
   // Tooltip
   const [tooltip, setTooltip] = useState<{
@@ -228,7 +235,7 @@ function WeekTimeGrid({ templateWeek, monday, users, onEditCourse, onAddCourse }
 
         {/* Day columns */}
         {days.map((_, di) => {
-          const dayCourses = templateWeek?.courses.filter(c => c.dayOfWeek === di + 1) || [];
+          const dayCourses = templateWeek?.courses.filter(c => c.dayOfWeek === getDayOfWeek(days[di])) || [];
           return (
             <div key={di} className="flex-1 min-w-20 relative border-l border-gray-100" style={{ height: totalH }}>
               {/* Hour grid lines */}
@@ -316,8 +323,8 @@ function WeekTimeGrid({ templateWeek, monday, users, onEditCourse, onAddCourse }
 
 // ─── Calendar View ────────────────────────────────────────────────────────────
 
-type ViewMode = 'year' | 'week';
-const VIEW_LABELS: Record<ViewMode, string> = { year: 'Année', week: 'Semaine' };
+type ViewMode = 'year' | 'week' | 'day';
+const VIEW_LABELS: Record<ViewMode, string> = { year: 'Année', week: 'Semaine', day: 'Jour' };
 
 function CalendarView({ season, templateWeeks, assignments, users, onAssign, onRefresh, onEditTemplateWeek }: {
   season: Season;
@@ -330,6 +337,13 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>('year');
   const [weekIdx, setWeekIdx]   = useState(0);
+  const [dayDate, setDayDate]   = useState<Date>(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const s = isoDate(today);
+    return s >= season.startDate && s <= season.endDate
+      ? today
+      : new Date(season.startDate + 'T00:00:00');
+  });
   const [assignModal, setAssignModal] = useState<{ weekDate: Date; current: string | null } | null>(null);
   const [assigning, setAssigning]     = useState(false);
 
@@ -343,14 +357,54 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   const [calCourseError, setCalCourseError] = useState('');
   const [calCourseSaving, setCalCourseSaving] = useState(false);
 
-  const allWeeks      = getSeasonWeeks(season.startDate, season.endDate);
-  const assignMap     = Object.fromEntries(assignments.map(a => [a.weekStartDate, a.templateWeekId]));
-  const twColorMap    = Object.fromEntries(templateWeeks.map((tw, i) => [tw.id, TW_COLORS[i % TW_COLORS.length]]));
+  const allWeeks       = getSeasonWeeks(season.startDate, season.endDate);
+  const assignMap      = Object.fromEntries(assignments.map(a => [a.weekStartDate, a.templateWeekId]));
+  const twColorMap     = Object.fromEntries(templateWeeks.map((tw, i) => [tw.id, TW_COLORS[i % TW_COLORS.length]]));
   const allMonthGroups = groupByMonth(allWeeks);
   const allMonthKeys   = Array.from(allMonthGroups.keys());
 
+  // Week view
+  const currentWeek = allWeeks[weekIdx] || allWeeks[0];
+  const currentTWId = currentWeek ? assignMap[isoDate(currentWeek)] : null;
+  const currentTW   = templateWeeks.find(tw => tw.id === currentTWId) || null;
+
+  // Day view
+  const dayMonday = getMonday(dayDate);
+  const dayTWId   = assignMap[isoDate(dayMonday)] || null;
+  const dayTW     = templateWeeks.find(tw => tw.id === dayTWId) || null;
+
+  // Active TW (used by course handlers)
+  const activeTW = viewMode === 'day' ? dayTW : currentTW;
+
+  // Today helpers
+  const todayDate = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+  const todayInSeason = isoDate(todayDate) >= season.startDate && isoDate(todayDate) <= season.endDate;
+
   const navigateWeek = (dir: 1 | -1) =>
     setWeekIdx(i => Math.max(0, Math.min(allWeeks.length - 1, i + dir)));
+
+  const navigateDay = (dir: 1 | -1) => {
+    setDayDate(d => {
+      const next = addDays(d, dir);
+      const s = isoDate(next);
+      return s >= season.startDate && s <= season.endDate ? next : d;
+    });
+  };
+
+  const goToToday = () => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (!todayInSeason) return;
+    if (viewMode === 'week') {
+      const idx = allWeeks.findIndex(w => isoDate(w) === isoDate(getMonday(today)));
+      if (idx !== -1) setWeekIdx(idx);
+    } else if (viewMode === 'day') {
+      setDayDate(today);
+    } else {
+      // Year view → switch to day view at today
+      setDayDate(today);
+      setViewMode('day');
+    }
+  };
 
   const handleAssign = async (twId: string | null) => {
     if (!assignModal || assigning) return;
@@ -360,24 +414,20 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
     setAssigning(false);
   };
 
-  const currentWeek = allWeeks[weekIdx] || allWeeks[0];
-  const currentTWId = currentWeek ? assignMap[isoDate(currentWeek)] : null;
-  const currentTW   = templateWeeks.find(tw => tw.id === currentTWId) || null;
-
-  // Course handlers
+  // Course handlers — use activeTW (works for both week and day views)
   const handleEditCourse = (course: TemplateCourse) => {
-    if (!currentTW) return;
+    if (!activeTW) return;
     setCalCourseForm({
       label: course.label, dayOfWeek: course.dayOfWeek,
       startTime: course.startTime, endTime: course.endTime,
       teacherId: course.teacherId || '',
     });
     setCalCourseError('');
-    setCalCourseModal({ tw: currentTW, editing: course });
+    setCalCourseModal({ tw: activeTW, editing: course });
   };
 
   const handleAddCourse = (dayOfWeek: number, startTime: string) => {
-    if (!currentTW) return;
+    if (!activeTW) return;
     const endMin = Math.min(timeToMin(startTime) + 60, END_HOUR * 60);
     const endH   = Math.floor(endMin / 60);
     const endM   = endMin % 60;
@@ -387,7 +437,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
       teacherId: '',
     });
     setCalCourseError('');
-    setCalCourseModal({ tw: currentTW, editing: null });
+    setCalCourseModal({ tw: activeTW, editing: null });
   };
 
   const saveCalCourse = async (e: FormEvent) => {
@@ -421,8 +471,9 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
     <div>
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
+        {/* View mode selector */}
         <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-          {(['year', 'week'] as ViewMode[]).map(v => (
+          {(['year', 'week', 'day'] as ViewMode[]).map(v => (
             <button key={v} onClick={() => setViewMode(v)}
               className={`px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === v ? 'bg-tennis-green text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
               {VIEW_LABELS[v]}
@@ -430,6 +481,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
           ))}
         </div>
 
+        {/* Navigation week */}
         {viewMode === 'week' && (
           <div className="flex items-center gap-2">
             <button onClick={() => navigateWeek(-1)} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronLeft size={16} /></button>
@@ -441,6 +493,26 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
             <button onClick={() => navigateWeek(1)} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronRight size={16} /></button>
           </div>
         )}
+
+        {/* Navigation jour */}
+        {viewMode === 'day' && (
+          <div className="flex items-center gap-2">
+            <button onClick={() => navigateDay(-1)} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronLeft size={16} /></button>
+            <span className="text-sm font-medium text-gray-700 min-w-52 text-center capitalize">
+              {dayDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </span>
+            <button onClick={() => navigateDay(1)} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronRight size={16} /></button>
+          </div>
+        )}
+
+        {/* Aujourd'hui */}
+        <button
+          onClick={goToToday}
+          disabled={!todayInSeason}
+          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Aujourd'hui
+        </button>
 
         {/* Legend */}
         {templateWeeks.length > 0 && (
@@ -482,7 +554,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
           {currentTW ? (
             <WeekTimeGrid
               templateWeek={currentTW}
-              monday={currentWeek}
+              startDay={currentWeek}
               users={users}
               onEditCourse={handleEditCourse}
               onAddCourse={handleAddCourse}
@@ -493,6 +565,53 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               <p>Aucune semaine type affectée à cette semaine.</p>
               <button onClick={() => setAssignModal({ weekDate: currentWeek, current: null })}
                 className="mt-3 text-sm text-tennis-green hover:underline">
+                Affecter une semaine type
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Day view ──────────────────────────────────────────────────────────── */}
+      {viewMode === 'day' && (
+        <div>
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            {dayTW ? (
+              <button
+                className="text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
+                style={{ backgroundColor: twColorMap[dayTW.id] }}
+                onClick={() => onEditTemplateWeek(dayTW.id)}
+                title="Modifier cette semaine type"
+              >
+                {dayTW.label}
+              </button>
+            ) : (
+              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">Non planifiée</span>
+            )}
+            <button
+              onClick={() => setAssignModal({ weekDate: dayMonday, current: dayTWId })}
+              className="ml-auto text-xs text-tennis-green hover:underline"
+            >
+              Modifier affectation
+            </button>
+          </div>
+          {dayTW ? (
+            <WeekTimeGrid
+              templateWeek={dayTW}
+              startDay={dayDate}
+              numDays={1}
+              users={users}
+              onEditCourse={handleEditCourse}
+              onAddCourse={handleAddCourse}
+            />
+          ) : (
+            <div className="card text-center py-12 text-gray-400">
+              <Calendar size={36} className="mx-auto mb-3 opacity-30" />
+              <p>Aucune semaine type affectée pour cette semaine.</p>
+              <button
+                onClick={() => setAssignModal({ weekDate: dayMonday, current: null })}
+                className="mt-3 text-sm text-tennis-green hover:underline"
+              >
                 Affecter une semaine type
               </button>
             </div>
@@ -533,9 +652,12 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                               return dc.some(c => isConflictingCourse(c, dc));
                             })
                           : false;
+                        const isThisWeek = isoDate(w) === isoDate(getMonday(todayDate));
                         return (
-                          <tr key={wKey} className="hover:bg-gray-50">
-                            <td className="px-4 py-2.5 text-gray-400 font-mono text-xs">{getWeekNum(w)}</td>
+                          <tr key={wKey} className={`hover:bg-gray-50 ${isThisWeek ? 'bg-tennis-green/5' : ''}`}>
+                            <td className={`px-4 py-2.5 font-mono text-xs ${isThisWeek ? 'text-tennis-green font-bold' : 'text-gray-400'}`}>
+                              {getWeekNum(w)}{isThisWeek && ' ●'}
+                            </td>
                             <td
                               className="px-4 py-2.5 text-gray-600 cursor-pointer"
                               onClick={() => setAssignModal({ weekDate: w, current: twId })}
