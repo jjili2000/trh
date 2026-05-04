@@ -392,17 +392,18 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   };
 
   const goToToday = () => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
     if (!todayInSeason) return;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     if (viewMode === 'week') {
       const idx = allWeeks.findIndex(w => isoDate(w) === isoDate(getMonday(today)));
       if (idx !== -1) setWeekIdx(idx);
     } else if (viewMode === 'day') {
       setDayDate(today);
     } else {
-      // Year view → switch to day view at today
-      setDayDate(today);
-      setViewMode('day');
+      // Year view : scroll jusqu'à la ligne de la semaine courante
+      setTimeout(() => {
+        document.getElementById('cal-today-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 0);
     }
   };
 
@@ -654,7 +655,8 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                           : false;
                         const isThisWeek = isoDate(w) === isoDate(getMonday(todayDate));
                         return (
-                          <tr key={wKey} className={`hover:bg-gray-50 ${isThisWeek ? 'bg-tennis-green/5' : ''}`}>
+                          <tr key={wKey} id={isThisWeek ? 'cal-today-row' : undefined}
+                            className={`hover:bg-gray-50 ${isThisWeek ? 'bg-tennis-green/5' : ''}`}>
                             <td className={`px-4 py-2.5 font-mono text-xs ${isThisWeek ? 'text-tennis-green font-bold' : 'text-gray-400'}`}>
                               {getWeekNum(w)}{isThisWeek && ' ●'}
                             </td>
