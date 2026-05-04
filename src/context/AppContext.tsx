@@ -24,10 +24,14 @@ interface AppContextType {
   documents: HRDocument[];
   appSettings: AppSettings;
   loading: boolean;
+  notifCount: number;
 
   // Auth
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
+
+  // Notifications
+  refreshNotifCount: () => Promise<void>;
 
   // Users
   addUser: (user: Omit<User, 'id' | 'createdAt'>) => Promise<void>;
@@ -88,6 +92,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<HRDocument[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultSettings);
   const [loading, setLoading] = useState<boolean>(true);
+  const [notifCount, setNotifCount] = useState<number>(0);
 
   // ── Data Loading ─────────────────────────────────────────────────────────────
 
@@ -120,6 +125,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setExpenses(fetchedExpenses);
       setDocuments(fetchedDocuments);
       setAppSettings(fetchedSettings);
+      try {
+        const { unreadCount } = await api.get<{ unreadCount: number }>('/notifications');
+        setNotifCount(unreadCount);
+      } catch {
+        // ignore notification errors
+      }
     } catch (err) {
       console.error('Failed to load data:', err);
     }
@@ -170,6 +181,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setExpenses([]);
     setDocuments([]);
     setAppSettings(defaultSettings);
+    setNotifCount(0);
+  };
+
+  const refreshNotifCount = async () => {
+    try {
+      const { unreadCount } = await api.get<{ unreadCount: number }>('/notifications');
+      setNotifCount(unreadCount);
+    } catch {
+      // ignore
+    }
   };
 
   // ── Users ────────────────────────────────────────────────────────────────────
@@ -357,8 +378,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         documents,
         appSettings,
         loading,
+        notifCount,
         login,
         logout,
+        refreshNotifCount,
         addUser,
         updateUser,
         deleteUser,

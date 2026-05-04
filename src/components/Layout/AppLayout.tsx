@@ -13,6 +13,8 @@ import {
   Menu,
   X,
   GraduationCap,
+  Wallet,
+  Bell,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -30,16 +32,18 @@ const roleLabels: Record<string, string> = {
   admin: 'Administrateur',
   manager: 'Manager',
   user: 'Utilisateur',
+  treasurer: 'Trésorier',
 };
 
 const roleBadgeColors: Record<string, string> = {
   admin: 'bg-purple-100 text-purple-700',
   manager: 'bg-blue-100 text-blue-700',
   user: 'bg-gray-100 text-gray-600',
+  treasurer: 'bg-yellow-100 text-yellow-700',
 };
 
 export default function AppLayout() {
-  const { currentUser, logout, appSettings } = useApp();
+  const { currentUser, logout, appSettings, notifCount } = useApp();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -87,6 +91,11 @@ export default function AppLayout() {
         <NavLink to="/absences" className={navLinkClass} onClick={closeSidebar}>
           <Calendar size={18} />
           Absences
+        </NavLink>
+
+        <NavLink to="/budget" className={navLinkClass} onClick={closeSidebar}>
+          <Wallet size={18} />
+          Budget
         </NavLink>
 
         <NavLink to="/expenses" className={navLinkClass} onClick={closeSidebar}>
@@ -148,6 +157,18 @@ export default function AppLayout() {
             </span>
           </div>
         </div>
+        <button
+          onClick={() => navigate('/notifications')}
+          className="relative w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg text-sm transition-colors mb-1"
+        >
+          <Bell size={16} />
+          Notifications
+          {notifCount > 0 && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              {notifCount > 99 ? '99+' : notifCount}
+            </span>
+          )}
+        </button>
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"

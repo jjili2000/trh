@@ -27,6 +27,8 @@ app.use('/api/documents', require('./middleware/auth'), require('./routes/docume
 app.use('/api/positions',       require('./middleware/auth'), require('./routes/positions'));
 app.use('/api/seasons',         require('./middleware/auth'), require('./routes/seasons'));
 app.use('/api/school-holidays', require('./middleware/auth'), require('./routes/schoolHolidays'));
+app.use('/api/budgets',         require('./middleware/auth'), require('./routes/budgets'));
+app.use('/api/notifications',   require('./middleware/auth'), require('./routes/notifications'));
 
 // Serve React frontend in production
 const distPath = path.join(__dirname, '../dist');

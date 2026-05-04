@@ -7,12 +7,14 @@ const roleLabels: Record<UserRole, string> = {
   admin: 'Administrateur',
   manager: 'Manager',
   user: 'Utilisateur',
+  treasurer: 'Trésorier',
 };
 
 const roleBadgeColors: Record<UserRole, string> = {
   admin: 'bg-purple-100 text-purple-700',
   manager: 'bg-blue-100 text-blue-700',
   user: 'bg-gray-100 text-gray-600',
+  treasurer: 'bg-yellow-100 text-yellow-700',
 };
 
 interface UserFormData {
@@ -343,6 +345,7 @@ export default function UserManagement() {
               >
                 <option value="user">Utilisateur</option>
                 <option value="manager">Manager</option>
+                <option value="treasurer">Trésorier</option>
                 <option value="admin">Administrateur</option>
               </select>
             </div>

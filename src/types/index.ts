@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'user';
+export type UserRole = 'admin' | 'manager' | 'user' | 'treasurer';
 
 export interface User {
   id: string;
@@ -131,4 +131,54 @@ export interface HRDocument {
   uploadedBy: string;
   validatedAt?: string;
   createdAt: string;
+}
+
+// ─── Budget ───────────────────────────────────────────────────────────────────
+
+export type BudgetRequestStatus = 'draft' | 'submitted' | 'approved' | 'cancelled';
+export type RealBudgetStatus = 'active' | 'closed';
+export type BudgetLineType = 'income' | 'expense';
+
+export interface BudgetRequestLine {
+  id: string; requestId: string; type: BudgetLineType;
+  label: string; amount: number; sortOrder: number; createdAt: string;
+}
+
+export interface BudgetRequest {
+  id: string; userId: string; label: string;
+  startDate: string; endDate: string; comment: string | null;
+  status: BudgetRequestStatus; approverId: string | null;
+  approverComment: string | null; approvedAt: string | null;
+  createdAt: string; updatedAt: string; lines?: BudgetRequestLine[];
+  realBudgetId?: string;
+}
+
+export interface BudgetLineDetail {
+  id: string; lineId: string; detailDate: string; label: string;
+  paymentMethod: string; amount: number;
+  receiptFile: string | null; receiptFileName: string | null; receiptFileType: string | null;
+  userId: string; createdAt: string;
+}
+
+export interface RealBudgetLine {
+  id: string; realBudgetId: string; sourceLineId: string | null;
+  type: BudgetLineType; label: string; forecastAmount: number;
+  sortOrder: number; createdAt: string; details?: BudgetLineDetail[];
+}
+
+export interface BudgetAccessGrant {
+  id: string; userId: string; grantedBy: string;
+  userName: string; userEmail: string; createdAt?: string;
+}
+
+export interface RealBudget {
+  id: string; requestId: string; userId: string; label: string;
+  startDate: string; endDate: string; status: RealBudgetStatus;
+  createdAt: string; lines?: RealBudgetLine[]; accessGrants?: BudgetAccessGrant[];
+}
+
+export interface AppNotification {
+  id: string; type: string; title: string; body: string | null;
+  refType: string | null; refId: string | null;
+  readAt: string | null; createdAt: string;
 }
