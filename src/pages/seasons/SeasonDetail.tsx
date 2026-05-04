@@ -214,7 +214,7 @@ function WeekTimeGrid({ templateWeek, monday, users, onEditCourse, onAddCourse }
                   style={{ top: (i + 1) * 60 * (SLOT_H / 30) }} />
               ))}
 
-              {/* Clickable 30-min slots — behind courses (z-0) */}
+              {/* Right-gutter add-course strips (20 px) — one per 30-min slot, z-20 */}
               {onAddCourse && Array.from({ length: totalSlots }, (_, si) => {
                 const startMin = START_HOUR * 60 + si * 30;
                 const h = Math.floor(startMin / 60);
@@ -223,39 +223,32 @@ function WeekTimeGrid({ templateWeek, monday, users, onEditCourse, onAddCourse }
                 const isHov   = hoverSlot?.day === di + 1 && hoverSlot.slotIndex === si;
                 return (
                   <div key={si}
-                    className={`absolute inset-x-0 z-0 cursor-crosshair transition-colors ${isHov ? 'bg-tennis-green/5' : ''}`}
-                    style={{ top: si * SLOT_H, height: SLOT_H }}
+                    className={`absolute right-0 z-20 flex items-center justify-center cursor-pointer transition-colors ${isHov ? 'bg-tennis-green/10' : ''}`}
+                    style={{ top: si * SLOT_H, height: SLOT_H, width: 20 }}
                     onMouseEnter={() => setHoverSlot({ day: di + 1, slotIndex: si, time: timeStr })}
                     onMouseLeave={() => setHoverSlot(null)}
                     onClick={() => onAddCourse(di + 1, timeStr)}
                   >
-                    {isHov && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-4 h-4 rounded-full bg-tennis-green/40 flex items-center justify-center">
-                          <Plus size={9} className="text-tennis-green" />
-                        </div>
-                      </div>
-                    )}
+                    {isHov && <Plus size={11} className="text-tennis-green" />}
                   </div>
                 );
               })}
 
-              {/* Course blocks — above slots (z-10) */}
+              {/* Course blocks — leave 20 px right gutter free */}
               {layoutCourses(dayCourses).map(({ course: c, col, totalCols, isConflict }) => {
-                const top        = (timeToMin(c.startTime) - START_HOUR * 60) * (SLOT_H / 30);
-                const height     = (timeToMin(c.endTime)   - timeToMin(c.startTime)) * (SLOT_H / 30);
-                const teacher    = users.find(u => u.id === c.teacherId);
+                const top         = (timeToMin(c.startTime) - START_HOUR * 60) * (SLOT_H / 30);
+                const height      = (timeToMin(c.endTime)   - timeToMin(c.startTime)) * (SLOT_H / 30);
+                const teacher     = users.find(u => u.id === c.teacherId);
                 const teacherName = teacher ? `${teacher.firstName} ${teacher.lastName}` : null;
-                const pct        = 100 / totalCols;
-                const bg         = userColor(c.teacherId);
+                const bg          = userColor(c.teacherId);
                 return (
                   <div key={c.id}
                     className={`absolute z-10 rounded p-1 overflow-hidden text-white text-xs select-none
                       ${onEditCourse ? 'cursor-pointer hover:brightness-110 active:brightness-90' : ''}`}
                     style={{
                       top: top + 1, height: height - 2,
-                      left: `calc(${col * pct}% + 2px)`,
-                      width: `calc(${pct}% - 4px)`,
+                      left:  `calc(${col} * (100% - 20px) / ${totalCols} + 2px)`,
+                      width: `calc((100% - 20px) / ${totalCols} - 4px)`,
                       backgroundColor: bg,
                     }}
                     onMouseEnter={() => showTooltip(c, teacherName, isConflict)}
