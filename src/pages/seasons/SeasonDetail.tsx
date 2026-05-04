@@ -130,7 +130,11 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 // ─── Week time grid ───────────────────────────────────────────────────────────
 
 function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCourse; col: number; totalCols: number; isConflict: boolean }> {
+  if (!courses.length) return [];
+
   const sorted = [...courses].sort((a, b) => timeToMin(a.startTime) - timeToMin(b.startTime));
+
+  // Assign columns (greedy packing)
   const colEnds: number[] = [];
   const assignments = sorted.map(c => {
     const start = timeToMin(c.startTime);
@@ -139,8 +143,27 @@ function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCours
     colEnds[col] = timeToMin(c.endTime);
     return { course: c, col };
   });
-  const totalCols = colEnds.length || 1;
-  return assignments.map(a => ({ ...a, totalCols, isConflict: isConflictingCourse(a.course, courses) }));
+
+  // Compute totalCols PER COURSE = max simultaneous active courses during that course.
+  // Using only the start times of overlapping courses as check points (sufficient for intervals).
+  const localTotalCols = (c: TemplateCourse): number => {
+    const cStart = timeToMin(c.startTime);
+    const cEnd   = timeToMin(c.endTime);
+    const overlapping = courses.filter(o =>
+      timeToMin(o.startTime) < cEnd && timeToMin(o.endTime) > cStart,
+    );
+    if (overlapping.length <= 1) return 1;
+    const checkTimes = overlapping.map(o => timeToMin(o.startTime));
+    return Math.max(...checkTimes.map(t =>
+      overlapping.filter(o => timeToMin(o.startTime) <= t && timeToMin(o.endTime) > t).length,
+    ));
+  };
+
+  return assignments.map(a => ({
+    ...a,
+    totalCols: localTotalCols(a.course),
+    isConflict: isConflictingCourse(a.course, courses),
+  }));
 }
 
 function WeekTimeGrid({ templateWeek, monday, users, onEditCourse, onAddCourse }: {
