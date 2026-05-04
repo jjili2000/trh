@@ -68,7 +68,6 @@ function AppRoutes() {
         <Route path="seasons" element={<AdminRoute><SeasonList /></AdminRoute>} />
         <Route path="seasons/:id" element={<AdminRoute><SeasonDetail /></AdminRoute>} />
         <Route path="budget" element={<BudgetList />} />
-        <Route path="budget/requests/new" element={<BudgetRequestDetail />} />
         <Route path="budget/requests/:id" element={<BudgetRequestDetail />} />
         <Route path="budget/real/:id" element={<RealBudgetDetail />} />
         <Route path="notifications" element={<NotificationsPage />} />
