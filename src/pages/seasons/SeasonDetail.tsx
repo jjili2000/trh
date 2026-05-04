@@ -549,7 +549,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
             )}
             <button onClick={() => setAssignModal({ weekDate: currentWeek, current: currentTWId })}
               className="ml-auto text-xs text-tennis-green hover:underline">
-              Modifier affectation
+              Modifier type de semaine
             </button>
           </div>
           {currentTW ? (
@@ -593,7 +593,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               onClick={() => setAssignModal({ weekDate: dayMonday, current: dayTWId })}
               className="ml-auto text-xs text-tennis-green hover:underline"
             >
-              Modifier affectation
+              Modifier type de semaine
             </button>
           </div>
           {dayTW ? (
