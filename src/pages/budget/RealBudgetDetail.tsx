@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight,
@@ -29,7 +29,8 @@ interface DetailForm {
   detailDate: string;
   label: string;
   paymentMethod: string;
-  amount: string;
+  qty: string;
+  unitPrice: string;
   receiptFile: string | null;
   receiptFileName: string | null;
   receiptFileType: string | null;
@@ -39,7 +40,8 @@ const emptyDetailForm = (): DetailForm => ({
   detailDate: '',
   label: '',
   paymentMethod: 'Virement',
-  amount: '',
+  qty: '1',
+  unitPrice: '',
   receiptFile: null,
   receiptFileName: null,
   receiptFileType: null,
@@ -71,6 +73,7 @@ export default function RealBudgetDetail() {
   const [detailForm, setDetailForm] = useState<DetailForm>(emptyDetailForm());
   const [savingDetail, setSavingDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const labelRef = useRef<HTMLInputElement>(null);
 
   // Add line form
   const [showAddLine, setShowAddLine] = useState(false);
@@ -169,7 +172,8 @@ export default function RealBudgetDetail() {
       detailDate: detail.detailDate,
       label: detail.label,
       paymentMethod: detail.paymentMethod,
-      amount: String(detail.amount),
+      qty: '1',
+      unitPrice: String(detail.amount),
       receiptFile: detail.receiptFile,
       receiptFileName: detail.receiptFileName,
       receiptFileType: detail.receiptFileType,
@@ -196,10 +200,11 @@ export default function RealBudgetDetail() {
 
   const handleSaveDetail = async () => {
     if (!detailModal) return;
-    if (!detailForm.detailDate || !detailForm.label || !detailForm.paymentMethod || !detailForm.amount) {
+    if (!detailForm.detailDate || !detailForm.label || !detailForm.paymentMethod || !detailForm.unitPrice) {
       setDetailError('Tous les champs obligatoires doivent être remplis');
       return;
     }
+    const computedAmount = (parseFloat(detailForm.qty) || 0) * (parseFloat(detailForm.unitPrice) || 0);
     setSavingDetail(true);
     setDetailError(null);
     try {
@@ -207,7 +212,7 @@ export default function RealBudgetDetail() {
         detailDate: detailForm.detailDate,
         label: detailForm.label,
         paymentMethod: detailForm.paymentMethod,
-        amount: parseFloat(detailForm.amount),
+        amount: computedAmount,
         receiptFile: detailForm.receiptFile,
         receiptFileName: detailForm.receiptFileName,
         receiptFileType: detailForm.receiptFileType,
@@ -230,6 +235,7 @@ export default function RealBudgetDetail() {
             }),
           };
         });
+        setDetailModal(null);
       } else {
         const created = await api.post<BudgetLineDetail>(
           `/budgets/real/${id}/lines/${lineId}/details`, payload
@@ -245,8 +251,10 @@ export default function RealBudgetDetail() {
           };
         });
         setExpandedLines(prev => new Set([...prev, lineId]));
+        // Keep modal open, reset form, auto-focus label for next entry
+        setDetailForm(emptyDetailForm());
+        setTimeout(() => labelRef.current?.focus(), 50);
       }
-      setDetailModal(null);
     } catch {
       setDetailError('Erreur lors de l\'enregistrement');
     } finally {
@@ -654,10 +662,11 @@ export default function RealBudgetDetail() {
               <div>
                 <label className="label">Libellé *</label>
                 <input
+                  ref={labelRef}
                   className="input"
                   value={detailForm.label}
                   onChange={e => setDetailForm(prev => ({ ...prev, label: e.target.value }))}
-                  placeholder="Description"
+                  placeholder="Description de la dépense"
                 />
               </div>
               <div>
@@ -672,16 +681,41 @@ export default function RealBudgetDetail() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="label">Montant (€) *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="input"
-                  value={detailForm.amount}
-                  onChange={e => setDetailForm(prev => ({ ...prev, amount: e.target.value }))}
-                  placeholder="0.00"
-                />
+              <div className="flex gap-3">
+                <div className="w-24">
+                  <label className="label">Quantité</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    className="input"
+                    value={detailForm.qty}
+                    onChange={e => setDetailForm(prev => ({ ...prev, qty: e.target.value }))}
+                    placeholder="1"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="label">Prix unitaire (€) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="input"
+                    value={detailForm.unitPrice}
+                    onChange={e => setDetailForm(prev => ({ ...prev, unitPrice: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="w-28">
+                  <label className="label">Montant (€)</label>
+                  <input
+                    type="text"
+                    className="input bg-gray-50 text-gray-600 cursor-not-allowed"
+                    value={((parseFloat(detailForm.qty) || 0) * (parseFloat(detailForm.unitPrice) || 0)).toFixed(2)}
+                    readOnly
+                    tabIndex={-1}
+                  />
+                </div>
               </div>
               <div>
                 <label className="label">Justificatif (optionnel)</label>
