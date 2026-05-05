@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ExternalLink } from 'lucide-react';
 import { api } from '../../api/client';
@@ -20,10 +20,11 @@ function fmtCurrency(n: number) {
 interface NewLine {
   type: BudgetLineType;
   label: string;
-  amount: string;
+  qty: string;
+  unitPrice: string;
 }
 
-const emptyNewLine = (type: BudgetLineType): NewLine => ({ type, label: '', amount: '' });
+const emptyNewLine = (type: BudgetLineType): NewLine => ({ type, label: '', qty: '1', unitPrice: '' });
 
 export default function BudgetRequestDetail() {
   const { id } = useParams<{ id: string }>();
@@ -44,6 +45,8 @@ export default function BudgetRequestDetail() {
   const [error, setError] = useState<string | null>(null);
   const [returnModal, setReturnModal] = useState(false);
   const [returnComment, setReturnComment] = useState('');
+  const incomeLabelRef = useRef<HTMLInputElement>(null);
+  const expenseLabelRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (isNew) return;
@@ -179,32 +182,36 @@ export default function BudgetRequestDetail() {
 
   const addIncomeLine = () => {
     if (!newIncome.label) return;
+    const amount = (parseFloat(newIncome.qty) || 0) * (parseFloat(newIncome.unitPrice) || 0);
     const tempLine: BudgetRequestLine = {
       id: `tmp_${Date.now()}`,
       requestId: id || '',
       type: 'income',
       label: newIncome.label,
-      amount: parseFloat(newIncome.amount) || 0,
+      amount,
       sortOrder: lines.length,
       createdAt: new Date().toISOString(),
     };
     setLines(prev => [...prev, tempLine]);
     setNewIncome(emptyNewLine('income'));
+    setTimeout(() => incomeLabelRef.current?.focus(), 0);
   };
 
   const addExpenseLine = () => {
     if (!newExpense.label) return;
+    const amount = (parseFloat(newExpense.qty) || 0) * (parseFloat(newExpense.unitPrice) || 0);
     const tempLine: BudgetRequestLine = {
       id: `tmp_${Date.now()}`,
       requestId: id || '',
       type: 'expense',
       label: newExpense.label,
-      amount: parseFloat(newExpense.amount) || 0,
+      amount,
       sortOrder: lines.length,
       createdAt: new Date().toISOString(),
     };
     setLines(prev => [...prev, tempLine]);
     setNewExpense(emptyNewLine('expense'));
+    setTimeout(() => expenseLabelRef.current?.focus(), 0);
   };
 
   if (loading) {
@@ -347,9 +354,10 @@ export default function BudgetRequestDetail() {
           </table>
         )}
         {canEdit && (
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
+          <div className="flex gap-2 items-center flex-wrap">
+            <div className="flex-1 min-w-[160px]">
               <input
+                ref={incomeLabelRef}
                 className="input text-sm"
                 placeholder="Libellé de la recette"
                 value={newIncome.label}
@@ -357,14 +365,37 @@ export default function BudgetRequestDetail() {
                 onKeyDown={e => e.key === 'Enter' && addIncomeLine()}
               />
             </div>
+            <div className="w-20">
+              <input
+                type="number"
+                step="1"
+                min="0"
+                className="input text-sm"
+                placeholder="Qté"
+                value={newIncome.qty}
+                onChange={e => setNewIncome(prev => ({ ...prev, qty: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && addIncomeLine()}
+              />
+            </div>
             <div className="w-32">
               <input
                 type="number"
+                step="0.01"
+                min="0"
                 className="input text-sm"
-                placeholder="Montant €"
-                value={newIncome.amount}
-                onChange={e => setNewIncome(prev => ({ ...prev, amount: e.target.value }))}
+                placeholder="Prix unit. €"
+                value={newIncome.unitPrice}
+                onChange={e => setNewIncome(prev => ({ ...prev, unitPrice: e.target.value }))}
                 onKeyDown={e => e.key === 'Enter' && addIncomeLine()}
+              />
+            </div>
+            <div className="w-28">
+              <input
+                type="text"
+                className="input text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
+                value={((parseFloat(newIncome.qty) || 0) * (parseFloat(newIncome.unitPrice) || 0)).toFixed(2) + ' €'}
+                readOnly
+                tabIndex={-1}
               />
             </div>
             <button
@@ -409,9 +440,10 @@ export default function BudgetRequestDetail() {
           </table>
         )}
         {canEdit && (
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
+          <div className="flex gap-2 items-center flex-wrap">
+            <div className="flex-1 min-w-[160px]">
               <input
+                ref={expenseLabelRef}
                 className="input text-sm"
                 placeholder="Libellé de la dépense"
                 value={newExpense.label}
@@ -419,14 +451,37 @@ export default function BudgetRequestDetail() {
                 onKeyDown={e => e.key === 'Enter' && addExpenseLine()}
               />
             </div>
+            <div className="w-20">
+              <input
+                type="number"
+                step="1"
+                min="0"
+                className="input text-sm"
+                placeholder="Qté"
+                value={newExpense.qty}
+                onChange={e => setNewExpense(prev => ({ ...prev, qty: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && addExpenseLine()}
+              />
+            </div>
             <div className="w-32">
               <input
                 type="number"
+                step="0.01"
+                min="0"
                 className="input text-sm"
-                placeholder="Montant €"
-                value={newExpense.amount}
-                onChange={e => setNewExpense(prev => ({ ...prev, amount: e.target.value }))}
+                placeholder="Prix unit. €"
+                value={newExpense.unitPrice}
+                onChange={e => setNewExpense(prev => ({ ...prev, unitPrice: e.target.value }))}
                 onKeyDown={e => e.key === 'Enter' && addExpenseLine()}
+              />
+            </div>
+            <div className="w-28">
+              <input
+                type="text"
+                className="input text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
+                value={((parseFloat(newExpense.qty) || 0) * (parseFloat(newExpense.unitPrice) || 0)).toFixed(2) + ' €'}
+                readOnly
+                tabIndex={-1}
               />
             </div>
             <button
