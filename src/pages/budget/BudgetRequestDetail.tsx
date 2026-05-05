@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, ExternalLink, Pencil, X } from 'lucide-react';
 import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
 import { BudgetRequest, BudgetRequestLine, BudgetLineType } from '../../types';
@@ -47,6 +47,8 @@ export default function BudgetRequestDetail() {
   const [returnComment, setReturnComment] = useState('');
   const incomeLabelRef = useRef<HTMLInputElement>(null);
   const expenseLabelRef = useRef<HTMLInputElement>(null);
+  const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (isNew) return;
@@ -183,35 +185,71 @@ export default function BudgetRequestDetail() {
   const addIncomeLine = () => {
     if (!newIncome.label) return;
     const amount = (parseFloat(newIncome.qty) || 0) * (parseFloat(newIncome.unitPrice) || 0);
-    const tempLine: BudgetRequestLine = {
-      id: `tmp_${Date.now()}`,
-      requestId: id || '',
-      type: 'income',
-      label: newIncome.label,
-      amount,
-      sortOrder: lines.length,
-      createdAt: new Date().toISOString(),
-    };
-    setLines(prev => [...prev, tempLine]);
+    if (editingIncomeId) {
+      setLines(prev => prev.map(l =>
+        l.id === editingIncomeId ? { ...l, label: newIncome.label, amount } : l
+      ));
+      setEditingIncomeId(null);
+    } else {
+      const tempLine: BudgetRequestLine = {
+        id: `tmp_${Date.now()}`,
+        requestId: id || '',
+        type: 'income',
+        label: newIncome.label,
+        amount,
+        sortOrder: lines.length,
+        createdAt: new Date().toISOString(),
+      };
+      setLines(prev => [...prev, tempLine]);
+    }
     setNewIncome(emptyNewLine('income'));
     setTimeout(() => incomeLabelRef.current?.focus(), 0);
+  };
+
+  const startEditIncome = (line: BudgetRequestLine) => {
+    setEditingIncomeId(line.id);
+    setNewIncome({ type: 'income', label: line.label, qty: '1', unitPrice: String(line.amount) });
+    setTimeout(() => incomeLabelRef.current?.focus(), 0);
+  };
+
+  const cancelEditIncome = () => {
+    setEditingIncomeId(null);
+    setNewIncome(emptyNewLine('income'));
   };
 
   const addExpenseLine = () => {
     if (!newExpense.label) return;
     const amount = (parseFloat(newExpense.qty) || 0) * (parseFloat(newExpense.unitPrice) || 0);
-    const tempLine: BudgetRequestLine = {
-      id: `tmp_${Date.now()}`,
-      requestId: id || '',
-      type: 'expense',
-      label: newExpense.label,
-      amount,
-      sortOrder: lines.length,
-      createdAt: new Date().toISOString(),
-    };
-    setLines(prev => [...prev, tempLine]);
+    if (editingExpenseId) {
+      setLines(prev => prev.map(l =>
+        l.id === editingExpenseId ? { ...l, label: newExpense.label, amount } : l
+      ));
+      setEditingExpenseId(null);
+    } else {
+      const tempLine: BudgetRequestLine = {
+        id: `tmp_${Date.now()}`,
+        requestId: id || '',
+        type: 'expense',
+        label: newExpense.label,
+        amount,
+        sortOrder: lines.length,
+        createdAt: new Date().toISOString(),
+      };
+      setLines(prev => [...prev, tempLine]);
+    }
     setNewExpense(emptyNewLine('expense'));
     setTimeout(() => expenseLabelRef.current?.focus(), 0);
+  };
+
+  const startEditExpense = (line: BudgetRequestLine) => {
+    setEditingExpenseId(line.id);
+    setNewExpense({ type: 'expense', label: line.label, qty: '1', unitPrice: String(line.amount) });
+    setTimeout(() => expenseLabelRef.current?.focus(), 0);
+  };
+
+  const cancelEditExpense = () => {
+    setEditingExpenseId(null);
+    setNewExpense(emptyNewLine('expense'));
   };
 
   if (loading) {
@@ -338,14 +376,19 @@ export default function BudgetRequestDetail() {
             </thead>
             <tbody>
               {incomeLines.map(line => (
-                <tr key={line.id} className="border-b border-gray-50">
+                <tr key={line.id} className={`border-b border-gray-50 ${editingIncomeId === line.id ? 'bg-blue-50' : ''}`}>
                   <td className="py-2 pr-4 text-sm text-gray-800">{line.label}</td>
                   <td className="py-2 pr-4 text-sm text-right text-green-700 font-medium">{fmtCurrency(line.amount)}</td>
                   {canEdit && (
                     <td className="py-2">
-                      <button onClick={() => removeLine(line.id)} className="text-red-400 hover:text-red-600">
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex gap-1">
+                        <button onClick={() => startEditIncome(line)} className="text-blue-400 hover:text-blue-600">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => removeLine(line.id)} className="text-red-400 hover:text-red-600">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -399,11 +442,16 @@ export default function BudgetRequestDetail() {
               />
             </div>
             <button
-              className="btn-secondary flex items-center gap-1 text-sm"
+              className="btn-primary flex items-center gap-1 text-sm"
               onClick={addIncomeLine}
             >
-              <Plus size={14} /> Ajouter
+              {editingIncomeId ? <><Pencil size={14} /> Modifier</> : <><Plus size={14} /> Ajouter</>}
             </button>
+            {editingIncomeId && (
+              <button className="btn-secondary text-sm flex items-center gap-1" onClick={cancelEditIncome}>
+                <X size={14} /> Annuler
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -424,14 +472,19 @@ export default function BudgetRequestDetail() {
             </thead>
             <tbody>
               {expenseLines.map(line => (
-                <tr key={line.id} className="border-b border-gray-50">
+                <tr key={line.id} className={`border-b border-gray-50 ${editingExpenseId === line.id ? 'bg-blue-50' : ''}`}>
                   <td className="py-2 pr-4 text-sm text-gray-800">{line.label}</td>
                   <td className="py-2 pr-4 text-sm text-right text-red-600 font-medium">{fmtCurrency(line.amount)}</td>
                   {canEdit && (
                     <td className="py-2">
-                      <button onClick={() => removeLine(line.id)} className="text-red-400 hover:text-red-600">
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex gap-1">
+                        <button onClick={() => startEditExpense(line)} className="text-blue-400 hover:text-blue-600">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => removeLine(line.id)} className="text-red-400 hover:text-red-600">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -485,11 +538,16 @@ export default function BudgetRequestDetail() {
               />
             </div>
             <button
-              className="btn-secondary flex items-center gap-1 text-sm"
+              className="btn-primary flex items-center gap-1 text-sm"
               onClick={addExpenseLine}
             >
-              <Plus size={14} /> Ajouter
+              {editingExpenseId ? <><Pencil size={14} /> Modifier</> : <><Plus size={14} /> Ajouter</>}
             </button>
+            {editingExpenseId && (
+              <button className="btn-secondary text-sm flex items-center gap-1" onClick={cancelEditExpense}>
+                <X size={14} /> Annuler
+              </button>
+            )}
           </div>
         )}
       </div>
