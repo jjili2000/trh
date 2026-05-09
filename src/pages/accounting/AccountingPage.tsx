@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
-  ArrowUpCircle,
-  ArrowDownCircle,
   Pencil,
   Trash2,
   Plus,
@@ -133,15 +131,38 @@ function CategoryPopover({ current, categories, onSave, onClose }: CategoryPopov
   );
 }
 
+// ─── Rule Tooltip ─────────────────────────────────────────────────────────────
+
+function RuleTooltip({ ruleName, children }: { ruleName: string; children: React.ReactNode }) {
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const [visible, setVisible] = useState(false);
+
+  const show = () => { timerRef.current = setTimeout(() => setVisible(true), 500); };
+  const hide = () => { clearTimeout(timerRef.current); setVisible(false); };
+
+  return (
+    <div className="relative inline-block" onMouseEnter={show} onMouseLeave={hide}>
+      {children}
+      {visible && (
+        <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1 text-xs bg-gray-800 text-white rounded whitespace-nowrap shadow-lg pointer-events-none">
+          Règle : {ruleName}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-800" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Operations Tab ───────────────────────────────────────────────────────────
 
 interface OperationsTabProps {
   imports: BankImport[];
   categories: string[];
   onCategoriesChange: () => void;
+  onDeleteAll: () => void;
 }
 
-function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTabProps) {
+function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }: OperationsTabProps) {
   const [operations, setOperations] = useState<BankOperation[]>([]);
   const [loading, setLoading] = useState(false);
   const [applyingRules, setApplyingRules] = useState(false);
@@ -154,6 +175,7 @@ function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTa
   const [filterMethod, setFilterMethod] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterSearch, setFilterSearch] = useState('');
+  const [filterUncategorized, setFilterUncategorized] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -204,11 +226,24 @@ function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTa
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (!confirm('Supprimer toutes les opérations et tous les imports ? Cette action est irréversible.')) return;
+    try {
+      await api.delete('/accounting/operations');
+      setOperations([]);
+      onDeleteAll();
+    } catch {
+      // silent
+    }
+  };
+
   const categoryColor = (source: string) => {
     if (source === 'manual') return 'bg-blue-100 text-blue-700';
     if (source === 'rule') return 'bg-purple-100 text-purple-700';
     return 'bg-gray-100 text-gray-500';
   };
+
+  const displayedOps = filterUncategorized ? operations.filter(op => !op.category) : operations;
 
   return (
     <div>
@@ -266,6 +301,24 @@ function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTa
             onChange={e => setFilterSearch(e.target.value)}
           />
 
+          {/* Switch: sans catégorie uniquement */}
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={filterUncategorized}
+              onClick={() => setFilterUncategorized(v => !v)}
+              className={`relative w-9 h-5 rounded-full transition-colors focus:outline-none ${
+                filterUncategorized ? 'bg-tennis-green' : 'bg-gray-200'
+              }`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                filterUncategorized ? 'translate-x-4' : 'translate-x-0.5'
+              }`} />
+            </button>
+            Sans catégorie
+          </label>
+
           <button
             className="btn-secondary flex items-center gap-1.5 text-sm"
             onClick={handleApplyRules}
@@ -273,6 +326,15 @@ function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTa
           >
             <RefreshCw size={14} className={applyingRules ? 'animate-spin' : ''} />
             Appliquer les règles
+          </button>
+
+          <button
+            className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded-lg px-3 py-1.5 transition-colors"
+            onClick={handleDeleteAll}
+            title="Supprimer toutes les opérations"
+          >
+            <Trash2 size={14} />
+            Tout supprimer
           </button>
         </div>
         {applyMsg && (
@@ -284,7 +346,7 @@ function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTa
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-gray-400 text-sm">Chargement…</div>
-        ) : operations.length === 0 ? (
+        ) : displayedOps.length === 0 ? (
           <div className="p-8 text-center text-gray-400 text-sm">Aucune opération</div>
         ) : (
           <div className="overflow-x-auto">
@@ -300,16 +362,16 @@ function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTa
                 </tr>
               </thead>
               <tbody>
-                {operations.map(op => (
+                {displayedOps.map(op => (
                   <tr key={op.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">
                       {fmtDate(op.operationDate)}
                     </td>
                     <td className="px-4 py-2">
                       {op.direction === 'credit' ? (
-                        <ArrowUpCircle size={18} className="text-green-500" />
+                        <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Crédit</span>
                       ) : (
-                        <ArrowDownCircle size={18} className="text-red-500" />
+                        <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Débit</span>
                       )}
                     </td>
                     <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">
@@ -356,9 +418,17 @@ function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTa
                       <div className="relative">
                         <div className="flex items-center gap-1">
                           {op.category ? (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${categoryColor(op.categorySource)}`}>
-                              {op.category}
-                            </span>
+                            op.categorySource === 'rule' && op.ruleName ? (
+                              <RuleTooltip ruleName={op.ruleName}>
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium cursor-default ${categoryColor(op.categorySource)}`}>
+                                  {op.category}
+                                </span>
+                              </RuleTooltip>
+                            ) : (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${categoryColor(op.categorySource)}`}>
+                                {op.category}
+                              </span>
+                            )
                           ) : (
                             <span className="text-xs text-gray-300 italic">—</span>
                           )}
@@ -386,7 +456,9 @@ function OperationsTab({ imports, categories, onCategoriesChange }: OperationsTa
           </div>
         )}
       </div>
-      <p className="text-xs text-gray-400 mt-2 text-right">{operations.length} opération(s)</p>
+      <p className="text-xs text-gray-400 mt-2 text-right">
+        {displayedOps.length}{filterUncategorized && operations.length !== displayedOps.length ? ` / ${operations.length}` : ''} opération(s)
+      </p>
     </div>
   );
 }
@@ -425,6 +497,39 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
   const [saving, setSaving] = useState(false);
   const [catInput, setCatInput] = useState('');
   const [catSuggestions, setCatSuggestions] = useState<string[]>([]);
+
+  // Multi-select for bulk delete
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const allSelected = rules.length > 0 && selectedIds.size === rules.length;
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
+  const toggleRule = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(rules.map(r => r.id)));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Supprimer ${selectedIds.size} règle(s) ?`)) return;
+    try {
+      await api.delete('/accounting/rules/bulk', { ids: Array.from(selectedIds) });
+      setRules(prev => prev.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    } catch {
+      // silent
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -533,7 +638,18 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
       {/* List */}
       <div className="flex-1">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-gray-700">Règles de catégorisation</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-semibold text-gray-700">Règles de catégorisation</h2>
+            {selectedIds.size > 0 && (
+              <button
+                className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded-lg px-2.5 py-1 transition-colors"
+                onClick={handleDeleteSelected}
+              >
+                <Trash2 size={13} />
+                Supprimer la sélection ({selectedIds.size})
+              </button>
+            )}
+          </div>
           <button className="btn-primary flex items-center gap-1.5 text-sm" onClick={openNew}>
             <Plus size={14} /> Nouvelle règle
           </button>
@@ -546,8 +662,34 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
           </div>
         ) : (
           <div className="space-y-2">
+            {/* Select-all header row */}
+            <div className="flex items-center gap-2 px-1 pb-1 border-b border-gray-100">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={el => { if (el) el.indeterminate = someSelected; }}
+                onChange={toggleAll}
+                className="w-4 h-4 rounded border-gray-300 text-tennis-green cursor-pointer"
+                title="Tout sélectionner / désélectionner"
+              />
+              <span className="text-xs text-gray-400">
+                {selectedIds.size === 0 ? 'Tout sélectionner' : `${selectedIds.size} sélectionnée(s)`}
+              </span>
+            </div>
+
             {rules.map(rule => (
-              <div key={rule.id} className="card flex items-start justify-between gap-3">
+              <div
+                key={rule.id}
+                className={`card flex items-start gap-3 transition-colors ${
+                  selectedIds.has(rule.id) ? 'bg-blue-50 border-blue-200' : ''
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(rule.id)}
+                  onChange={() => toggleRule(rule.id)}
+                  className="w-4 h-4 mt-0.5 rounded border-gray-300 text-tennis-green cursor-pointer flex-shrink-0"
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-sm text-gray-800">{rule.label}</span>
@@ -1144,6 +1286,11 @@ export default function AccountingPage() {
     await loadCategories();
   };
 
+  const handleDeleteAllOps = async () => {
+    await loadImports();
+    await loadCategories();
+  };
+
   const tabs: { key: Tab; label: string }[] = [
     { key: 'operations', label: 'Opérations' },
     { key: 'rules', label: 'Règles' },
@@ -1189,6 +1336,7 @@ export default function AccountingPage() {
           imports={imports}
           categories={categories}
           onCategoriesChange={loadCategories}
+          onDeleteAll={handleDeleteAllOps}
         />
       )}
 

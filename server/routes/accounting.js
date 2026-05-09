@@ -409,8 +409,9 @@ router.get('/operations', async (req, res) => {
   try {
     const { importId, direction, paymentMethod, category, search, dateFrom, dateTo } = req.query;
 
-    let sql = `SELECT bo.* FROM bank_operations bo
+    let sql = `SELECT bo.*, ar.label as ruleName FROM bank_operations bo
                JOIN bank_imports bi ON bi.id = bo.importId
+               LEFT JOIN accounting_rules ar ON ar.id = bo.ruleId
                WHERE bi.userId = ?`;
     const params = [req.user.id];
 
@@ -459,6 +460,17 @@ router.put('/operations/:id', async (req, res) => {
     );
     const [updated] = await pool.execute('SELECT * FROM bank_operations WHERE id = ?', [id]);
     res.json(mapOperation(updated[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// DELETE /accounting/operations  — delete ALL operations (and their imports) for this user
+router.delete('/operations', async (req, res) => {
+  try {
+    await pool.execute('DELETE FROM bank_imports WHERE userId = ?', [req.user.id]);
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -590,6 +602,27 @@ router.put('/rules/:id', async (req, res) => {
   }
 });
 
+// DELETE /accounting/rules/bulk  — delete multiple rules by id array in body { ids: [...] }
+router.delete('/rules/bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids requis' });
+    for (const id of ids) {
+      const [rows] = await pool.execute(
+        'SELECT id FROM accounting_rules WHERE id = ? AND userId = ?',
+        [id, req.user.id]
+      );
+      if (rows.length > 0) {
+        await pool.execute('DELETE FROM accounting_rules WHERE id = ?', [id]);
+      }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // DELETE /accounting/rules/:id
 router.delete('/rules/:id', async (req, res) => {
   try {
@@ -705,6 +738,7 @@ function mapOperation(row) {
     category: row.category || null,
     categorySource: row.categorySource || 'none',
     ruleId: row.ruleId || null,
+    ruleName: row.ruleName || null,
   };
 }
 

@@ -214,6 +214,7 @@ export interface BankOperation {
   category: string | null;
   categorySource: CategorySource;
   ruleId: string | null;
+  ruleName?: string | null;
 }
 
 export type RuleField = 'rawLabel' | 'thirdParty' | 'blockMDT' | 'blockLIB' | 'blockMOTIF' | 'blockRNF' | 'paymentMethod' | 'direction';
