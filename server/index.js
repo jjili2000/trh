@@ -29,6 +29,7 @@ app.use('/api/seasons',         require('./middleware/auth'), require('./routes/
 app.use('/api/school-holidays', require('./middleware/auth'), require('./routes/schoolHolidays'));
 app.use('/api/budgets',         require('./middleware/auth'), require('./routes/budgets'));
 app.use('/api/notifications',   require('./middleware/auth'), require('./routes/notifications'));
+app.use('/api/accounting',      require('./middleware/auth'), require('./routes/accounting'));
 
 // Serve React frontend in production
 const distPath = path.join(__dirname, '../dist');

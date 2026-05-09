@@ -15,6 +15,7 @@ import {
   GraduationCap,
   Wallet,
   Bell,
+  BarChart2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -62,6 +63,7 @@ export default function AppLayout() {
     }`;
 
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const canAccessAccounting = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'treasurer';
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -97,6 +99,13 @@ export default function AppLayout() {
           <Wallet size={18} />
           Budget
         </NavLink>
+
+        {canAccessAccounting && (
+          <NavLink to="/accounting" className={navLinkClass} onClick={closeSidebar}>
+            <BarChart2 size={18} />
+            Comptabilité
+          </NavLink>
+        )}
 
         <NavLink to="/expenses" className={navLinkClass} onClick={closeSidebar}>
           <Receipt size={18} />

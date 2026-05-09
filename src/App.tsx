@@ -17,6 +17,7 @@ import BudgetList from './pages/budget/BudgetList';
 import BudgetRequestDetail from './pages/budget/BudgetRequestDetail';
 import RealBudgetDetail from './pages/budget/RealBudgetDetail';
 import NotificationsPage from './pages/notifications/NotificationsPage';
+import AccountingPage from './pages/accounting/AccountingPage';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { currentUser } = useApp();
@@ -71,6 +72,7 @@ function AppRoutes() {
         <Route path="budget/requests/:id" element={<BudgetRequestDetail />} />
         <Route path="budget/real/:id" element={<RealBudgetDetail />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="accounting" element={<AccountingPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

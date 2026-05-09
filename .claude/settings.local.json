@@ -31,7 +31,17 @@
       "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\" /b /s 2>&1 | findstr /i mysql\")",
       "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\" /b 2>&1\")",
       "Bash(cmd /c \"dir \\\\\"C:\\\\Program Files \\(x86\\)\\\\ATPdigital\\\\\"  2>&1\")",
-      "WebFetch(domain:docs.gandi.net)"
+      "WebFetch(domain:docs.gandi.net)",
+      "Bash(git filter-branch:*)",
+      "Bash(git stash:*)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --index-filter \"git rm --cached --ignore-unmatch gandi_deploy\" --prune-empty --tag-name-filter cat -- --all)",
+      "Bash(git reflog:*)",
+      "Bash(git gc:*)",
+      "Bash(git push:*)",
+      "Bash(xargs -I {} git update-ref -d {})",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npx tsc *)"
     ]
   }
 }

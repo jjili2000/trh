@@ -182,3 +182,57 @@ export interface AppNotification {
   refType: string | null; refId: string | null;
   readAt: string | null; createdAt: string;
 }
+
+// ─── Accounting ───────────────────────────────────────────────────────────────
+
+export interface BankImport {
+  id: string;
+  userId: string;
+  label: string;
+  fileName: string;
+  importedAt: string;
+  operationCount: number;
+}
+
+export type PaymentMethod = 'card' | 'transfer' | 'direct_debit' | 'check' | 'cash' | 'other';
+export type OperationDirection = 'credit' | 'debit';
+export type CategorySource = 'manual' | 'rule' | 'none';
+
+export interface BankOperation {
+  id: string;
+  importId: string;
+  operationDate: string;
+  direction: OperationDirection;
+  paymentMethod: PaymentMethod;
+  amount: number;
+  rawLabel: string | null;
+  thirdParty: string | null;
+  blockMDT: string | null;
+  blockLIB: string | null;
+  blockMOTIF: string | null;
+  blockRNF: string | null;
+  category: string | null;
+  categorySource: CategorySource;
+  ruleId: string | null;
+}
+
+export type RuleField = 'rawLabel' | 'thirdParty' | 'blockMDT' | 'blockLIB' | 'blockMOTIF' | 'blockRNF' | 'paymentMethod' | 'direction';
+export type RuleOperator = 'contains' | 'equals' | 'startsWith' | 'endsWith' | 'notContains';
+
+export interface RuleCondition {
+  id?: string;
+  field: RuleField;
+  operator: RuleOperator;
+  value: string;
+}
+
+export interface AccountingRule {
+  id: string;
+  userId: string;
+  label: string;
+  conditionOperator: 'AND' | 'OR';
+  category: string;
+  priority: number;
+  createdAt: string;
+  conditions: RuleCondition[];
+}
