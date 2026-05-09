@@ -122,64 +122,81 @@ function parseAmount(str) {
 function detectPaymentMethod(label) {
   if (!label) return 'other';
   const u = label.toUpperCase();
-  if (/PRLV|PRELEVEMENT|PRÉLÈVEMENT/.test(u)) return 'direct_debit';
-  if (/\bVIR\b|VIREMENT/.test(u)) return 'transfer';
-  if (/\bCB\b|CARTE|TPE|PAIEMENT CB/.test(u)) return 'card';
+  // Order matters: check PRLV before VIR, FACTURE CARTE before generic CARTE
+  if (/\bPRLV\b/.test(u)) return 'direct_debit';
+  if (/FACTURE CARTE/.test(u)) return 'card';
+  if (/\b(VIR|VIREMENT)\b/.test(u)) return 'transfer';
+  if (/REMISE CHEQUES/.test(u) || /^CHEQUE\s+\d/.test(u)) return 'check';
+  if (/VRST ESPECES/.test(u) || /\bRETRAIT\b/.test(u)) return 'cash';
+  if (/\bCB\b|TPE|PAIEMENT CB/.test(u)) return 'card';
   if (/\bCHQ\b|CHEQUE|CHÈQUE/.test(u)) return 'check';
-  if (/ESPECE|ESPÈCE|RETRAIT/.test(u)) return 'cash';
+  if (/ESPECE|ESPÈCE/.test(u)) return 'cash';
   return 'other';
 }
 
 function extractBlocks(label) {
   if (!label) return { mdt: null, lib: null, motif: null, rnf: null };
-  const blockRegex = /(MDT|LIB|MOTIF|RNF)\s*[:\-]?\s*/gi;
   const result = { mdt: null, lib: null, motif: null, rnf: null };
 
-  // Split on block keywords (keep delimiters)
-  const parts = label.split(/(MDT|LIB|MOTIF|RNF)\s*[:\-]?\s*/i);
-  // parts: [before, keyword1, value_until_next_keyword_or_end, keyword2, ...]
-  for (let i = 1; i < parts.length; i += 2) {
-    const keyword = parts[i].toUpperCase().trim();
-    const value = parts[i + 1] ? parts[i + 1].trim() : null;
-    if (!value) continue;
-    // value might contain the start of the next block — trim at the next keyword occurrence
-    const trimmed = value.replace(/(MDT|LIB|MOTIF|RNF)\s*[:\-]?\s*.*$/i, '').trim();
-    if (keyword === 'MDT') result.mdt = trimmed || null;
-    else if (keyword === 'LIB') result.lib = trimmed || null;
-    else if (keyword === 'MOTIF') result.motif = trimmed || null;
-    else if (keyword === 'RNF') result.rnf = trimmed || null;
-  }
+  // Format A — Prélèvements SEPA: KEYWORD/value (no space, slash directly after keyword)
+  // e.g. "MDT/SLMP016979860 REF/... LIB/FFT - PRELEVEMENT..."
+  const mdtMatch = label.match(/\bMDT\/(\S+)/i);
+  if (mdtMatch) result.mdt = mdtMatch[1];
 
-  // Suppress the blockRegex warning — we defined it but used split with inline regex
-  void blockRegex;
+  // LIB/ — value goes to end of string
+  const libMatch = label.match(/\bLIB\/(.+)$/i);
+  if (libMatch) result.lib = libMatch[1].trim();
+
+  // Format B — Virements SEPA: /KEYWORD value (slash prefix before keyword)
+  // e.g. "/MOTIF PAIE JSA AVR26 /BEN DUPONT /REFDO ..."
+  // /MOTIF value — captured until next /WORD or end
+  const motifMatch = label.match(/\/MOTIF\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
+  if (motifMatch) result.motif = motifMatch[1].trim();
+
+  // /RNF value — until next /WORD or end (sometimes empty)
+  const rnfMatch = label.match(/\/RNF\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
+  if (rnfMatch && rnfMatch[1].trim()) result.rnf = rnfMatch[1].trim();
+
   return result;
 }
 
 function extractThirdParty(label, method, direction) {
   if (!label) return null;
 
-  if (method === 'card') {
-    // Remove prefix
-    let s = label.replace(/^(PAIEMENT CB|CARTE|CB)\s*/i, '').trim();
-    // Remove trailing date-like patterns and block markers
-    s = s.replace(/\s+(MDT|LIB|MOTIF|RNF)\s*[:\-]?.*/i, '').trim();
-    return s || null;
-  }
-
-  if (method === 'direct_debit') {
-    const m = label.match(/(?:PRLV SEPA|PRLV)\s+(.+?)(?:\s+(?:MDT|LIB|MOTIF|RNF)\s*[:\-]|$)/i);
+  // Virement crédit: /FRM value until /EID or next /TAG
+  if (method === 'transfer' && direction === 'credit') {
+    const m = label.match(/\/FRM\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
     return m ? m[1].trim() : null;
   }
 
-  if (method === 'transfer') {
-    if (direction === 'credit') {
-      const m = label.match(/RECU DE\s*:?\s*(.+?)(?:\s+(?:MDT|LIB|MOTIF|RNF)\s*[:\-]|$)/i);
-      return m ? m[1].trim() : null;
-    } else {
-      const m = label.match(/POUR\s*:?\s*(.+?)(?:\s+(?:MDT|LIB|MOTIF|RNF)\s*[:\-]|$)/i);
-      return m ? m[1].trim() : null;
-    }
+  // Virement débit: /BEN value until /REFDO or next /TAG
+  if (method === 'transfer' && direction === 'debit') {
+    const m = label.match(/\/BEN\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
+    return m ? m[1].trim() : null;
   }
+
+  // Prélèvement SEPA: text after "PRLV SEPA [B2B ]" until " ECH/" or " ID EMETTEUR/"
+  if (method === 'direct_debit') {
+    const m = label.match(/PRLV\s+SEPA\s+(?:B2B\s+)?(.+?)(?=\s+ECH\/|\s+ID\s+EMETTEUR\/|$)/i);
+    return m ? m[1].trim() : null;
+  }
+
+  // Carte: merchant after "FACTURE CARTE DU DDMMYY " — trim at 2+ spaces or CARTE keyword
+  if (method === 'card') {
+    const m = label.match(/FACTURE CARTE DU \d{6}\s+(.+?)(?:\s{2,}|\s+CARTE\s+\d{4}|$)/i);
+    return m ? m[1].trim() : null;
+  }
+
+  // Chèque
+  if (method === 'check') {
+    if (/REMISE CHEQUES/i.test(label)) return 'Remise de chèques';
+    const m = label.match(/CHEQUE\s+(\d+)/i);
+    return m ? `Chèque n°${m[1]}` : null;
+  }
+
+  // Espèces
+  if (/VRST ESPECES/i.test(label)) return 'Versement espèces';
+  if (/INTERETS ET COMMISSIONS/i.test(label)) return 'Intérêts et commissions';
 
   return null;
 }
@@ -230,15 +247,46 @@ function parseDate(str) {
   return null;
 }
 
+// ─── rawRows helpers ──────────────────────────────────────────────────────────
+
+// Find the row index that contains the actual column headers (skip bank metadata rows)
+function findHeaderRow(rawRows) {
+  for (let i = 0; i < Math.min(rawRows.length, 8); i++) {
+    const cells = rawRows[i].map(c => normalizeStr(String(c || '')));
+    const hasDate = cells.some(c => (c.includes('date') && c.length < 25) || c === 'date operation');
+    const hasAmount = cells.some(c =>
+      c.includes('montant') || c === 'debit' || c === 'credit' ||
+      c.includes('debit') || c.includes('credit')
+    );
+    if (hasDate && hasAmount) return i;
+  }
+  return 0;
+}
+
+// Convert rawRows (string[][]) to [{header: value, ...}] using detected header row
+function rawRowsToMapped(rawRows) {
+  const headerIdx = findHeaderRow(rawRows);
+  const headers = rawRows[headerIdx].map(c => String(c || '').trim());
+  const dataRows = rawRows.slice(headerIdx + 1)
+    .filter(row => row.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
+  const rows = dataRows.map(row => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = String(row[i] !== undefined && row[i] !== null ? row[i] : '').trim(); });
+    return obj;
+  });
+  return { headers, rows };
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 // POST /accounting/import/preview
+// Accepts: { rawRows: string[][], filename } (pre-parsed by SheetJS on client)
 router.post('/import/preview', async (req, res) => {
   try {
-    const { content, filename } = req.body;
-    if (!content) return res.status(400).json({ error: 'Contenu CSV requis' });
+    const { rawRows, filename } = req.body;
+    if (!rawRows || !Array.isArray(rawRows)) return res.status(400).json({ error: 'rawRows requis' });
 
-    const { headers, rows } = parseCSV(content);
+    const { headers, rows } = rawRowsToMapped(rawRows);
     const detectedMapping = detectColumnMapping(headers);
     const preview = rows.slice(0, 5);
 
@@ -256,15 +304,15 @@ router.post('/import/preview', async (req, res) => {
 });
 
 // POST /accounting/import/confirm
+// Accepts: { rawRows: string[][], filename, label, mapping }
 router.post('/import/confirm', async (req, res) => {
   try {
-    const { content, filename, label, mapping } = req.body;
-    if (!content || !label || !mapping) {
-      return res.status(400).json({ error: 'Contenu, libellé et mapping requis' });
+    const { rawRows, filename, label, mapping } = req.body;
+    if (!rawRows || !label || !mapping) {
+      return res.status(400).json({ error: 'rawRows, libellé et mapping requis' });
     }
 
-    const { headers, rows } = parseCSV(content);
-    void headers;
+    const { rows } = rawRowsToMapped(rawRows);
 
     const importId = uuidv4();
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');

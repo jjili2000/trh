@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import {
   ArrowUpCircle,
   ArrowDownCircle,
@@ -748,7 +749,7 @@ interface PreviewData {
 function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [importLabel, setImportLabel] = useState('');
-  const [fileContent, setFileContent] = useState('');
+  const [parsedRows, setParsedRows] = useState<string[][]>([]);
   const [fileName, setFileName] = useState('');
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping>({ date: '', label: '' });
@@ -764,19 +765,28 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setFileContent(ev.target?.result as string || '');
+      const data = ev.target?.result;
+      const wb = XLSX.read(data, { type: 'array', cellDates: false, raw: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      // Convert sheet to array of arrays (all cells as strings)
+      const rows: string[][] = XLSX.utils.sheet_to_json(ws, {
+        header: 1,
+        defval: '',
+        raw: false,
+      }) as string[][];
+      setParsedRows(rows);
     };
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsArrayBuffer(file);
   };
 
   const handlePreview = async () => {
-    if (!fileContent) { setError('Veuillez sélectionner un fichier'); return; }
+    if (parsedRows.length === 0) { setError('Veuillez sélectionner un fichier'); return; }
     if (!importLabel.trim()) { setError('Veuillez entrer un libellé pour cet import'); return; }
     setError(null);
     setLoadingPreview(true);
     try {
       const data = await api.post<PreviewData>('/accounting/import/preview', {
-        content: fileContent,
+        rawRows: parsedRows,
         filename: fileName,
       });
       setPreview(data);
@@ -815,7 +825,7 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
       if (mapping.amount) cleanMapping.amount = mapping.amount;
 
       const result = await api.post<{ importId: string; count: number }>('/accounting/import/confirm', {
-        content: fileContent,
+        rawRows: parsedRows,
         filename: fileName,
         label: importLabel,
         mapping: cleanMapping,
@@ -834,7 +844,7 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
   const reset = () => {
     setStep(1);
     setImportLabel('');
-    setFileContent('');
+    setParsedRows([]);
     setFileName('');
     setPreview(null);
     setMapping({ date: '', label: '' });
@@ -888,20 +898,20 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
             />
           </div>
           <div>
-            <label className="label">Fichier CSV *</label>
+            <label className="label">Fichier bancaire *</label>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,.txt"
+              accept=".xls,.xlsx,.csv,.txt"
               className="input"
               onChange={handleFileChange}
             />
-            <p className="text-xs text-gray-400 mt-1">Formats acceptés : CSV, TXT. Séparateurs : point-virgule, virgule, tabulation, pipe.</p>
+            <p className="text-xs text-gray-400 mt-1">Formats acceptés : XLS, XLSX, CSV, TXT (CIC, Crédit Mutuel, BNP, etc.)</p>
           </div>
           <button
             className="btn-primary flex items-center gap-2"
             onClick={handlePreview}
-            disabled={loadingPreview || !fileContent || !importLabel.trim()}
+            disabled={loadingPreview || parsedRows.length === 0 || !importLabel.trim()}
           >
             <Upload size={16} />
             {loadingPreview ? 'Analyse en cours…' : 'Analyser le fichier'}

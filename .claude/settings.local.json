@@ -41,7 +41,8 @@
       "Bash(xargs -I {} git update-ref -d {})",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(git rm *)"
     ]
   }
 }
