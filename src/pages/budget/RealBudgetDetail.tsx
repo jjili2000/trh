@@ -68,6 +68,7 @@ export default function RealBudgetDetail() {
   // Detail modal
   const [detailModal, setDetailModal] = useState<{
     lineId: string;
+    lineType: 'income' | 'expense';
     editId?: string;
   } | null>(null);
   const [detailForm, setDetailForm] = useState<DetailForm>(emptyDetailForm());
@@ -161,13 +162,15 @@ export default function RealBudgetDetail() {
   };
 
   const openAddDetail = (lineId: string) => {
-    setDetailModal({ lineId });
+    const lineType = (budget?.lines ?? []).find(l => l.id === lineId)?.type ?? 'expense';
+    setDetailModal({ lineId, lineType });
     setDetailForm(emptyDetailForm());
     setDetailError(null);
   };
 
   const openEditDetail = (lineId: string, detail: BudgetLineDetail) => {
-    setDetailModal({ lineId, editId: detail.id });
+    const lineType = (budget?.lines ?? []).find(l => l.id === lineId)?.type ?? 'expense';
+    setDetailModal({ lineId, lineType, editId: detail.id });
     setDetailForm({
       detailDate: detail.detailDate,
       label: detail.label,
@@ -636,7 +639,9 @@ export default function RealBudgetDetail() {
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">
-                {detailModal.editId ? 'Modifier le détail' : 'Ajouter un détail'}
+                {detailModal.editId
+                  ? `Modifier le détail (${detailModal.lineType === 'income' ? 'recette' : 'dépense'})`
+                  : `Ajouter un détail de ${detailModal.lineType === 'income' ? 'recette' : 'dépense'}`}
               </h2>
               <button onClick={() => setDetailModal(null)} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
@@ -666,7 +671,7 @@ export default function RealBudgetDetail() {
                   className="input"
                   value={detailForm.label}
                   onChange={e => setDetailForm(prev => ({ ...prev, label: e.target.value }))}
-                  placeholder="Description de la dépense"
+                  placeholder={detailModal.lineType === 'income' ? 'Description de la recette' : 'Description de la dépense'}
                 />
               </div>
               <div>

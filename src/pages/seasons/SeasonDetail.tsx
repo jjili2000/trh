@@ -172,11 +172,12 @@ function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCours
   }));
 }
 
-function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, onEditCourse, onAddCourse }: {
+function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId, onEditCourse, onAddCourse }: {
   templateWeek: TemplateWeek | null;
   startDay: Date;
   numDays?: number;
   users: User[];
+  filterUserId?: string | null;
   onEditCourse?: (course: TemplateCourse) => void;
   onAddCourse?:  (dayOfWeek: number, startTime: string) => void;
 }) {
@@ -215,7 +216,7 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, onEditCourse
         <div className="w-12 flex-shrink-0" />
         {days.map((d, i) => (
           <div key={i} className="flex-1 min-w-20 text-center py-2 text-xs font-semibold text-gray-600 border-l border-gray-100">
-            <div>{DAYS_SHORT[i]}</div>
+            <div>{DAYS_SHORT[getDayOfWeek(d) - 1]}</div>
             <div className="text-gray-400 font-normal">{d.getDate()}</div>
           </div>
         ))}
@@ -235,7 +236,10 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, onEditCourse
 
         {/* Day columns */}
         {days.map((_, di) => {
-          const dayCourses = templateWeek?.courses.filter(c => c.dayOfWeek === getDayOfWeek(days[di])) || [];
+          const dayCourses = (templateWeek?.courses.filter(c =>
+            c.dayOfWeek === getDayOfWeek(days[di]) &&
+            (!filterUserId || c.teacherId === filterUserId)
+          )) || [];
           return (
             <div key={di} className="flex-1 min-w-20 relative border-l border-gray-100" style={{ height: totalH }}>
               {/* Hour grid lines */}
@@ -346,6 +350,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   });
   const [assignModal, setAssignModal] = useState<{ weekDate: Date; current: string | null } | null>(null);
   const [assigning, setAssigning]     = useState(false);
+  const [filterUserId, setFilterUserId] = useState<string | null>(null);
 
   // Course modal (create/edit directly from calendar)
   const [calCourseModal, setCalCourseModal] = useState<{
@@ -468,6 +473,42 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
     finally { setCalCourseSaving(false); }
   };
 
+  // Teachers who appear in at least one course
+  const teacherIds = new Set(
+    templateWeeks.flatMap(tw => tw.courses.map(c => c.teacherId).filter(Boolean))
+  );
+  const teachers = users.filter(u => teacherIds.has(u.id));
+
+  // Total minutes for the selected user in the current view period
+  const fmtMin = (m: number) => {
+    if (m === 0) return '0h';
+    const h = Math.floor(m / 60);
+    const min = m % 60;
+    return h > 0 ? `${h}h${min ? String(min).padStart(2, '0') : ''}` : `${min}min`;
+  };
+  let totalMinutes = 0;
+  if (filterUserId) {
+    if (viewMode === 'year') {
+      totalMinutes = allWeeks.reduce((acc, w) => {
+        const twId = assignMap[isoDate(w)];
+        const tw = templateWeeks.find(t => t.id === twId);
+        if (!tw) return acc;
+        return acc + tw.courses
+          .filter(c => c.teacherId === filterUserId)
+          .reduce((s, c) => s + timeToMin(c.endTime) - timeToMin(c.startTime), 0);
+      }, 0);
+    } else if (viewMode === 'week' && currentTW) {
+      totalMinutes = currentTW.courses
+        .filter(c => c.teacherId === filterUserId)
+        .reduce((s, c) => s + timeToMin(c.endTime) - timeToMin(c.startTime), 0);
+    } else if (viewMode === 'day' && dayTW) {
+      totalMinutes = dayTW.courses
+        .filter(c => c.teacherId === filterUserId && c.dayOfWeek === getDayOfWeek(dayDate))
+        .reduce((s, c) => s + timeToMin(c.endTime) - timeToMin(c.startTime), 0);
+    }
+  }
+  const periodLabel = viewMode === 'year' ? 'sur la saison' : viewMode === 'week' ? 'cette semaine' : 'ce jour';
+
   return (
     <div>
       {/* Controls */}
@@ -515,6 +556,38 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
           Aujourd'hui
         </button>
 
+        {/* User filter */}
+        {teachers.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <div className="relative flex items-center">
+              <select
+                className="pr-7 pl-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-tennis-green/30 appearance-none"
+                value={filterUserId ?? ''}
+                onChange={e => setFilterUserId(e.target.value || null)}
+              >
+                <option value="">Tous les enseignants</option>
+                {teachers.map(u => (
+                  <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                ))}
+              </select>
+              {filterUserId && (
+                <button
+                  className="absolute right-1.5 text-gray-400 hover:text-gray-600"
+                  onClick={() => setFilterUserId(null)}
+                  title="Effacer le filtre"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            {filterUserId && (
+              <span className="text-xs text-gray-500 whitespace-nowrap font-medium">
+                <span className="text-tennis-green font-semibold">{fmtMin(totalMinutes)}</span> {periodLabel}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Legend */}
         {templateWeeks.length > 0 && (
           <div className="flex flex-wrap gap-2 ml-auto">
@@ -557,6 +630,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               templateWeek={currentTW}
               startDay={currentWeek}
               users={users}
+              filterUserId={filterUserId}
               onEditCourse={handleEditCourse}
               onAddCourse={handleAddCourse}
             />
@@ -602,6 +676,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               startDay={dayDate}
               numDays={1}
               users={users}
+              filterUserId={filterUserId}
               onEditCourse={handleEditCourse}
               onAddCourse={handleAddCourse}
             />
