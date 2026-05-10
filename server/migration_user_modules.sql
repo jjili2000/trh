@@ -1,42 +1,58 @@
--- ─────────────────────────────────────────────────────────────────────────────
--- Migration : User Modules, Default Positions, Validation Config
+-- =============================================================================
+-- Migration TRH — Modules utilisateurs, Postes, Config validation
 -- Compatible MySQL 5.7+
--- Run once against your database
--- ─────────────────────────────────────────────────────────────────────────────
+-- À exécuter UNE SEULE FOIS via phpMyAdmin sur la base trh_tennis
+-- =============================================================================
 
--- 1. Modify role ENUM to only include admin/user
---    (converts existing manager/treasurer → user first)
+
+-- -----------------------------------------------------------------------------
+-- ÉTAPE 1 — Simplification des rôles (manager/treasurer → user)
+-- -----------------------------------------------------------------------------
 UPDATE users SET role = 'user' WHERE role IN ('manager', 'treasurer');
-ALTER TABLE users MODIFY COLUMN role ENUM('admin','user') NOT NULL DEFAULT 'user';
 
--- 2. Add is_protected column to positions
---    (remove this line if column already exists)
-ALTER TABLE positions ADD COLUMN is_protected TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE users
+  MODIFY COLUMN role ENUM('admin','user') NOT NULL DEFAULT 'user';
 
--- 3. Insert default positions (skip any whose name already exists)
+
+-- -----------------------------------------------------------------------------
+-- ÉTAPE 2 — Ajout du champ is_protected sur la table positions
+-- NOTE : si vous obtenez "Duplicate column name", la colonne existe déjà → ignorez
+-- -----------------------------------------------------------------------------
+ALTER TABLE positions
+  ADD COLUMN is_protected TINYINT(1) NOT NULL DEFAULT 0;
+
+
+-- -----------------------------------------------------------------------------
+-- ÉTAPE 3 — Insertion des postes par défaut (ignorés si déjà présents)
+-- -----------------------------------------------------------------------------
 INSERT INTO positions (id, name, is_protected)
-SELECT UUID(), v.name, v.ip FROM (
-  SELECT 'Président'                    AS name, 1 AS ip UNION ALL
-  SELECT 'Vice-président',                        0      UNION ALL
-  SELECT 'Trésorier',                             1      UNION ALL
-  SELECT 'Secrétaire Général',                    1      UNION ALL
-  SELECT 'Trésorier adjoint',                     0      UNION ALL
-  SELECT 'Secrétaire Général adjoint',             0      UNION ALL
-  SELECT 'Membre du comité',                      0      UNION ALL
-  SELECT 'Bénévole',                              0      UNION ALL
-  SELECT 'Responsable Permanence',                0      UNION ALL
-  SELECT 'Permanent',                             0      UNION ALL
-  SELECT 'Directeur sportif',                     0      UNION ALL
-  SELECT 'Entraîneur',                            0      UNION ALL
-  SELECT 'Préparateur physique',                  0
+SELECT UUID(), v.name, v.ip
+FROM (
+  SELECT 'Président'                   AS name, 1 AS ip UNION ALL
+  SELECT 'Vice-président',                       0      UNION ALL
+  SELECT 'Trésorier',                            1      UNION ALL
+  SELECT 'Secrétaire Général',                   1      UNION ALL
+  SELECT 'Trésorier adjoint',                    0      UNION ALL
+  SELECT 'Secrétaire Général adjoint',            0      UNION ALL
+  SELECT 'Membre du comité',                     0      UNION ALL
+  SELECT 'Bénévole',                             0      UNION ALL
+  SELECT 'Responsable Permanence',               0      UNION ALL
+  SELECT 'Permanent',                            0      UNION ALL
+  SELECT 'Directeur sportif',                    0      UNION ALL
+  SELECT 'Entraîneur',                           0      UNION ALL
+  SELECT 'Préparateur physique',                 0
 ) v
 WHERE v.name NOT IN (SELECT name FROM positions);
 
--- Mark existing protected posts (in case they were already in the table)
-UPDATE positions SET is_protected = 1
-WHERE name IN ('Président', 'Trésorier', 'Secrétaire Général');
+-- Marquer les postes protégés (Président, Trésorier, Secrétaire Général)
+UPDATE positions
+  SET is_protected = 1
+  WHERE name IN ('Président', 'Trésorier', 'Secrétaire Général');
 
--- 4. Create user_module_access table
+
+-- -----------------------------------------------------------------------------
+-- ÉTAPE 4 — Table des accès aux modules par utilisateur
+-- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS user_module_access (
   user_id VARCHAR(36) NOT NULL,
   module  VARCHAR(50) NOT NULL,
@@ -44,19 +60,18 @@ CREATE TABLE IF NOT EXISTS user_module_access (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- 5. Seed default module access for all existing users
-INSERT IGNORE INTO user_module_access (user_id, module)
-SELECT id, 'time'      FROM users;
-INSERT IGNORE INTO user_module_access (user_id, module)
-SELECT id, 'absences'  FROM users;
-INSERT IGNORE INTO user_module_access (user_id, module)
-SELECT id, 'expenses'  FROM users;
-INSERT IGNORE INTO user_module_access (user_id, module)
-SELECT id, 'documents' FROM users;
+-- Accès par défaut pour tous les utilisateurs existants
+INSERT IGNORE INTO user_module_access (user_id, module) SELECT id, 'time'      FROM users;
+INSERT IGNORE INTO user_module_access (user_id, module) SELECT id, 'absences'  FROM users;
+INSERT IGNORE INTO user_module_access (user_id, module) SELECT id, 'expenses'  FROM users;
+INSERT IGNORE INTO user_module_access (user_id, module) SELECT id, 'documents' FROM users;
 
--- 6. Validation config tables
+
+-- -----------------------------------------------------------------------------
+-- ÉTAPE 5 — Tables de configuration de validation
+-- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS validation_config (
-  config_type VARCHAR(50) NOT NULL,
+  config_type VARCHAR(50)     NOT NULL,
   mode        ENUM('AND','OR') NOT NULL DEFAULT 'OR',
   PRIMARY KEY (config_type)
 );
@@ -69,6 +84,11 @@ CREATE TABLE IF NOT EXISTS validation_config_positions (
   FOREIGN KEY (config_type) REFERENCES validation_config(config_type) ON DELETE CASCADE
 );
 
--- Seed initial config rows
+-- Configuration initiale (OR = un seul validateur suffit)
 INSERT IGNORE INTO validation_config (config_type, mode) VALUES ('budget',   'OR');
 INSERT IGNORE INTO validation_config (config_type, mode) VALUES ('expenses', 'OR');
+
+
+-- =============================================================================
+-- FIN DE LA MIGRATION
+-- =============================================================================
