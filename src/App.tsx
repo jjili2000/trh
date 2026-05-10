@@ -28,7 +28,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function AdminRoute({ children }: { children: ReactNode }) {
   const { currentUser } = useApp();
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
+  if (currentUser.role !== 'admin') {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;

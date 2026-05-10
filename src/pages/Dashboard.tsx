@@ -50,8 +50,7 @@ export default function Dashboard() {
     if (currentUser?.role === 'admin') return true;
     const isOwn = e.userId === currentUser?.id;
     const isSubordinate =
-      currentUser?.role === 'manager' &&
-      users.find(u => u.id === e.userId)?.managerId === currentUser.id;
+      users.find(u => u.id === e.userId)?.managerId === currentUser?.id;
     return isOwn || isSubordinate;
   });
 
@@ -69,8 +68,7 @@ export default function Dashboard() {
     if (currentUser?.role === 'admin') return true;
     const isOwn = r.userId === currentUser?.id;
     const isSubordinate =
-      currentUser?.role === 'manager' &&
-      users.find(u => u.id === r.userId)?.managerId === currentUser.id;
+      users.find(u => u.id === r.userId)?.managerId === currentUser?.id;
     return isOwn || isSubordinate;
   });
   const pendingAbsences = myAbsences.filter(r => r.status === 'pending').length;
@@ -78,11 +76,7 @@ export default function Dashboard() {
   // Expenses
   const myExpenses = expenses.filter(e => {
     if (currentUser?.role === 'admin') return true;
-    const isOwn = e.userId === currentUser?.id;
-    const isSubordinate =
-      currentUser?.role === 'manager' &&
-      users.find(u => u.id === e.userId)?.managerId === currentUser.id;
-    return isOwn || isSubordinate;
+    return e.userId === currentUser?.id;
   });
   const pendingExpenses = myExpenses.filter(e => e.status === 'pending').length;
 
@@ -93,7 +87,8 @@ export default function Dashboard() {
   ).length;
 
   const isAdmin = currentUser?.role === 'admin';
-  const isManagerOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  // A user who has subordinates acts as a manager for validation purposes
+  const isManagerOrAdmin = isAdmin || users.some(u => u.managerId === currentUser?.id);
 
   const greeting = () => {
     const h = now.getHours();
@@ -135,7 +130,7 @@ export default function Dashboard() {
       {/* Module cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
         <StatCard
-          title="Gestion du temps"
+          title="Saisie des temps"
           value={`${hoursThisMonth}h`}
           subtitle={`${pendingTime} en attente`}
           icon={Clock}

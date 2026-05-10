@@ -1,9 +1,10 @@
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Users, Tag, Settings, Briefcase } from 'lucide-react';
+import { Users, Tag, Settings, Briefcase, ShieldCheck } from 'lucide-react';
 import UserManagement from './UserManagement';
 import ActivityTypes from './ActivityTypes';
 import Positions from './Positions';
 import AppSettings from './AppSettings';
+import ValidationConfig from './ValidationConfig';
 
 export default function AdminDashboard() {
   const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -21,7 +22,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200 mb-6">
+      <div className="border-b border-gray-200 mb-6 overflow-x-auto">
         <nav className="flex gap-1 -mb-px">
           <NavLink to="/admin/users" className={tabClass}>
             <Users size={16} />
@@ -33,7 +34,11 @@ export default function AdminDashboard() {
           </NavLink>
           <NavLink to="/admin/positions" className={tabClass}>
             <Briefcase size={16} />
-            Types de postes
+            Postes
+          </NavLink>
+          <NavLink to="/admin/validation" className={tabClass}>
+            <ShieldCheck size={16} />
+            Validation
           </NavLink>
           <NavLink to="/admin/settings" className={tabClass}>
             <Settings size={16} />
@@ -47,6 +52,7 @@ export default function AdminDashboard() {
         <Route path="users" element={<UserManagement />} />
         <Route path="activity-types" element={<ActivityTypes />} />
         <Route path="positions" element={<Positions />} />
+        <Route path="validation" element={<ValidationConfig />} />
         <Route path="settings" element={<AppSettings />} />
       </Routes>
     </div>

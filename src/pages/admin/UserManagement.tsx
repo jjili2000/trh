@@ -3,19 +3,32 @@ import { Plus, Edit2, Trash2, X, User, ChevronDown } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { User as UserType, UserRole } from '../../types';
 
-const roleLabels: Record<UserRole, string> = {
+const typeLabels: Record<string, string> = {
   admin: 'Administrateur',
-  manager: 'Manager',
   user: 'Utilisateur',
-  treasurer: 'Trésorier',
+  // legacy
+  manager: 'Utilisateur',
+  treasurer: 'Utilisateur',
 };
 
-const roleBadgeColors: Record<UserRole, string> = {
+const typeBadgeColors: Record<string, string> = {
   admin: 'bg-purple-100 text-purple-700',
-  manager: 'bg-blue-100 text-blue-700',
   user: 'bg-gray-100 text-gray-600',
-  treasurer: 'bg-yellow-100 text-yellow-700',
+  manager: 'bg-gray-100 text-gray-600',
+  treasurer: 'bg-gray-100 text-gray-600',
 };
+
+const ALL_MODULES = [
+  { key: 'time',       label: 'Saisie des temps' },
+  { key: 'absences',   label: 'Absences' },
+  { key: 'expenses',   label: 'Notes de frais' },
+  { key: 'documents',  label: 'Documents' },
+  { key: 'budget',     label: 'Budget' },
+  { key: 'accounting', label: 'Comptabilité' },
+  { key: 'seasons',    label: 'Saisons' },
+];
+
+const DEFAULT_MODULES = ['time', 'absences', 'expenses', 'documents'];
 
 interface UserFormData {
   firstName: string;
@@ -25,6 +38,7 @@ interface UserFormData {
   role: UserRole;
   managerId: string;
   position: string;
+  moduleAccess: string[];
 }
 
 const emptyForm: UserFormData = {
@@ -35,6 +49,7 @@ const emptyForm: UserFormData = {
   role: 'user',
   managerId: '',
   position: '',
+  moduleAccess: DEFAULT_MODULES,
 };
 
 interface ModalProps {
@@ -67,7 +82,8 @@ export default function UserManagement() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
 
-  const managers = users.filter(u => u.role === 'manager' || u.role === 'admin');
+  // A "manager" is any user who has subordinates
+  const isUserManager = (userId: string) => users.some(u => u.managerId === userId);
 
   const openAdd = () => {
     setForm(emptyForm);
@@ -82,13 +98,23 @@ export default function UserManagement() {
       lastName: user.lastName,
       email: user.email,
       password: user.password,
-      role: user.role,
+      role: (user.role === 'admin' ? 'admin' : 'user') as UserRole,
       managerId: user.managerId ?? '',
       position: user.position ?? '',
+      moduleAccess: user.moduleAccess ?? DEFAULT_MODULES,
     });
     setEditingUser(user);
     setFormError('');
     setShowModal(true);
+  };
+
+  const toggleModule = (mod: string) => {
+    setForm(f => ({
+      ...f,
+      moduleAccess: f.moduleAccess.includes(mod)
+        ? f.moduleAccess.filter(m => m !== mod)
+        : [...f.moduleAccess, mod],
+    }));
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -100,34 +126,27 @@ export default function UserManagement() {
       return;
     }
 
-    const emailExists = users.some(
-      u => u.email === form.email && u.id !== editingUser?.id
-    );
+    const emailExists = users.some(u => u.email === form.email && u.id !== editingUser?.id);
     if (emailExists) {
       setFormError('Cet email est déjà utilisé.');
       return;
     }
 
+    const payload = {
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      password: form.password,
+      role: form.role,
+      managerId: form.managerId || undefined,
+      position: form.position || undefined,
+      moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
+    };
+
     if (editingUser) {
-      updateUser(editingUser.id, {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        password: form.password,
-        role: form.role,
-        managerId: form.managerId || undefined,
-        position: form.position || undefined,
-      });
+      updateUser(editingUser.id, payload);
     } else {
-      addUser({
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        password: form.password,
-        role: form.role,
-        managerId: form.managerId || undefined,
-        position: form.position || undefined,
-      });
+      addUser(payload);
     }
 
     setShowModal(false);
@@ -141,8 +160,7 @@ export default function UserManagement() {
 
   // Build hierarchy groups
   const topLevel = users.filter(u => !u.managerId);
-  const getSubordinates = (managerId: string) =>
-    users.filter(u => u.managerId === managerId);
+  const getSubordinates = (managerId: string) => users.filter(u => u.managerId === managerId);
 
   return (
     <div>
@@ -171,9 +189,12 @@ export default function UserManagement() {
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
                   <User size={14} className="text-tennis-green" />
                   <span>{user.firstName} {user.lastName}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${roleBadgeColors[user.role]}`}>
-                    {roleLabels[user.role]}
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${typeBadgeColors[user.role]}`}>
+                    {typeLabels[user.role]}
                   </span>
+                  {user.position && (
+                    <span className="text-xs text-gray-400">— {user.position}</span>
+                  )}
                 </div>
                 {subs.length > 0 && (
                   <div className="ml-5 mt-2 space-y-1 border-l-2 border-gray-100 pl-3">
@@ -181,9 +202,12 @@ export default function UserManagement() {
                       <div key={sub.id} className="flex items-center gap-2 text-sm text-gray-600">
                         <ChevronDown size={12} className="text-gray-400" />
                         {sub.firstName} {sub.lastName}
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${roleBadgeColors[sub.role]}`}>
-                          {roleLabels[sub.role]}
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${typeBadgeColors[sub.role]}`}>
+                          {typeLabels[sub.role]}
                         </span>
+                        {sub.position && (
+                          <span className="text-xs text-gray-400">— {sub.position}</span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -203,8 +227,8 @@ export default function UserManagement() {
                 <th className="text-left px-6 py-3 font-semibold text-gray-600">Nom</th>
                 <th className="text-left px-6 py-3 font-semibold text-gray-600">Email</th>
                 <th className="text-left px-6 py-3 font-semibold text-gray-600">Poste</th>
-                <th className="text-left px-6 py-3 font-semibold text-gray-600">Rôle</th>
-                <th className="text-left px-6 py-3 font-semibold text-gray-600">Manager</th>
+                <th className="text-left px-6 py-3 font-semibold text-gray-600">Type d'utilisateur</th>
+                <th className="text-left px-6 py-3 font-semibold text-gray-600">Responsable</th>
                 {currentUser?.role === 'admin' && (
                   <th className="text-right px-6 py-3 font-semibold text-gray-600">Actions</th>
                 )}
@@ -220,19 +244,24 @@ export default function UserManagement() {
                         <div className="w-8 h-8 rounded-full bg-tennis-green flex items-center justify-center text-white text-xs font-bold">
                           {user.firstName[0]}{user.lastName[0]}
                         </div>
-                        <span className="font-medium text-gray-900">
-                          {user.firstName} {user.lastName}
-                          {user.id === currentUser?.id && (
-                            <span className="ml-2 text-xs text-gray-400">(moi)</span>
+                        <div>
+                          <span className="font-medium text-gray-900">
+                            {user.firstName} {user.lastName}
+                            {user.id === currentUser?.id && (
+                              <span className="ml-2 text-xs text-gray-400">(moi)</span>
+                            )}
+                          </span>
+                          {isUserManager(user.id) && (
+                            <p className="text-xs text-tennis-green">Responsable d'équipe</p>
                           )}
-                        </span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-600">{user.email}</td>
                     <td className="px-6 py-4 text-gray-600">{user.position ?? '—'}</td>
                     <td className="px-6 py-4">
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${roleBadgeColors[user.role]}`}>
-                        {roleLabels[user.role]}
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${typeBadgeColors[user.role]}`}>
+                        {typeLabels[user.role]}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-gray-600">
@@ -337,34 +366,50 @@ export default function UserManagement() {
             </div>
 
             <div>
-              <label className="label">Rôle *</label>
+              <label className="label">Type d'utilisateur *</label>
               <select
                 className="input"
                 value={form.role}
                 onChange={e => setForm(f => ({ ...f, role: e.target.value as UserRole }))}
               >
                 <option value="user">Utilisateur</option>
-                <option value="manager">Manager</option>
-                <option value="treasurer">Trésorier</option>
                 <option value="admin">Administrateur</option>
               </select>
             </div>
 
-            {form.role === 'user' && (
+            <div>
+              <label className="label">Responsable</label>
+              <select
+                className="input"
+                value={form.managerId}
+                onChange={e => setForm(f => ({ ...f, managerId: e.target.value }))}
+              >
+                <option value="">— Aucun —</option>
+                {users.filter(u => u.id !== editingUser?.id).map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.firstName} {m.lastName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Module access — hidden for admin */}
+            {form.role !== 'admin' && (
               <div>
-                <label className="label">Manager</label>
-                <select
-                  className="input"
-                  value={form.managerId}
-                  onChange={e => setForm(f => ({ ...f, managerId: e.target.value }))}
-                >
-                  <option value="">— Aucun —</option>
-                  {managers.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.firstName} {m.lastName}
-                    </option>
+                <label className="label">Accès aux modules</label>
+                <div className="mt-2 space-y-2">
+                  {ALL_MODULES.map(mod => (
+                    <label key={mod.key} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-tennis-green rounded border-gray-300"
+                        checked={form.moduleAccess.includes(mod.key)}
+                        onChange={() => toggleModule(mod.key)}
+                      />
+                      <span className="text-sm text-gray-700">{mod.label}</span>
+                    </label>
                   ))}
-                </select>
+                </div>
               </div>
             )}
 

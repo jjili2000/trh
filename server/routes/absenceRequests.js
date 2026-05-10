@@ -27,24 +27,28 @@ function mapRequest(row) {
   };
 }
 
+async function isManagerOf(managerId, targetUserId) {
+  const [rows] = await pool.execute(
+    'SELECT id FROM users WHERE id = ? AND manager_id = ?',
+    [targetUserId, managerId]
+  );
+  return rows.length > 0;
+}
+
 // GET /api/absence-requests
 router.get('/', async (req, res) => {
   try {
     let rows;
     if (req.user.role === 'admin') {
       [rows] = await pool.execute('SELECT * FROM absence_requests ORDER BY start_date DESC, created_at DESC');
-    } else if (req.user.role === 'manager') {
+    } else {
+      // Own + subordinates
       [rows] = await pool.execute(
         `SELECT ar.* FROM absence_requests ar
          WHERE ar.user_id = ?
             OR ar.user_id IN (SELECT id FROM users WHERE manager_id = ?)
          ORDER BY ar.start_date DESC, ar.created_at DESC`,
         [req.user.id, req.user.id]
-      );
-    } else {
-      [rows] = await pool.execute(
-        'SELECT * FROM absence_requests WHERE user_id = ? ORDER BY start_date DESC, created_at DESC',
-        [req.user.id]
       );
     }
     res.json(rows.map(mapRequest));
@@ -94,9 +98,9 @@ router.put('/:id', async (req, res) => {
     const updates = [];
     const values = [];
     if (startDate !== undefined) { updates.push('start_date = ?'); values.push(startDate); }
-    if (endDate !== undefined) { updates.push('end_date = ?'); values.push(endDate); }
-    if (type !== undefined) { updates.push('type = ?'); values.push(type); }
-    if (reason !== undefined) { updates.push('reason = ?'); values.push(reason || null); }
+    if (endDate !== undefined)   { updates.push('end_date = ?');   values.push(endDate); }
+    if (type !== undefined)      { updates.push('type = ?');       values.push(type); }
+    if (reason !== undefined)    { updates.push('reason = ?');     values.push(reason || null); }
 
     if (updates.length > 0) {
       values.push(id);
@@ -114,20 +118,15 @@ router.put('/:id', async (req, res) => {
 // PUT /api/absence-requests/:id/approve
 router.put('/:id/approve', async (req, res) => {
   try {
-    if (req.user.role === 'user') {
-      return res.status(403).json({ error: 'Accès refusé' });
-    }
     const { id } = req.params;
     const [existing] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Demande non trouvée' });
 
     const record = existing[0];
-    if (req.user.role === 'manager') {
-      const [sub] = await pool.execute(
-        'SELECT id FROM users WHERE id = ? AND manager_id = ?',
-        [record.user_id, req.user.id]
-      );
-      if (sub.length === 0) {
+
+    if (req.user.role !== 'admin') {
+      const managerOk = await isManagerOf(req.user.id, record.user_id);
+      if (!managerOk) {
         return res.status(403).json({ error: 'Vous ne pouvez approuver que les demandes de vos subordonnés' });
       }
     }
@@ -147,20 +146,15 @@ router.put('/:id/approve', async (req, res) => {
 // PUT /api/absence-requests/:id/reject
 router.put('/:id/reject', async (req, res) => {
   try {
-    if (req.user.role === 'user') {
-      return res.status(403).json({ error: 'Accès refusé' });
-    }
     const { id } = req.params;
     const [existing] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Demande non trouvée' });
 
     const record = existing[0];
-    if (req.user.role === 'manager') {
-      const [sub] = await pool.execute(
-        'SELECT id FROM users WHERE id = ? AND manager_id = ?',
-        [record.user_id, req.user.id]
-      );
-      if (sub.length === 0) {
+
+    if (req.user.role !== 'admin') {
+      const managerOk = await isManagerOf(req.user.id, record.user_id);
+      if (!managerOk) {
         return res.status(403).json({ error: 'Vous ne pouvez rejeter que les demandes de vos subordonnés' });
       }
     }

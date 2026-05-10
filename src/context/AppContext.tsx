@@ -8,6 +8,7 @@ import {
   Expense,
   AppSettings,
   HRDocument,
+  ValidationConfig,
 } from '../types';
 import { api, setToken, clearToken, getToken } from '../api/client';
 
@@ -23,6 +24,7 @@ interface AppContextType {
   expenses: Expense[];
   documents: HRDocument[];
   appSettings: AppSettings;
+  validationConfig: ValidationConfig;
   loading: boolean;
   notifCount: number;
 
@@ -73,6 +75,9 @@ interface AppContextType {
 
   // Settings
   updateSettings: (data: Partial<AppSettings>) => Promise<void>;
+
+  // Validation Config
+  updateValidationConfig: (type: 'budget' | 'expenses', data: { mode: 'AND' | 'OR'; positions: string[] }) => Promise<void>;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -91,6 +96,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [documents, setDocuments] = useState<HRDocument[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultSettings);
+  const [validationConfig, setValidationConfig] = useState<ValidationConfig>({
+    budget:   { mode: 'OR', positions: [] },
+    expenses: { mode: 'OR', positions: [] },
+  });
   const [loading, setLoading] = useState<boolean>(true);
   const [notifCount, setNotifCount] = useState<number>(0);
 
@@ -107,6 +116,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         fetchedExpenses,
         fetchedDocuments,
         fetchedSettings,
+        fetchedValidationConfig,
       ] = await Promise.all([
         api.get<User[]>('/users'),
         api.get<ActivityType[]>('/activity-types'),
@@ -116,6 +126,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         api.get<Expense[]>('/expenses'),
         api.get<HRDocument[]>('/documents'),
         api.get<AppSettings>('/settings'),
+        api.get<ValidationConfig>('/validation-config').catch(() => ({
+          budget:   { mode: 'OR' as const, positions: [] },
+          expenses: { mode: 'OR' as const, positions: [] },
+        })),
       ]);
       setUsers(fetchedUsers);
       setActivityTypes(fetchedActivityTypes);
@@ -125,6 +139,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setExpenses(fetchedExpenses);
       setDocuments(fetchedDocuments);
       setAppSettings(fetchedSettings);
+      setValidationConfig(fetchedValidationConfig);
       try {
         const { unreadCount } = await api.get<{ unreadCount: number }>('/notifications');
         setNotifCount(unreadCount);
@@ -365,6 +380,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAppSettings(updated);
   };
 
+  // ── Validation Config ─────────────────────────────────────────────────────────
+
+  const updateValidationConfig = async (type: 'budget' | 'expenses', data: { mode: 'AND' | 'OR'; positions: string[] }) => {
+    await api.put(`/validation-config/${type}`, data);
+    setValidationConfig(prev => ({ ...prev, [type]: data }));
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -377,6 +399,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         expenses,
         documents,
         appSettings,
+        validationConfig,
         loading,
         notifCount,
         login,
@@ -407,6 +430,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateDocument,
         deleteDocument,
         updateSettings,
+        updateValidationConfig,
       }}
     >
       {children}

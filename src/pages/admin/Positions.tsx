@@ -1,12 +1,9 @@
 import { useState, ReactNode, FormEvent } from 'react';
-import { Plus, Edit2, Trash2, X, Briefcase } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Briefcase, Lock } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Position } from '../../types';
 
-interface FormData {
-  name: string;
-}
-
+interface FormData { name: string; }
 const emptyForm: FormData = { name: '' };
 
 interface ModalProps {
@@ -38,6 +35,7 @@ export default function Positions() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -58,23 +56,28 @@ export default function Positions() {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     setFormError('');
-    if (!form.name.trim()) {
-      setFormError('Le nom est obligatoire.');
-      return;
-    }
+    if (!form.name.trim()) { setFormError('Le nom est obligatoire.'); return; }
     const nameExists = positions.some(
       p => p.name.toLowerCase() === form.name.toLowerCase() && p.id !== editing?.id
     );
-    if (nameExists) {
-      setFormError('Ce type de poste existe déjà.');
-      return;
-    }
+    if (nameExists) { setFormError('Ce type de poste existe déjà.'); return; }
     if (editing) {
       updatePosition(editing.id, { name: form.name.trim() });
     } else {
       addPosition({ name: form.name.trim() });
     }
     setShowModal(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeleteError('');
+    try {
+      await deletePosition(id);
+      setDeleteConfirm(null);
+    } catch (err: unknown) {
+      const msg = (err as { message?: string })?.message ?? 'Erreur lors de la suppression';
+      setDeleteError(msg);
+    }
   };
 
   return (
@@ -96,10 +99,16 @@ export default function Positions() {
         {positions.map(p => (
           <div key={p.id} className="card flex items-center gap-4">
             <div className="w-10 h-10 rounded-xl bg-tennis-green/10 flex items-center justify-center flex-shrink-0">
-              <Briefcase size={18} className="text-tennis-green" />
+              {p.isProtected
+                ? <Lock size={18} className="text-tennis-green" />
+                : <Briefcase size={18} className="text-tennis-green" />
+              }
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-gray-800 truncate">{p.name}</p>
+              {p.isProtected && (
+                <p className="text-xs text-amber-600 font-medium mt-0.5">Poste protégé</p>
+              )}
             </div>
             {isAdmin && (
               <div className="flex items-center gap-1 flex-shrink-0">
@@ -110,8 +119,14 @@ export default function Positions() {
                   <Edit2 size={15} />
                 </button>
                 <button
-                  onClick={() => setDeleteConfirm(p.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                  onClick={() => { setDeleteError(''); setDeleteConfirm(p.id); }}
+                  disabled={p.isProtected}
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    p.isProtected
+                      ? 'text-gray-200 cursor-not-allowed'
+                      : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                  }`}
+                  title={p.isProtected ? 'Ce poste est protégé' : 'Supprimer'}
                 >
                   <Trash2 size={15} />
                 </button>
@@ -151,12 +166,8 @@ export default function Positions() {
               />
             </div>
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">
-                Annuler
-              </button>
-              <button type="submit" className="btn-primary">
-                {editing ? 'Enregistrer' : 'Ajouter'}
-              </button>
+              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Annuler</button>
+              <button type="submit" className="btn-primary">{editing ? 'Enregistrer' : 'Ajouter'}</button>
             </div>
           </form>
         </Modal>
@@ -165,17 +176,17 @@ export default function Positions() {
       {/* Delete Confirm */}
       {deleteConfirm && (
         <Modal title="Confirmer la suppression" onClose={() => setDeleteConfirm(null)}>
+          {deleteError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+              {deleteError}
+            </div>
+          )}
           <p className="text-gray-600 mb-6">
             Êtes-vous sûr de vouloir supprimer ce type de poste ?
           </p>
           <div className="flex justify-end gap-3">
             <button onClick={() => setDeleteConfirm(null)} className="btn-secondary">Annuler</button>
-            <button
-              onClick={() => { deletePosition(deleteConfirm); setDeleteConfirm(null); }}
-              className="btn-danger"
-            >
-              Supprimer
-            </button>
+            <button onClick={() => handleDelete(deleteConfirm)} className="btn-danger">Supprimer</button>
           </div>
         </Modal>
       )}

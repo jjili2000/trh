@@ -5,8 +5,13 @@ import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
 import { BudgetRequest, RealBudget, BudgetRequestStatus, RealBudgetStatus } from '../../types';
 
-function isTreasurer(role: string) {
-  return role === 'treasurer';
+function useIsBudgetValidator() {
+  const { currentUser, validationConfig } = useApp();
+  if (!currentUser) return false;
+  if (currentUser.role === 'admin') return true;
+  const pos = currentUser.position;
+  if (!pos) return false;
+  return validationConfig.budget.positions.includes(pos);
 }
 
 function fmtDate(d: string) {
@@ -28,6 +33,7 @@ const realStatusBadge: Record<RealBudgetStatus, { label: string; cls: string }> 
 export default function BudgetList() {
   const navigate = useNavigate();
   const { currentUser, users } = useApp();
+  const isTreas = useIsBudgetValidator();
   const [tab, setTab] = useState<'requests' | 'real'>('requests');
 
   const [requests, setRequests] = useState<BudgetRequest[]>([]);
@@ -52,7 +58,7 @@ export default function BudgetList() {
 
   const canToggle = (budget: RealBudget) => {
     if (!currentUser) return false;
-    return isTreasurer(currentUser.role) || budget.userId === currentUser.id;
+    return isTreas || budget.userId === currentUser.id;
   };
 
   const toggleRealStatus = async (budget: RealBudget, e: React.MouseEvent) => {
@@ -71,7 +77,7 @@ export default function BudgetList() {
     return u ? `${u.firstName} ${u.lastName}` : userId;
   };
 
-  const showRequesterCol = currentUser && isTreasurer(currentUser.role);
+  const showRequesterCol = isTreas;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">

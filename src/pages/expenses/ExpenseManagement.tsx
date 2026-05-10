@@ -91,19 +91,18 @@ export default function ExpenseManagement() {
   const [previewExpense, setPreviewExpense] = useState<Expense | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isManagerOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const isAdmin = currentUser?.role === 'admin';
+  // For expenses: "team" = all non-own expenses (since expenses are validated by post, not by manager)
+  // Show all expenses to admin; for others, show own + expenses where current user's post is a validator
+  // (the server already controls what comes back based on validation config)
+  const isManagerOrAdmin = isAdmin || expenses.some(e => e.userId !== currentUser?.id);
 
   const myExpenses = expenses
     .filter(e => e.userId === currentUser?.id)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const subordinateIds =
-    currentUser?.role === 'admin'
-      ? users.map(u => u.id).filter(id => id !== currentUser.id)
-      : users.filter(u => u.managerId === currentUser?.id).map(u => u.id);
-
   const teamExpenses = expenses
-    .filter(e => subordinateIds.includes(e.userId))
+    .filter(e => e.userId !== currentUser?.id)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const pendingTeamExpenses = teamExpenses.filter(e => e.status === 'pending');

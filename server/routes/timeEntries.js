@@ -25,25 +25,38 @@ function mapEntry(row) {
   };
 }
 
+// Returns true if userId is the manager of targetUserId
+async function isManagerOf(managerId, targetUserId) {
+  const [rows] = await pool.execute(
+    'SELECT id FROM users WHERE id = ? AND manager_id = ?',
+    [targetUserId, managerId]
+  );
+  return rows.length > 0;
+}
+
+// Returns true if userId has at least one subordinate (i.e. is someone's manager)
+async function isAnyonesManager(userId) {
+  const [rows] = await pool.execute(
+    'SELECT COUNT(*) as cnt FROM users WHERE manager_id = ?',
+    [userId]
+  );
+  return rows[0].cnt > 0;
+}
+
 // GET /api/time-entries
 router.get('/', async (req, res) => {
   try {
     let rows;
     if (req.user.role === 'admin') {
       [rows] = await pool.execute('SELECT * FROM time_entries ORDER BY date DESC, created_at DESC');
-    } else if (req.user.role === 'manager') {
-      // Own entries + entries of subordinates
+    } else {
+      // Own entries + entries of subordinates (works whether role is manager or user)
       [rows] = await pool.execute(
         `SELECT te.* FROM time_entries te
          WHERE te.user_id = ?
             OR te.user_id IN (SELECT id FROM users WHERE manager_id = ?)
          ORDER BY te.date DESC, te.created_at DESC`,
         [req.user.id, req.user.id]
-      );
-    } else {
-      [rows] = await pool.execute(
-        'SELECT * FROM time_entries WHERE user_id = ? ORDER BY date DESC, created_at DESC',
-        [req.user.id]
       );
     }
     res.json(rows.map(mapEntry));
@@ -92,10 +105,10 @@ router.put('/:id', async (req, res) => {
     const { date, hours, activityTypeId, description } = req.body;
     const updates = [];
     const values = [];
-    if (date !== undefined) { updates.push('date = ?'); values.push(date); }
-    if (hours !== undefined) { updates.push('hours = ?'); values.push(hours); }
+    if (date !== undefined)           { updates.push('date = ?');             values.push(date); }
+    if (hours !== undefined)          { updates.push('hours = ?');            values.push(hours); }
     if (activityTypeId !== undefined) { updates.push('activity_type_id = ?'); values.push(activityTypeId || null); }
-    if (description !== undefined) { updates.push('description = ?'); values.push(description || null); }
+    if (description !== undefined)    { updates.push('description = ?');      values.push(description || null); }
 
     if (updates.length > 0) {
       values.push(id);
@@ -113,23 +126,16 @@ router.put('/:id', async (req, res) => {
 // PUT /api/time-entries/:id/approve
 router.put('/:id/approve', async (req, res) => {
   try {
-    if (req.user.role === 'user') {
-      return res.status(403).json({ error: 'Accès refusé' });
-    }
     const { id } = req.params;
     const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Entrée non trouvée' });
 
     const entry = existing[0];
 
-    // Manager can only approve subordinates' entries
-    if (req.user.role === 'manager') {
-      const [sub] = await pool.execute(
-        'SELECT id FROM users WHERE id = ? AND manager_id = ?',
-        [entry.user_id, req.user.id]
-      );
-      if (sub.length === 0 && entry.user_id !== req.user.id) {
-        // Allow manager to approve own entries too — actually restrict to subordinates only
+    if (req.user.role !== 'admin') {
+      // Only the direct manager of this user can approve
+      const managerOk = await isManagerOf(req.user.id, entry.user_id);
+      if (!managerOk) {
         return res.status(403).json({ error: 'Vous ne pouvez approuver que les entrées de vos subordonnés' });
       }
     }
@@ -149,21 +155,15 @@ router.put('/:id/approve', async (req, res) => {
 // PUT /api/time-entries/:id/reject
 router.put('/:id/reject', async (req, res) => {
   try {
-    if (req.user.role === 'user') {
-      return res.status(403).json({ error: 'Accès refusé' });
-    }
     const { id } = req.params;
     const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Entrée non trouvée' });
 
     const entry = existing[0];
 
-    if (req.user.role === 'manager') {
-      const [sub] = await pool.execute(
-        'SELECT id FROM users WHERE id = ? AND manager_id = ?',
-        [entry.user_id, req.user.id]
-      );
-      if (sub.length === 0) {
+    if (req.user.role !== 'admin') {
+      const managerOk = await isManagerOf(req.user.id, entry.user_id);
+      if (!managerOk) {
         return res.status(403).json({ error: 'Vous ne pouvez rejeter que les entrées de vos subordonnés' });
       }
     }

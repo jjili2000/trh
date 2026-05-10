@@ -25,12 +25,24 @@ function mapDocument(row) {
   };
 }
 
+// Helper: check if user has document admin access (upload/validate)
+async function hasDocAdminAccess(userId, role) {
+  if (role === 'admin') return true;
+  try {
+    const [rows] = await pool.execute(
+      "SELECT 1 FROM user_module_access WHERE user_id = ? AND module = 'documents_admin'",
+      [userId]
+    );
+    return rows.length > 0;
+  } catch { return false; }
+}
+
 // GET / — admin sees all, user sees own validated docs
 router.get('/', async (req, res) => {
   try {
     const { id, role } = req.user;
     let rows;
-    if (role === 'admin' || role === 'manager') {
+    if (role === 'admin') {
       [rows] = await pool.execute('SELECT * FROM documents ORDER BY created_at DESC');
     } else {
       [rows] = await pool.execute(
@@ -48,7 +60,7 @@ router.get('/', async (req, res) => {
 // POST / — upload + auto-recognize
 router.post('/', async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { fileName, fileType, fileData } = req.body;
@@ -85,7 +97,7 @@ router.post('/', async (req, res) => {
 // PUT /:id — update metadata + validate
 router.put('/:id', async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { documentType, userId, periodStart, periodEnd, notes, status } = req.body;
@@ -142,7 +154,7 @@ router.put('/:id', async (req, res) => {
 // DELETE /:id
 router.delete('/:id', async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { id } = req.params;

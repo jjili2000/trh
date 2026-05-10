@@ -71,16 +71,15 @@ export default function AbsenceManagement() {
   const [formError, setFormError] = useState('');
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');
 
-  const isManagerOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const isAdmin = currentUser?.role === 'admin';
+  const subordinateIds = isAdmin
+    ? users.map(u => u.id).filter(id => id !== currentUser?.id)
+    : users.filter(u => u.managerId === currentUser?.id).map(u => u.id);
+  const isManagerOrAdmin = isAdmin || subordinateIds.length > 0;
 
   const myRequests = absenceRequests
     .filter(r => r.userId === currentUser?.id)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  const subordinateIds =
-    currentUser?.role === 'admin'
-      ? users.map(u => u.id).filter(id => id !== currentUser.id)
-      : users.filter(u => u.managerId === currentUser?.id).map(u => u.id);
 
   const teamRequests = absenceRequests
     .filter(r => subordinateIds.includes(r.userId))

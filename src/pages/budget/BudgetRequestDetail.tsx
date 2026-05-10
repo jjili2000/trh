@@ -5,8 +5,16 @@ import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
 import { BudgetRequest, BudgetRequestLine, BudgetLineType } from '../../types';
 
-function isTreasurer(role: string) {
-  return role === 'treasurer';
+// Budget validation is now config-based (server-side).
+// On the frontend, we determine if the current user can validate by checking
+// if their position is in the validationConfig.budget.positions list.
+function useIsBudgetValidator() {
+  const { currentUser, validationConfig } = useApp();
+  if (!currentUser) return false;
+  if (currentUser.role === 'admin') return true;
+  const pos = currentUser.position;
+  if (!pos) return false;
+  return validationConfig.budget.positions.includes(pos);
 }
 
 function fmtDate(d: string) {
@@ -119,7 +127,7 @@ export default function BudgetRequestDetail() {
   }, [label, startDate, endDate, comment, lines]);
 
   const isOwner = currentUser && request && request.userId === currentUser.id;
-  const isTreas = currentUser && isTreasurer(currentUser.role);
+  const isTreas = useIsBudgetValidator();
   const isDraft = request?.status === 'draft' || isNew;
   const isSubmitted = request?.status === 'submitted';
   const incomeLines = lines.filter(l => l.type === 'income');

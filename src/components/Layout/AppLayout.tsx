@@ -31,16 +31,17 @@ function TennisBallSmall() {
 
 const roleLabels: Record<string, string> = {
   admin: 'Administrateur',
-  manager: 'Manager',
   user: 'Utilisateur',
-  treasurer: 'Trésorier',
+  // legacy values (backward compat during migration)
+  manager: 'Utilisateur',
+  treasurer: 'Utilisateur',
 };
 
 const roleBadgeColors: Record<string, string> = {
   admin: 'bg-purple-100 text-purple-700',
-  manager: 'bg-blue-100 text-blue-700',
   user: 'bg-gray-100 text-gray-600',
-  treasurer: 'bg-yellow-100 text-yellow-700',
+  manager: 'bg-gray-100 text-gray-600',
+  treasurer: 'bg-gray-100 text-gray-600',
 };
 
 export default function AppLayout() {
@@ -62,8 +63,10 @@ export default function AppLayout() {
         : 'text-gray-300 hover:bg-white/10 hover:text-white'
     }`;
 
-  const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
-  const canAccessAccounting = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'treasurer';
+  const isAdmin = currentUser?.role === 'admin';
+  // Module access helpers (admin always has all)
+  const modules = currentUser?.moduleAccess ?? [];
+  const hasModule = (m: string) => isAdmin || modules.includes(m);
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -85,53 +88,63 @@ export default function AppLayout() {
           Tableau de bord
         </NavLink>
 
-        <NavLink to="/time" className={navLinkClass} onClick={closeSidebar}>
-          <Clock size={18} />
-          Gestion du temps
-        </NavLink>
+        {hasModule('time') && (
+          <NavLink to="/time" className={navLinkClass} onClick={closeSidebar}>
+            <Clock size={18} />
+            Saisie des temps
+          </NavLink>
+        )}
 
-        <NavLink to="/absences" className={navLinkClass} onClick={closeSidebar}>
-          <Calendar size={18} />
-          Absences
-        </NavLink>
+        {hasModule('absences') && (
+          <NavLink to="/absences" className={navLinkClass} onClick={closeSidebar}>
+            <Calendar size={18} />
+            Absences
+          </NavLink>
+        )}
 
-        <NavLink to="/budget" className={navLinkClass} onClick={closeSidebar}>
-          <Wallet size={18} />
-          Budget
-        </NavLink>
+        {hasModule('budget') && (
+          <NavLink to="/budget" className={navLinkClass} onClick={closeSidebar}>
+            <Wallet size={18} />
+            Budget
+          </NavLink>
+        )}
 
-        {canAccessAccounting && (
+        {hasModule('accounting') && (
           <NavLink to="/accounting" className={navLinkClass} onClick={closeSidebar}>
             <BarChart2 size={18} />
             Comptabilité
           </NavLink>
         )}
 
-        <NavLink to="/expenses" className={navLinkClass} onClick={closeSidebar}>
-          <Receipt size={18} />
-          Notes de frais
-        </NavLink>
-
-        {isAdminOrManager ? (
-          <NavLink to="/documents" className={navLinkClass} onClick={closeSidebar}>
-            <FileText size={18} />
-            Documents
-          </NavLink>
-        ) : (
-          <NavLink to="/my-documents" className={navLinkClass} onClick={closeSidebar}>
-            <FileText size={18} />
-            Mes documents
+        {hasModule('expenses') && (
+          <NavLink to="/expenses" className={navLinkClass} onClick={closeSidebar}>
+            <Receipt size={18} />
+            Notes de frais
           </NavLink>
         )}
 
-        {isAdminOrManager && (
+        {hasModule('documents') && (
+          isAdmin ? (
+            <NavLink to="/documents" className={navLinkClass} onClick={closeSidebar}>
+              <FileText size={18} />
+              Documents
+            </NavLink>
+          ) : (
+            <NavLink to="/my-documents" className={navLinkClass} onClick={closeSidebar}>
+              <FileText size={18} />
+              Mes documents
+            </NavLink>
+          )
+        )}
+
+        {hasModule('seasons') && (
           <NavLink to="/seasons" className={navLinkClass} onClick={closeSidebar}>
             <GraduationCap size={18} />
             Saisons
           </NavLink>
         )}
 
-        {isAdminOrManager && (
+        {isAdmin && (
           <>
             <div className="pt-4 pb-1">
               <p className="px-4 text-xs font-semibold text-tennis-green-light uppercase tracking-wider">

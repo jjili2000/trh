@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'manager' | 'user' | 'treasurer';
+export type UserRole = 'admin' | 'user';
 
 export interface User {
   id: string;
@@ -9,6 +9,7 @@ export interface User {
   role: UserRole;
   managerId?: string;
   position?: string;
+  moduleAccess?: string[];
   createdAt: string;
 }
 
@@ -21,6 +22,12 @@ export interface ActivityType {
 export interface Position {
   id: string;
   name: string;
+  isProtected?: boolean;
+}
+
+export interface ValidationConfig {
+  budget: { mode: 'AND' | 'OR'; positions: string[] };
+  expenses: { mode: 'AND' | 'OR'; positions: string[] };
 }
 
 export interface TimeEntry {

@@ -11,8 +11,13 @@ import {
   BudgetLineType, BudgetAccessGrant
 } from '../../types';
 
-function isTreasurer(role: string) {
-  return role === 'treasurer';
+function useIsBudgetValidator() {
+  const { currentUser, validationConfig } = useApp();
+  if (!currentUser) return false;
+  if (currentUser.role === 'admin') return true;
+  const pos = currentUser.position;
+  if (!pos) return false;
+  return validationConfig.budget.positions.includes(pos);
 }
 
 function fmtDate(d: string) {
@@ -57,6 +62,7 @@ export default function RealBudgetDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { currentUser, users } = useApp();
+  const isTreas = useIsBudgetValidator();
 
   const [budget, setBudget] = useState<RealBudget | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,7 +111,7 @@ export default function RealBudgetDetail() {
   if (!currentUser) return null;
 
   const canEdit = budget
-    ? isTreasurer(currentUser.role) || budget.userId === currentUser.id
+    ? isTreas || budget.userId === currentUser.id
     : false;
 
   const canAddDetails = budget

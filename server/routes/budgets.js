@@ -4,7 +4,34 @@ const pool = require('../db');
 
 const router = express.Router();
 
-const isTreasurer = (role) => role === 'treasurer';
+// Check if a user can validate budgets (admin always can; others by position config)
+async function isBudgetValidator(userId, role) {
+  if (role === 'admin') return true;
+  try {
+    const [userRows] = await pool.execute('SELECT position FROM users WHERE id = ?', [userId]);
+    const position = userRows[0]?.position;
+    if (!position) return false;
+    const [cfgRows] = await pool.execute(
+      'SELECT 1 FROM validation_config_positions WHERE config_type = ? AND position_name = ?',
+      ['budget', position]
+    );
+    return cfgRows.length > 0;
+  } catch { return false; }
+}
+
+// Get all users who can validate budgets (for notifications)
+async function getBudgetValidators() {
+  try {
+    const [adminRows] = await pool.execute(`SELECT id FROM users WHERE role = 'admin'`);
+    const [cfgRows] = await pool.execute(
+      `SELECT DISTINCT u.id FROM users u
+       JOIN validation_config_positions vcp ON vcp.position_name = u.position
+       WHERE vcp.config_type = 'budget' AND u.position IS NOT NULL`
+    );
+    const ids = new Set([...adminRows.map(r => r.id), ...cfgRows.map(r => r.id)]);
+    return [...ids];
+  } catch { return []; }
+}
 
 async function createNotification(userId, type, title, body, refType, refId) {
   try {
@@ -111,7 +138,7 @@ function mapDetail(row) {
 router.get('/requests', async (req, res) => {
   try {
     let rows;
-    if (isTreasurer(req.user.role)) {
+    if (await isBudgetValidator(req.user.id, req.user.role)) {
       [rows] = await pool.execute(
         `SELECT * FROM budget_requests WHERE status != 'cancelled' ORDER BY created_at DESC`
       );
@@ -170,7 +197,7 @@ router.get('/requests/:id', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM budget_requests WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Demande non trouvée' });
     const request = rows[0];
-    if (!isTreasurer(req.user.role) && request.user_id !== req.user.id) {
+    if (!(await isBudgetValidator(req.user.id, req.user.role)) && request.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const [lineRows] = await pool.execute(
@@ -258,19 +285,19 @@ router.post('/requests/:id/submit', async (req, res) => {
 
     await pool.execute(`UPDATE budget_requests SET status = 'submitted' WHERE id = ?`, [id]);
 
-    // Notify all treasurers and admins
-    const [treasurers] = await pool.execute(
-      `SELECT id FROM users WHERE role IN ('treasurer', 'admin')`
-    );
-    for (const t of treasurers) {
-      await createNotification(
-        t.id,
-        'budget_request_submitted',
-        'Nouvelle demande de budget soumise',
-        `La demande "${request.label}" a été soumise et attend votre approbation.`,
-        'budget_request',
-        id
-      );
+    // Notify all budget validators
+    const validatorIds = await getBudgetValidators();
+    for (const vid of validatorIds) {
+      if (vid !== req.user.id) {
+        await createNotification(
+          vid,
+          'budget_request_submitted',
+          'Nouvelle demande de budget soumise',
+          `La demande "${request.label}" a été soumise et attend votre approbation.`,
+          'budget_request',
+          id
+        );
+      }
     }
 
     const [updatedRows] = await pool.execute('SELECT * FROM budget_requests WHERE id = ?', [id]);
@@ -287,7 +314,7 @@ router.post('/requests/:id/submit', async (req, res) => {
 // POST /requests/:id/approve
 router.post('/requests/:id/approve', async (req, res) => {
   try {
-    if (!isTreasurer(req.user.role)) return res.status(403).json({ error: 'Accès refusé' });
+    if (!(await isBudgetValidator(req.user.id, req.user.role))) return res.status(403).json({ error: 'Accès refusé' });
     const { id } = req.params;
     const [rows] = await pool.execute('SELECT * FROM budget_requests WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Demande non trouvée' });
@@ -342,7 +369,7 @@ router.post('/requests/:id/approve', async (req, res) => {
 // POST /requests/:id/return-to-draft
 router.post('/requests/:id/return-to-draft', async (req, res) => {
   try {
-    if (!isTreasurer(req.user.role)) return res.status(403).json({ error: 'Accès refusé' });
+    if (!(await isBudgetValidator(req.user.id, req.user.role))) return res.status(403).json({ error: 'Accès refusé' });
     const { id } = req.params;
     const { approverComment } = req.body;
     const [rows] = await pool.execute('SELECT * FROM budget_requests WHERE id = ?', [id]);
@@ -401,7 +428,7 @@ router.post('/requests/:id/cancel', async (req, res) => {
 router.get('/real', async (req, res) => {
   try {
     let rows;
-    if (isTreasurer(req.user.role)) {
+    if (await isBudgetValidator(req.user.id, req.user.role)) {
       [rows] = await pool.execute('SELECT * FROM real_budgets ORDER BY created_at DESC');
     } else {
       [rows] = await pool.execute(
@@ -428,7 +455,7 @@ router.get('/real/:id', async (req, res) => {
     const budget = rows[0];
 
     // Access check
-    const canAccess = isTreasurer(req.user.role) || budget.user_id === req.user.id;
+    const canAccess = (await isBudgetValidator(req.user.id, req.user.role)) || budget.user_id === req.user.id;
     if (!canAccess) {
       const [grant] = await pool.execute(
         'SELECT id FROM budget_access_grants WHERE real_budget_id = ? AND user_id = ?',
@@ -494,7 +521,7 @@ router.put('/real/:id/status', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM real_budgets WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Budget non trouvé' });
     const budget = rows[0];
-    if (!isTreasurer(req.user.role) && budget.user_id !== req.user.id) {
+    if (!(await isBudgetValidator(req.user.id, req.user.role)) && budget.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     await pool.execute('UPDATE real_budgets SET status = ? WHERE id = ?', [status, id]);
@@ -513,7 +540,7 @@ router.post('/real/:id/lines', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM real_budgets WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Budget non trouvé' });
     const budget = rows[0];
-    if (!isTreasurer(req.user.role) && budget.user_id !== req.user.id) {
+    if (!(await isBudgetValidator(req.user.id, req.user.role)) && budget.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { type, label, forecastAmount } = req.body;
@@ -546,7 +573,7 @@ router.delete('/real/:id/lines/:lineId', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM real_budgets WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Budget non trouvé' });
     const budget = rows[0];
-    if (!isTreasurer(req.user.role) && budget.user_id !== req.user.id) {
+    if (!(await isBudgetValidator(req.user.id, req.user.role)) && budget.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     await pool.execute('DELETE FROM real_budget_lines WHERE id = ? AND real_budget_id = ?', [lineId, id]);
@@ -565,7 +592,7 @@ router.post('/real/:id/lines/:lineId/details', async (req, res) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Budget non trouvé' });
     const budget = rows[0];
 
-    const canEdit = isTreasurer(req.user.role) || budget.user_id === req.user.id;
+    const canEdit = (await isBudgetValidator(req.user.id, req.user.role)) || budget.user_id === req.user.id;
     if (!canEdit) {
       const [grant] = await pool.execute(
         'SELECT id FROM budget_access_grants WHERE real_budget_id = ? AND user_id = ?',
@@ -602,7 +629,7 @@ router.put('/real/:id/lines/:lineId/details/:detailId', async (req, res) => {
     if (detailRows.length === 0) return res.status(404).json({ error: 'Détail non trouvé' });
     const detail = detailRows[0];
 
-    const canEdit = isTreasurer(req.user.role) || budget.user_id === req.user.id || detail.user_id === req.user.id;
+    const canEdit = (await isBudgetValidator(req.user.id, req.user.role)) || budget.user_id === req.user.id || detail.user_id === req.user.id;
     if (!canEdit) return res.status(403).json({ error: 'Accès refusé' });
 
     const { detailDate, label, paymentMethod, qty, unitPrice, amount, receiptFile, receiptFileName, receiptFileType } = req.body;
@@ -641,7 +668,7 @@ router.delete('/real/:id/lines/:lineId/details/:detailId', async (req, res) => {
     if (detailRows.length === 0) return res.status(404).json({ error: 'Détail non trouvé' });
     const detail = detailRows[0];
 
-    const canEdit = isTreasurer(req.user.role) || budget.user_id === req.user.id || detail.user_id === req.user.id;
+    const canEdit = (await isBudgetValidator(req.user.id, req.user.role)) || budget.user_id === req.user.id || detail.user_id === req.user.id;
     if (!canEdit) return res.status(403).json({ error: 'Accès refusé' });
 
     await pool.execute('DELETE FROM budget_line_details WHERE id = ?', [detailId]);
@@ -659,7 +686,7 @@ router.post('/real/:id/access', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM real_budgets WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Budget non trouvé' });
     const budget = rows[0];
-    if (!isTreasurer(req.user.role) && budget.user_id !== req.user.id) {
+    if (!(await isBudgetValidator(req.user.id, req.user.role)) && budget.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { userId } = req.body;
@@ -699,7 +726,7 @@ router.delete('/real/:id/access/:grantId', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM real_budgets WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Budget non trouvé' });
     const budget = rows[0];
-    if (!isTreasurer(req.user.role) && budget.user_id !== req.user.id) {
+    if (!(await isBudgetValidator(req.user.id, req.user.role)) && budget.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     await pool.execute('DELETE FROM budget_access_grants WHERE id = ? AND real_budget_id = ?', [grantId, id]);

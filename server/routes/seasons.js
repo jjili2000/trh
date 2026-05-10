@@ -4,11 +4,23 @@ const pool = require('../db');
 
 const router = express.Router();
 
-const checkAM = (req, res, next) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
-    return res.status(403).json({ error: 'Accès refusé' });
+// Helper: check if user has seasons module access or is admin
+async function hasSeasonAccess(userId, role) {
+  if (role === 'admin') return true;
+  try {
+    const [rows] = await pool.execute(
+      "SELECT 1 FROM user_module_access WHERE user_id = ? AND module = 'seasons'",
+      [userId]
+    );
+    return rows.length > 0;
+  } catch { return false; }
+}
+
+const checkAM = async (req, res, next) => {
+  if (await hasSeasonAccess(req.user.id, req.user.role)) {
+    return next();
   }
-  next();
+  return res.status(403).json({ error: 'Accès refusé' });
 };
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
