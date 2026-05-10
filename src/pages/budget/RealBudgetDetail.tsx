@@ -12,7 +12,7 @@ import {
 } from '../../types';
 
 function isTreasurer(role: string) {
-  return role === 'treasurer' || role === 'admin';
+  return role === 'treasurer';
 }
 
 function fmtDate(d: string) {

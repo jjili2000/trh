@@ -4,7 +4,7 @@ const pool = require('../db');
 
 const router = express.Router();
 
-const isTreasurer = (role) => role === 'treasurer' || role === 'admin';
+const isTreasurer = (role) => role === 'treasurer';
 
 async function createNotification(userId, type, title, body, refType, refId) {
   try {
