@@ -9,6 +9,7 @@ import {
   Upload,
   RefreshCw,
   ChevronDown,
+  Wand2,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import {
@@ -153,6 +154,243 @@ function RuleTooltip({ ruleName, children }: { ruleName: string; children: React
   );
 }
 
+// ─── Create Rule From Operation Modal ────────────────────────────────────────
+
+function initConditionsFromOp(op: BankOperation): RuleCondition[] {
+  const conds: RuleCondition[] = [];
+  if (op.thirdParty)   conds.push({ field: 'thirdParty',  operator: 'contains', value: op.thirdParty });
+  if (op.blockLIB)     conds.push({ field: 'blockLIB',    operator: 'contains', value: op.blockLIB });
+  if (op.blockMOTIF)   conds.push({ field: 'blockMOTIF',  operator: 'contains', value: op.blockMOTIF });
+  if (op.blockMDT)     conds.push({ field: 'blockMDT',    operator: 'contains', value: op.blockMDT });
+  if (op.blockRNF)     conds.push({ field: 'blockRNF',    operator: 'contains', value: op.blockRNF });
+  if (op.paymentMethod && op.paymentMethod !== 'other') {
+    conds.push({ field: 'paymentMethod', operator: 'equals', value: op.paymentMethod });
+  }
+  // Fallback : libellé brut si aucune info structurée
+  if (conds.length === 0 && op.rawLabel) {
+    conds.push({ field: 'rawLabel', operator: 'contains', value: op.rawLabel.slice(0, 60).trim() });
+  }
+  return conds.length > 0 ? conds : [emptyCondition()];
+}
+
+interface CreateRuleFromOpModalProps {
+  op: BankOperation;
+  categories: string[];
+  onClose: () => void;
+  onCreated: () => void;
+}
+
+function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRuleFromOpModalProps) {
+  const defaultLabel = op.thirdParty || op.blockLIB || op.blockMOTIF || '';
+  const [label, setLabel]                       = useState(defaultLabel);
+  const [category, setCategory]                 = useState(op.category || '');
+  const [condOperator, setCondOperator]         = useState<'AND' | 'OR'>('AND');
+  const [conditions, setConditions]             = useState<RuleCondition[]>(() => initConditionsFromOp(op));
+  const [saving, setSaving]                     = useState(false);
+  const [applyResult, setApplyResult]           = useState<string | null>(null);
+  const [showCatSuggestions, setShowCatSuggestions] = useState(false);
+
+  const catSuggestions = category.trim()
+    ? categories.filter(c => c.toLowerCase().includes(category.toLowerCase())).slice(0, 6)
+    : categories.slice(0, 6);
+
+  const updateCond  = (idx: number, patch: Partial<RuleCondition>) =>
+    setConditions(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c));
+  const removeCond  = (idx: number) =>
+    setConditions(prev => prev.filter((_, i) => i !== idx));
+
+  const handleSave = async () => {
+    const validConds = conditions.filter(c => c.value.trim());
+    if (!label.trim() || !category.trim() || validConds.length === 0) return;
+    setSaving(true);
+    try {
+      await api.post('/accounting/rules', {
+        label: label.trim(),
+        conditionOperator: condOperator,
+        category: category.trim(),
+        priority: 0,
+        conditions: validConds,
+      });
+      const result = await api.post<{ updated: number }>('/accounting/rules/apply-all', {});
+      setApplyResult(`Règle créée — ${result.updated} opération(s) catégorisée(s)`);
+      onCreated();
+      setTimeout(onClose, 1800);
+    } catch {
+      // silent
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
+
+        {/* En-tête */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Wand2 size={17} className="text-tennis-green" />
+            <h2 className="font-semibold text-gray-800">Nouvelle règle depuis cette opération</h2>
+          </div>
+          <button className="text-gray-400 hover:text-gray-600" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        {/* Résumé de l'opération */}
+        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-0.5 text-sm min-w-0">
+              <div className="flex gap-2">
+                <span className="text-gray-400 text-xs w-16 flex-shrink-0 pt-px">Date</span>
+                <span className="text-gray-600">{fmtDate(op.operationDate)}</span>
+              </div>
+              {op.thirdParty && (
+                <div className="flex gap-2">
+                  <span className="text-gray-400 text-xs w-16 flex-shrink-0 pt-px">Tiers</span>
+                  <span className="text-gray-800 font-medium truncate">{op.thirdParty}</span>
+                </div>
+              )}
+              {op.rawLabel && (
+                <div className="flex gap-2">
+                  <span className="text-gray-400 text-xs w-16 flex-shrink-0 pt-px">Libellé</span>
+                  <span className="text-gray-500 text-xs truncate max-w-xs" title={op.rawLabel}>{op.rawLabel}</span>
+                </div>
+              )}
+            </div>
+            <span className={`text-sm font-bold whitespace-nowrap px-2.5 py-1 rounded-full flex-shrink-0 ${
+              op.direction === 'credit' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'
+            }`}>
+              {op.direction === 'credit' ? '+' : '−'}{fmtCurrency(op.amount)}
+            </span>
+          </div>
+        </div>
+
+        {/* Formulaire */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+          {applyResult && (
+            <div className="p-2.5 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm text-center font-medium">
+              ✓ {applyResult}
+            </div>
+          )}
+
+          <div>
+            <label className="label">Libellé de la règle *</label>
+            <input
+              className="input text-sm"
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              placeholder="Nom de la règle"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="label">Catégorie à assigner *</label>
+            <div className="relative">
+              <input
+                className="input text-sm"
+                value={category}
+                onChange={e => { setCategory(e.target.value); setShowCatSuggestions(true); }}
+                onFocus={() => setShowCatSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowCatSuggestions(false), 150)}
+                placeholder="Catégorie…"
+              />
+              {showCatSuggestions && catSuggestions.length > 0 && (
+                <div className="absolute z-10 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-36 overflow-y-auto">
+                  {catSuggestions.map(c => (
+                    <button
+                      key={c}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50"
+                      onMouseDown={() => { setCategory(c); setShowCatSuggestions(false); }}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="label mb-0">Conditions</label>
+              <div className="flex gap-3">
+                {(['AND', 'OR'] as const).map(op => (
+                  <label key={op} className="flex items-center gap-1 cursor-pointer text-xs text-gray-600">
+                    <input
+                      type="radio"
+                      name="condOpModal"
+                      checked={condOperator === op}
+                      onChange={() => setCondOperator(op)}
+                    />
+                    {op === 'AND' ? 'Toutes (ET)' : 'Au moins une (OU)'}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {conditions.map((cond, idx) => (
+                <div key={idx} className="flex gap-1.5 items-center">
+                  <select
+                    className="input text-xs py-1.5 flex-1 min-w-0"
+                    value={cond.field}
+                    onChange={e => updateCond(idx, { field: e.target.value as RuleField })}
+                  >
+                    {ALL_FIELDS.map(f => <option key={f} value={f}>{FIELD_LABELS[f]}</option>)}
+                  </select>
+                  <select
+                    className="input text-xs py-1.5 w-32 flex-shrink-0"
+                    value={cond.operator}
+                    onChange={e => updateCond(idx, { operator: e.target.value as RuleOperator })}
+                  >
+                    {ALL_OPERATORS.map(o => <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>)}
+                  </select>
+                  <input
+                    className="input text-xs py-1.5 flex-1 min-w-0"
+                    value={cond.value}
+                    onChange={e => updateCond(idx, { value: e.target.value })}
+                    placeholder="Valeur"
+                  />
+                  {conditions.length > 1 && (
+                    <button
+                      className="text-gray-300 hover:text-red-500 flex-shrink-0 transition-colors"
+                      onClick={() => removeCond(idx)}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              className="mt-2 text-xs text-tennis-green hover:underline flex items-center gap-1"
+              onClick={() => setConditions(prev => [...prev, emptyCondition()])}
+            >
+              <Plus size={12} /> Ajouter une condition
+            </button>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 px-5 py-4 border-t border-gray-100 flex-shrink-0">
+          <button className="btn-secondary flex-1" onClick={onClose}>Annuler</button>
+          <button
+            className="btn-primary flex-1 flex items-center justify-center gap-2"
+            onClick={handleSave}
+            disabled={saving || !label.trim() || !category.trim() || conditions.filter(c => c.value.trim()).length === 0}
+          >
+            <Wand2 size={15} />
+            {saving ? 'Création…' : 'Créer et appliquer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Operations Tab ───────────────────────────────────────────────────────────
 
 interface OperationsTabProps {
@@ -168,6 +406,7 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
   const [applyingRules, setApplyingRules] = useState(false);
   const [applyMsg, setApplyMsg] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [ruleModalOp, setRuleModalOp] = useState<BankOperation | null>(null);
 
   // Filters
   const [filterImport, setFilterImport] = useState('');
@@ -359,6 +598,7 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
                   <th className="px-4 py-2.5 text-right">Montant</th>
                   <th className="px-4 py-2.5">Tiers / Libellé</th>
                   <th className="px-4 py-2.5">Catégorie</th>
+                  <th className="px-2 py-2.5 w-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -449,6 +689,15 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
                         )}
                       </div>
                     </td>
+                    <td className="px-2 py-2">
+                      <button
+                        className="text-gray-300 hover:text-tennis-green transition-colors"
+                        title="Créer une règle depuis cette opération"
+                        onClick={() => setRuleModalOp(op)}
+                      >
+                        <Wand2 size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -459,6 +708,15 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
       <p className="text-xs text-gray-400 mt-2 text-right">
         {displayedOps.length}{filterUncategorized && operations.length !== displayedOps.length ? ` / ${operations.length}` : ''} opération(s)
       </p>
+
+      {ruleModalOp && (
+        <CreateRuleFromOpModal
+          op={ruleModalOp}
+          categories={categories}
+          onClose={() => setRuleModalOp(null)}
+          onCreated={() => { load(); onCategoriesChange(); }}
+        />
+      )}
     </div>
   );
 }
