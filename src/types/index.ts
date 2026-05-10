@@ -141,7 +141,7 @@ export type BudgetLineType = 'income' | 'expense';
 
 export interface BudgetRequestLine {
   id: string; requestId: string; type: BudgetLineType;
-  label: string; amount: number; sortOrder: number; createdAt: string;
+  label: string; qty: number; unitPrice: number; amount: number; sortOrder: number; createdAt: string;
 }
 
 export interface BudgetRequest {
@@ -155,7 +155,7 @@ export interface BudgetRequest {
 
 export interface BudgetLineDetail {
   id: string; lineId: string; detailDate: string; label: string;
-  paymentMethod: string; amount: number;
+  paymentMethod: string; qty: number; unitPrice: number; amount: number;
   receiptFile: string | null; receiptFileName: string | null; receiptFileType: string | null;
   userId: string; createdAt: string;
 }

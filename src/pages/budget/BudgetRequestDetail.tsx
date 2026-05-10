@@ -81,7 +81,7 @@ export default function BudgetRequestDetail() {
   const balance = totalIncome - totalExpense;
 
   const allLinesForSave = () =>
-    lines.map(l => ({ type: l.type, label: l.label, amount: l.amount }));
+    lines.map(l => ({ type: l.type, label: l.label, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount }));
 
   const handleSaveDraft = async () => {
     if (!label || !startDate || !endDate) {
@@ -184,10 +184,12 @@ export default function BudgetRequestDetail() {
 
   const addIncomeLine = () => {
     if (!newIncome.label) return;
-    const amount = (parseFloat(newIncome.qty) || 0) * (parseFloat(newIncome.unitPrice) || 0);
+    const qty = parseFloat(newIncome.qty) || 1;
+    const unitPrice = parseFloat(newIncome.unitPrice) || 0;
+    const amount = qty * unitPrice;
     if (editingIncomeId) {
       setLines(prev => prev.map(l =>
-        l.id === editingIncomeId ? { ...l, label: newIncome.label, amount } : l
+        l.id === editingIncomeId ? { ...l, label: newIncome.label, qty, unitPrice, amount } : l
       ));
       setEditingIncomeId(null);
     } else {
@@ -196,6 +198,8 @@ export default function BudgetRequestDetail() {
         requestId: id || '',
         type: 'income',
         label: newIncome.label,
+        qty,
+        unitPrice,
         amount,
         sortOrder: lines.length,
         createdAt: new Date().toISOString(),
@@ -208,7 +212,7 @@ export default function BudgetRequestDetail() {
 
   const startEditIncome = (line: BudgetRequestLine) => {
     setEditingIncomeId(line.id);
-    setNewIncome({ type: 'income', label: line.label, qty: '1', unitPrice: String(line.amount) });
+    setNewIncome({ type: 'income', label: line.label, qty: String(line.qty ?? 1), unitPrice: String(line.unitPrice ?? line.amount) });
     setTimeout(() => incomeLabelRef.current?.focus(), 0);
   };
 
@@ -219,10 +223,12 @@ export default function BudgetRequestDetail() {
 
   const addExpenseLine = () => {
     if (!newExpense.label) return;
-    const amount = (parseFloat(newExpense.qty) || 0) * (parseFloat(newExpense.unitPrice) || 0);
+    const qty = parseFloat(newExpense.qty) || 1;
+    const unitPrice = parseFloat(newExpense.unitPrice) || 0;
+    const amount = qty * unitPrice;
     if (editingExpenseId) {
       setLines(prev => prev.map(l =>
-        l.id === editingExpenseId ? { ...l, label: newExpense.label, amount } : l
+        l.id === editingExpenseId ? { ...l, label: newExpense.label, qty, unitPrice, amount } : l
       ));
       setEditingExpenseId(null);
     } else {
@@ -231,6 +237,8 @@ export default function BudgetRequestDetail() {
         requestId: id || '',
         type: 'expense',
         label: newExpense.label,
+        qty,
+        unitPrice,
         amount,
         sortOrder: lines.length,
         createdAt: new Date().toISOString(),
@@ -243,7 +251,7 @@ export default function BudgetRequestDetail() {
 
   const startEditExpense = (line: BudgetRequestLine) => {
     setEditingExpenseId(line.id);
-    setNewExpense({ type: 'expense', label: line.label, qty: '1', unitPrice: String(line.amount) });
+    setNewExpense({ type: 'expense', label: line.label, qty: String(line.qty ?? 1), unitPrice: String(line.unitPrice ?? line.amount) });
     setTimeout(() => expenseLabelRef.current?.focus(), 0);
   };
 

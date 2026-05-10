@@ -53,6 +53,8 @@ function mapRequestLine(row) {
     requestId: row.request_id,
     type: row.type,
     label: row.label,
+    qty: parseFloat(row.qty) || 1,
+    unitPrice: parseFloat(row.unit_price) || 0,
     amount: parseFloat(row.amount),
     sortOrder: row.sort_order,
     createdAt: mapDateTime(row.created_at),
@@ -92,6 +94,8 @@ function mapDetail(row) {
     detailDate: mapDate(row.detail_date),
     label: row.label,
     paymentMethod: row.payment_method,
+    qty: parseFloat(row.qty) || 1,
+    unitPrice: parseFloat(row.unit_price) || 0,
     amount: parseFloat(row.amount),
     receiptFile: row.receipt_file || null,
     receiptFileName: row.receipt_file_name || null,
@@ -140,9 +144,11 @@ router.post('/requests', async (req, res) => {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const lineId = uuidv4();
+        const qty = parseFloat(line.qty) || 1;
+        const unitPrice = parseFloat(line.unitPrice) || 0;
         await pool.execute(
-          `INSERT INTO budget_request_lines (id, request_id, type, label, amount, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
-          [lineId, id, line.type, line.label, line.amount || 0, i]
+          `INSERT INTO budget_request_lines (id, request_id, type, label, qty, unit_price, amount, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [lineId, id, line.type, line.label, qty, unitPrice, line.amount || 0, i]
         );
       }
     }
@@ -213,9 +219,11 @@ router.put('/requests/:id', async (req, res) => {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const lineId = uuidv4();
+        const qty = parseFloat(line.qty) || 1;
+        const unitPrice = parseFloat(line.unitPrice) || 0;
         await pool.execute(
-          `INSERT INTO budget_request_lines (id, request_id, type, label, amount, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
-          [lineId, id, line.type, line.label, line.amount || 0, i]
+          `INSERT INTO budget_request_lines (id, request_id, type, label, qty, unit_price, amount, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [lineId, id, line.type, line.label, qty, unitPrice, line.amount || 0, i]
         );
       }
     }
@@ -566,14 +574,14 @@ router.post('/real/:id/lines/:lineId/details', async (req, res) => {
       if (grant.length === 0) return res.status(403).json({ error: 'Accès refusé' });
     }
 
-    const { detailDate, label, paymentMethod, amount, receiptFile, receiptFileName, receiptFileType } = req.body;
+    const { detailDate, label, paymentMethod, qty, unitPrice, amount, receiptFile, receiptFileName, receiptFileType } = req.body;
     if (!detailDate || !label || !paymentMethod || amount === undefined) {
       return res.status(400).json({ error: 'Date, libellé, mode de paiement et montant requis' });
     }
     const detailId = uuidv4();
     await pool.execute(
-      `INSERT INTO budget_line_details (id, line_id, detail_date, label, payment_method, amount, receipt_file, receipt_file_name, receipt_file_type, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [detailId, lineId, detailDate, label, paymentMethod, amount, receiptFile || null, receiptFileName || null, receiptFileType || null, req.user.id]
+      `INSERT INTO budget_line_details (id, line_id, detail_date, label, payment_method, qty, unit_price, amount, receipt_file, receipt_file_name, receipt_file_type, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [detailId, lineId, detailDate, label, paymentMethod, parseFloat(qty) || 1, parseFloat(unitPrice) || 0, amount, receiptFile || null, receiptFileName || null, receiptFileType || null, req.user.id]
     );
     const [detailRows] = await pool.execute('SELECT * FROM budget_line_details WHERE id = ?', [detailId]);
     res.status(201).json(mapDetail(detailRows[0]));
@@ -597,12 +605,14 @@ router.put('/real/:id/lines/:lineId/details/:detailId', async (req, res) => {
     const canEdit = isTreasurer(req.user.role) || budget.user_id === req.user.id || detail.user_id === req.user.id;
     if (!canEdit) return res.status(403).json({ error: 'Accès refusé' });
 
-    const { detailDate, label, paymentMethod, amount, receiptFile, receiptFileName, receiptFileType } = req.body;
+    const { detailDate, label, paymentMethod, qty, unitPrice, amount, receiptFile, receiptFileName, receiptFileType } = req.body;
     const updates = [];
     const values = [];
     if (detailDate !== undefined) { updates.push('detail_date = ?'); values.push(detailDate); }
     if (label !== undefined) { updates.push('label = ?'); values.push(label); }
     if (paymentMethod !== undefined) { updates.push('payment_method = ?'); values.push(paymentMethod); }
+    if (qty !== undefined) { updates.push('qty = ?'); values.push(parseFloat(qty) || 1); }
+    if (unitPrice !== undefined) { updates.push('unit_price = ?'); values.push(parseFloat(unitPrice) || 0); }
     if (amount !== undefined) { updates.push('amount = ?'); values.push(amount); }
     if (receiptFile !== undefined) { updates.push('receipt_file = ?'); values.push(receiptFile || null); }
     if (receiptFileName !== undefined) { updates.push('receipt_file_name = ?'); values.push(receiptFileName || null); }
