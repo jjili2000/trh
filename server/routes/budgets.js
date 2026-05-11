@@ -106,6 +106,9 @@ function mapRealBudgetLine(row) {
     id: row.id,
     realBudgetId: row.real_budget_id,
     sourceLineId: row.source_line_id || null,
+    sourceLabel: row.src_label || null,
+    sourceQty: row.src_qty != null ? parseFloat(row.src_qty) : null,
+    sourceUnitPrice: row.src_unit_price != null ? parseFloat(row.src_unit_price) : null,
     type: row.type,
     label: row.label,
     forecastAmount: parseFloat(row.forecast_amount),
@@ -472,7 +475,14 @@ router.get('/real/:id', async (req, res) => {
     }
 
     const [lineRows] = await pool.execute(
-      'SELECT * FROM real_budget_lines WHERE real_budget_id = ? ORDER BY sort_order',
+      `SELECT rbl.*,
+              brl.label  AS src_label,
+              brl.qty    AS src_qty,
+              brl.unit_price AS src_unit_price
+       FROM real_budget_lines rbl
+       LEFT JOIN budget_request_lines brl ON brl.id = rbl.source_line_id
+       WHERE rbl.real_budget_id = ?
+       ORDER BY rbl.sort_order`,
       [id]
     );
     const [detailRows] = await pool.execute(

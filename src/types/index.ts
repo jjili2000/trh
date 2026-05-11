@@ -169,6 +169,7 @@ export interface BudgetLineDetail {
 
 export interface RealBudgetLine {
   id: string; realBudgetId: string; sourceLineId: string | null;
+  sourceLabel: string | null; sourceQty: number | null; sourceUnitPrice: number | null;
   type: BudgetLineType; label: string; forecastAmount: number;
   sortOrder: number; createdAt: string; details?: BudgetLineDetail[];
 }

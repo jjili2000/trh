@@ -8,7 +8,7 @@ import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
 import {
   RealBudget, RealBudgetLine, BudgetLineDetail,
-  BudgetLineType, BudgetAccessGrant, BudgetRequest
+  BudgetLineType, BudgetAccessGrant
 } from '../../types';
 
 function useIsBudgetValidator() {
@@ -65,7 +65,6 @@ export default function RealBudgetDetail() {
   const isTreas = useIsBudgetValidator();
 
   const [budget, setBudget] = useState<RealBudget | null>(null);
-  const [budgetRequest, setBudgetRequest] = useState<BudgetRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,12 +99,6 @@ export default function RealBudgetDetail() {
     try {
       const data = await api.get<RealBudget>(`/budgets/real/${id}`);
       setBudget(data);
-      // Charger la demande source pour pré-remplir les détails
-      if (data.requestId) {
-        api.get<BudgetRequest>(`/budgets/requests/${data.requestId}`)
-          .then(setBudgetRequest)
-          .catch(() => { /* non bloquant */ });
-      }
     } catch {
       setError('Erreur lors du chargement du budget');
     } finally {
@@ -180,22 +173,18 @@ export default function RealBudgetDetail() {
     setDetailModal({ lineId, lineType });
     setDetailError(null);
 
-    // Pré-remplir depuis la demande si c'est le premier détail et qu'une ligne source existe
+    // Pré-remplir depuis la ligne source si c'est le premier détail
     const isFirstDetail = (line?.details ?? []).length === 0;
-    const sourceLineId = line?.sourceLineId;
-    if (isFirstDetail && sourceLineId && budgetRequest?.lines) {
-      const sourceLine = budgetRequest.lines.find(l => l.id === sourceLineId);
-      if (sourceLine) {
-        setDetailForm({
-          ...emptyDetailForm(),
-          label: sourceLine.label,
-          qty: String(sourceLine.qty),
-          unitPrice: String(sourceLine.unitPrice),
-        });
-        return;
-      }
+    if (isFirstDetail && line?.sourceLabel != null) {
+      setDetailForm({
+        ...emptyDetailForm(),
+        label: line.sourceLabel,
+        qty: String(line.sourceQty ?? 1),
+        unitPrice: String(line.sourceUnitPrice ?? ''),
+      });
+    } else {
+      setDetailForm(emptyDetailForm());
     }
-    setDetailForm(emptyDetailForm());
   };
 
   const openEditDetail = (lineId: string, detail: BudgetLineDetail) => {
