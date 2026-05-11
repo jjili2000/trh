@@ -45,9 +45,13 @@ export default function Dashboard() {
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
 
+  const isAdmin = currentUser?.role === 'admin';
+  const modules: string[] = currentUser?.moduleAccess ?? ['time', 'absences', 'expenses', 'documents'];
+  const hasModule = (m: string) => isAdmin || modules.includes(m);
+
   // Time this month
   const myTimeEntries = timeEntries.filter(e => {
-    if (currentUser?.role === 'admin') return true;
+    if (isAdmin) return true;
     const isOwn = e.userId === currentUser?.id;
     const isSubordinate =
       users.find(u => u.id === e.userId)?.managerId === currentUser?.id;
@@ -65,7 +69,7 @@ export default function Dashboard() {
 
   // Absences
   const myAbsences = absenceRequests.filter(r => {
-    if (currentUser?.role === 'admin') return true;
+    if (isAdmin) return true;
     const isOwn = r.userId === currentUser?.id;
     const isSubordinate =
       users.find(u => u.id === r.userId)?.managerId === currentUser?.id;
@@ -75,7 +79,7 @@ export default function Dashboard() {
 
   // Expenses
   const myExpenses = expenses.filter(e => {
-    if (currentUser?.role === 'admin') return true;
+    if (isAdmin) return true;
     return e.userId === currentUser?.id;
   });
   const pendingExpenses = myExpenses.filter(e => e.status === 'pending').length;
@@ -86,7 +90,6 @@ export default function Dashboard() {
     d.userId === currentUser?.id && d.status === 'validated'
   ).length;
 
-  const isAdmin = currentUser?.role === 'admin';
   // A user who has subordinates acts as a manager for validation purposes
   const isManagerOrAdmin = isAdmin || users.some(u => u.managerId === currentUser?.id);
 
@@ -96,6 +99,15 @@ export default function Dashboard() {
     if (h < 18) return 'Bon après-midi';
     return 'Bonsoir';
   };
+
+  // Pending alert — only for modules the user can access
+  const pendingAlertParts = [
+    hasModule('time')     && pendingTime > 0     && `${pendingTime} saisie(s) de temps`,
+    hasModule('absences') && pendingAbsences > 0  && `${pendingAbsences} demande(s) d'absence`,
+    hasModule('expenses') && pendingExpenses > 0  && `${pendingExpenses} note(s) de frais`,
+  ].filter(Boolean) as string[];
+
+  const showPendingAlert = isManagerOrAdmin && pendingAlertParts.length > 0;
 
   return (
     <div className="p-8">
@@ -110,67 +122,67 @@ export default function Dashboard() {
       </div>
 
       {/* Summary bar */}
-      {isManagerOrAdmin && (pendingTime > 0 || pendingAbsences > 0 || pendingExpenses > 0) && (
+      {showPendingAlert && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
           <AlertCircle size={20} className="text-amber-500 flex-shrink-0" />
           <p className="text-sm text-amber-800 font-medium">
-            Vous avez{' '}
-            {[
-              pendingTime > 0 && `${pendingTime} saisie(s) de temps`,
-              pendingAbsences > 0 && `${pendingAbsences} demande(s) d'absence`,
-              pendingExpenses > 0 && `${pendingExpenses} note(s) de frais`,
-            ]
-              .filter(Boolean)
-              .join(', ')}{' '}
-            en attente de validation.
+            Vous avez {pendingAlertParts.join(', ')} en attente de validation.
           </p>
         </div>
       )}
 
       {/* Module cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-        <StatCard
-          title="Saisie des temps"
-          value={`${hoursThisMonth}h`}
-          subtitle={`${pendingTime} en attente`}
-          icon={Clock}
-          color="bg-tennis-green"
-          onClick={() => navigate('/time')}
-        />
-        <StatCard
-          title="Absences"
-          value={pendingAbsences}
-          subtitle="demandes en attente"
-          icon={Calendar}
-          color="bg-blue-500"
-          onClick={() => navigate('/absences')}
-        />
-        <StatCard
-          title="Notes de frais"
-          value={pendingExpenses}
-          subtitle="en attente de validation"
-          icon={Receipt}
-          color="bg-orange-500"
-          onClick={() => navigate('/expenses')}
-        />
-        {isManagerOrAdmin ? (
+        {hasModule('time') && (
           <StatCard
-            title="Documents"
-            value={pendingDocuments}
+            title="Saisie des temps"
+            value={`${hoursThisMonth}h`}
+            subtitle={`${pendingTime} en attente`}
+            icon={Clock}
+            color="bg-tennis-green"
+            onClick={() => navigate('/time')}
+          />
+        )}
+        {hasModule('absences') && (
+          <StatCard
+            title="Absences"
+            value={pendingAbsences}
+            subtitle="demandes en attente"
+            icon={Calendar}
+            color="bg-blue-500"
+            onClick={() => navigate('/absences')}
+          />
+        )}
+        {hasModule('expenses') && (
+          <StatCard
+            title="Notes de frais"
+            value={pendingExpenses}
             subtitle="en attente de validation"
-            icon={FileText}
-            color="bg-teal-500"
-            onClick={() => navigate('/documents')}
+            icon={Receipt}
+            color="bg-orange-500"
+            onClick={() => navigate('/expenses')}
           />
-        ) : (
-          <StatCard
-            title="Mes documents"
-            value={myValidatedDocuments}
-            subtitle="documents disponibles"
-            icon={FileText}
-            color="bg-teal-500"
-            onClick={() => navigate('/my-documents')}
-          />
+        )}
+        {hasModule('documents') && (
+          isManagerOrAdmin ? (
+            <StatCard
+              title="Documents"
+              value={pendingDocuments}
+              subtitle="en attente de validation"
+              icon={FileText}
+              color="bg-teal-500"
+              onClick={() => navigate('/documents')}
+            />
+          ) : (
+            <StatCard
+              title="Mes documents"
+              value={myValidatedDocuments}
+              subtitle="documents disponibles"
+              icon={FileText}
+              color="bg-teal-500"
+              onClick={() => navigate('/my-documents')}
+            />
+          )
         )}
         {isAdmin ? (
           <StatCard
@@ -181,7 +193,7 @@ export default function Dashboard() {
             color="bg-purple-500"
             onClick={() => navigate('/admin')}
           />
-        ) : (
+        ) : hasModule('time') && (
           <StatCard
             title="Ce mois-ci"
             value={`${hoursThisMonth}h`}
@@ -194,120 +206,134 @@ export default function Dashboard() {
       </div>
 
       {/* Recent activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent time entries */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900">Dernières saisies de temps</h2>
-            <button
-              onClick={() => navigate('/time')}
-              className="text-sm text-tennis-green hover:underline"
-            >
-              Voir tout
-            </button>
-          </div>
-          {myTimeEntries.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucune saisie</p>
-          ) : (
-            <div className="space-y-3">
-              {myTimeEntries
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                .slice(0, 4)
-                .map(entry => {
-                  const entryUser = users.find(u => u.id === entry.userId);
-                  return (
-                    <div key={entry.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">
-                          {entryUser?.firstName} {entryUser?.lastName}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {new Date(entry.date).toLocaleDateString('fr-FR')} · {entry.hours}h
-                        </p>
-                      </div>
-                      <span className={`badge-${entry.status}`}>
-                        {entry.status === 'pending' ? 'En attente' : entry.status === 'approved' ? 'Approuvé' : 'Rejeté'}
-                      </span>
-                    </div>
-                  );
-                })}
+      {(hasModule('time') || hasModule('absences')) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recent time entries */}
+          {hasModule('time') && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-gray-900">Dernières saisies de temps</h2>
+                <button
+                  onClick={() => navigate('/time')}
+                  className="text-sm text-tennis-green hover:underline"
+                >
+                  Voir tout
+                </button>
+              </div>
+              {myTimeEntries.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">Aucune saisie</p>
+              ) : (
+                <div className="space-y-3">
+                  {myTimeEntries
+                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                    .slice(0, 4)
+                    .map(entry => {
+                      const entryUser = users.find(u => u.id === entry.userId);
+                      return (
+                        <div key={entry.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">
+                              {entryUser?.firstName} {entryUser?.lastName}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {new Date(entry.date).toLocaleDateString('fr-FR')} · {entry.hours}h
+                            </p>
+                          </div>
+                          <span className={`badge-${entry.status}`}>
+                            {entry.status === 'pending' ? 'En attente' : entry.status === 'approved' ? 'Approuvé' : 'Rejeté'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
           )}
-        </div>
 
-        {/* Recent absence requests */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900">Dernières absences</h2>
-            <button
-              onClick={() => navigate('/absences')}
-              className="text-sm text-tennis-green hover:underline"
-            >
-              Voir tout
-            </button>
-          </div>
-          {myAbsences.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucune demande</p>
-          ) : (
-            <div className="space-y-3">
-              {myAbsences
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                .slice(0, 4)
-                .map(req => {
-                  const reqUser = users.find(u => u.id === req.userId);
-                  const typeLabels = {
-                    vacation: 'Congés',
-                    sick: 'Maladie',
-                    personal: 'Personnel',
-                    other: 'Autre',
-                  };
-                  return (
-                    <div key={req.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">
-                          {reqUser?.firstName} {reqUser?.lastName}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {typeLabels[req.type]} · {new Date(req.startDate).toLocaleDateString('fr-FR')}
-                          {' → '}
-                          {new Date(req.endDate).toLocaleDateString('fr-FR')}
-                        </p>
-                      </div>
-                      <span className={`badge-${req.status}`}>
-                        {req.status === 'pending' ? 'En attente' : req.status === 'approved' ? 'Approuvé' : 'Rejeté'}
-                      </span>
-                    </div>
-                  );
-                })}
+          {/* Recent absence requests */}
+          {hasModule('absences') && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-gray-900">Dernières absences</h2>
+                <button
+                  onClick={() => navigate('/absences')}
+                  className="text-sm text-tennis-green hover:underline"
+                >
+                  Voir tout
+                </button>
+              </div>
+              {myAbsences.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">Aucune demande</p>
+              ) : (
+                <div className="space-y-3">
+                  {myAbsences
+                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                    .slice(0, 4)
+                    .map(req => {
+                      const reqUser = users.find(u => u.id === req.userId);
+                      const typeLabels = {
+                        vacation: 'Congés',
+                        sick: 'Maladie',
+                        personal: 'Personnel',
+                        other: 'Autre',
+                      };
+                      return (
+                        <div key={req.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">
+                              {reqUser?.firstName} {reqUser?.lastName}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {typeLabels[req.type]} · {new Date(req.startDate).toLocaleDateString('fr-FR')}
+                              {' → '}
+                              {new Date(req.endDate).toLocaleDateString('fr-FR')}
+                            </p>
+                          </div>
+                          <span className={`badge-${req.status}`}>
+                            {req.status === 'pending' ? 'En attente' : req.status === 'approved' ? 'Approuvé' : 'Rejeté'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
           )}
         </div>
-      </div>
+      )}
 
       {/* Quick actions */}
-      <div className="mt-6 card">
-        <h2 className="font-semibold text-gray-900 mb-4">Actions rapides</h2>
-        <div className="flex flex-wrap gap-3">
-          <button onClick={() => navigate('/time')} className="btn-primary flex items-center gap-2">
-            <Clock size={16} />
-            Saisir des heures
-          </button>
-          <button onClick={() => navigate('/absences')} className="btn-secondary flex items-center gap-2">
-            <Calendar size={16} />
-            Déclarer une absence
-          </button>
-          <button onClick={() => navigate('/expenses')} className="btn-secondary flex items-center gap-2">
-            <Receipt size={16} />
-            Soumettre une note de frais
-          </button>
-          {isManagerOrAdmin && (
-            <button onClick={() => navigate('/admin')} className="btn-secondary flex items-center gap-2">
-              <CheckCircle size={16} />
-              Valider les demandes
-            </button>
-          )}
+      {(hasModule('time') || hasModule('absences') || hasModule('expenses') || isManagerOrAdmin) && (
+        <div className="mt-6 card">
+          <h2 className="font-semibold text-gray-900 mb-4">Actions rapides</h2>
+          <div className="flex flex-wrap gap-3">
+            {hasModule('time') && (
+              <button onClick={() => navigate('/time')} className="btn-primary flex items-center gap-2">
+                <Clock size={16} />
+                Saisir des heures
+              </button>
+            )}
+            {hasModule('absences') && (
+              <button onClick={() => navigate('/absences')} className="btn-secondary flex items-center gap-2">
+                <Calendar size={16} />
+                Déclarer une absence
+              </button>
+            )}
+            {hasModule('expenses') && (
+              <button onClick={() => navigate('/expenses')} className="btn-secondary flex items-center gap-2">
+                <Receipt size={16} />
+                Soumettre une note de frais
+              </button>
+            )}
+            {isManagerOrAdmin && (
+              <button onClick={() => navigate('/admin')} className="btn-secondary flex items-center gap-2">
+                <CheckCircle size={16} />
+                Valider les demandes
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
