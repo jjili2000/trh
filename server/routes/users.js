@@ -67,13 +67,26 @@ router.get('/me', async (req, res) => {
   }
 });
 
-// GET /api/users — all users (admin only)
+// GET /api/users — all users
+// Admin : données complètes + moduleAccess
+// Autres : vue réduite (id, firstName, lastName, position, role) pour affichage des noms
 router.get('/', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Accès refusé' });
-    }
     const [rows] = await pool.execute('SELECT * FROM users ORDER BY first_name, last_name');
+
+    if (req.user.role !== 'admin') {
+      // Vue réduite : uniquement les champs nécessaires à l'affichage
+      return res.json(rows.map(row => ({
+        id: row.id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        position: row.position || undefined,
+        role: row.role,
+        managerId: row.manager_id || undefined,
+      })));
+    }
+
+    // Vue complète pour l'admin
     const [moduleRows] = await pool.execute('SELECT user_id, module FROM user_module_access');
     const modulesByUser = {};
     for (const r of moduleRows) {

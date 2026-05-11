@@ -118,7 +118,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         fetchedSettings,
         fetchedValidationConfig,
       ] = await Promise.all([
-        api.get<User[]>('/users'),
+        api.get<User[]>('/users').catch(() => []),
         api.get<ActivityType[]>('/activity-types'),
         api.get<Position[]>('/positions'),
         api.get<TimeEntry[]>('/time-entries'),
