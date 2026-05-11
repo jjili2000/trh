@@ -34,6 +34,14 @@ function AdminRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function ModuleRoute({ module, children }: { module: string; children: ReactNode }) {
+  const { currentUser } = useApp();
+  if (!currentUser) return <Navigate to="/login" replace />;
+  const hasModule = currentUser.role === 'admin' || (currentUser.moduleAccess ?? []).includes(module);
+  if (!hasModule) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   const { currentUser } = useApp();
 
@@ -66,8 +74,8 @@ function AppRoutes() {
         <Route path="expenses" element={<ExpenseManagement />} />
         <Route path="documents" element={<DocumentManagement />} />
         <Route path="my-documents" element={<MyDocuments />} />
-        <Route path="seasons" element={<AdminRoute><SeasonList /></AdminRoute>} />
-        <Route path="seasons/:id" element={<AdminRoute><SeasonDetail /></AdminRoute>} />
+        <Route path="seasons" element={<ModuleRoute module="seasons"><SeasonList /></ModuleRoute>} />
+        <Route path="seasons/:id" element={<ModuleRoute module="seasons"><SeasonDetail /></ModuleRoute>} />
         <Route path="budget" element={<BudgetList />} />
         <Route path="budget/requests/:id" element={<BudgetRequestDetail />} />
         <Route path="budget/real/:id" element={<RealBudgetDetail />} />
