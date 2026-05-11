@@ -65,7 +65,7 @@ export default function AppLayout() {
 
   const isAdmin = currentUser?.role === 'admin';
   // Module access helpers (admin always has all)
-  const modules = currentUser?.moduleAccess ?? [];
+  const modules = currentUser?.moduleAccess ?? ['time', 'absences', 'expenses', 'documents'];
   const hasModule = (m: string) => isAdmin || modules.includes(m);
 
   const SidebarContent = () => (

@@ -13,9 +13,12 @@ async function getUserModules(userId) {
       'SELECT module FROM user_module_access WHERE user_id = ?',
       [userId]
     );
+    // Si aucune ligne : migration pas encore exécutée ou utilisateur créé avant migration
+    if (rows.length === 0) return [...DEFAULT_MODULES];
     return rows.map(r => r.module);
   } catch {
-    return DEFAULT_MODULES;
+    // Table user_module_access inexistante : retourner les modules par défaut
+    return [...DEFAULT_MODULES];
   }
 }
 
