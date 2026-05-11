@@ -5,8 +5,26 @@ const pool = require('../db');
 
 const router = express.Router();
 
+const DEFAULT_MODULES = ['time', 'absences', 'expenses', 'documents'];
+
+async function getUserModules(userId, role) {
+  if (role === 'admin') {
+    return ['time', 'absences', 'expenses', 'documents', 'budget', 'accounting', 'seasons'];
+  }
+  try {
+    const [rows] = await pool.execute(
+      'SELECT module FROM user_module_access WHERE user_id = ?',
+      [userId]
+    );
+    if (rows.length === 0) return [...DEFAULT_MODULES];
+    return rows.map(r => r.module);
+  } catch {
+    return [...DEFAULT_MODULES];
+  }
+}
+
 // Map DB row (snake_case) → frontend object (camelCase), omit password
-function mapUser(row) {
+function mapUser(row, modules) {
   return {
     id: row.id,
     firstName: row.first_name,
@@ -15,6 +33,7 @@ function mapUser(row) {
     role: row.role,
     managerId: row.manager_id || undefined,
     position: row.position || undefined,
+    moduleAccess: modules || DEFAULT_MODULES,
     createdAt: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
@@ -49,7 +68,8 @@ router.post('/login', async (req, res) => {
       expiresIn: '24h',
     });
 
-    res.json({ token, user: mapUser(dbUser) });
+    const modules = await getUserModules(dbUser.id, dbUser.role);
+    res.json({ token, user: mapUser(dbUser, modules) });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Erreur serveur' });
