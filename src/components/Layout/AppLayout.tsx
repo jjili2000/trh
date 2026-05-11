@@ -76,7 +76,7 @@ export default function AppLayout() {
           <TennisBallSmall />
           <div>
             <h1 className="text-white font-bold text-sm leading-tight">{appSettings.clubName}</h1>
-            <p className="text-tennis-green-light text-xs">Gestion RH</p>
+            <p className="text-tennis-green-light text-xs">Gestion</p>
           </div>
         </div>
       </div>

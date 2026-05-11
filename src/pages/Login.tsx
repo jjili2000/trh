@@ -121,26 +121,6 @@ export default function Login() {
               </button>
             </form>
 
-            {/* Demo credentials */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Comptes de démonstration
-              </p>
-              <div className="space-y-1 text-xs text-gray-600">
-                <div className="flex justify-between">
-                  <span className="font-medium text-tennis-green">Admin</span>
-                  <span>admin@tennisclub.fr / admin123</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium text-blue-600">Manager</span>
-                  <span>manager@tennisclub.fr / manager123</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium text-gray-600">Utilisateur</span>
-                  <span>user@tennisclub.fr / user123</span>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
