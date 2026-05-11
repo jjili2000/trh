@@ -197,8 +197,15 @@ router.get('/requests/:id', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM budget_requests WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Demande non trouvée' });
     const request = rows[0];
-    if (!(await isBudgetValidator(req.user.id, req.user.role)) && request.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Accès refusé' });
+    // Autoriser aussi les utilisateurs ayant un accès partagé sur le budget réel associé
+    const hasAccess = await isBudgetValidator(req.user.id, req.user.role)
+      || request.user_id === req.user.id;
+    if (!hasAccess) {
+      const [grantRows] = await pool.execute(
+        'SELECT 1 FROM budget_access_grants bag JOIN real_budgets rb ON rb.id = bag.real_budget_id WHERE rb.request_id = ? AND bag.user_id = ?',
+        [id, req.user.id]
+      );
+      if (grantRows.length === 0) return res.status(403).json({ error: 'Accès refusé' });
     }
     const [lineRows] = await pool.execute(
       'SELECT * FROM budget_request_lines WHERE request_id = ? ORDER BY sort_order',
