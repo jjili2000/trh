@@ -656,7 +656,7 @@ export default function RealBudgetDetail() {
 
       {/* Detail modal */}
       {detailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={e => { if (e.target === e.currentTarget) setDetailModal(null); }}>
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">
@@ -780,7 +780,7 @@ export default function RealBudgetDetail() {
 
       {/* Receipt viewer modal */}
       {viewReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setViewReceipt(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onMouseDown={e => { if (e.target === e.currentTarget) setViewReceipt(null); }}>
           <div className="bg-white rounded-xl shadow-xl p-4 max-w-3xl max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <span className="font-medium text-sm">{viewReceipt.name}</span>

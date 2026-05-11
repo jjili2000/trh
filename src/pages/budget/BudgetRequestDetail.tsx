@@ -715,7 +715,7 @@ export default function BudgetRequestDetail() {
 
       {/* Return to draft modal */}
       {returnModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={e => { if (e.target === e.currentTarget) setReturnModal(false); }}>
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
             <h2 className="text-lg font-bold mb-3">Renvoyer en brouillon</h2>
             <p className="text-sm text-gray-500 mb-3">Ajoutez un commentaire expliquant pourquoi la demande est renvoyée.</p>
