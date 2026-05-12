@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -116,7 +116,7 @@ router.post('/', async (req, res) => {
     if (!firstName || !lastName || !email || !password || !role) {
       return res.status(400).json({ error: 'Champs requis manquants' });
     }
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const hash = await bcrypt.hash(password, 10);
     await pool.execute(
       `INSERT INTO users (id, first_name, last_name, email, password, role, manager_id, position)

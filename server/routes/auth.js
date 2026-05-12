@@ -2,7 +2,6 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
 const pool = require('../db');
 const { sendPasswordResetEmail } = require('../services/email');
 
@@ -110,7 +109,7 @@ router.post('/forgot-password', async (req, res) => {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await pool.execute(
       'INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)',
-      [uuidv4(), user.id, token, expiresAt]
+      [crypto.randomUUID(), user.id, token, expiresAt]
     );
 
     const appUrl = process.env.APP_URL || 'https://trh.neos.live';
