@@ -320,8 +320,14 @@ router.get('/:id/export', async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Paie');
 
+    // Formater une date YYYY-MM-DD en JJ/MM/AAAA
+    const fmtDateFr = (s) => {
+      const [y, m, d] = s.split('-');
+      return `${d}/${m}/${y}`;
+    };
+
     // Titre de la période
-    const periodLabel = `Période du ${startStr} au ${endStr}`;
+    const periodLabel = `Période du ${fmtDateFr(startStr)} au ${fmtDateFr(endStr)}`;
     sheet.mergeCells('A1:D1');
     const titleCell = sheet.getCell('A1');
     titleCell.value = periodLabel;
