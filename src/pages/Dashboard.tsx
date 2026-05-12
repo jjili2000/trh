@@ -326,7 +326,10 @@ export default function Dashboard() {
               </button>
             )}
             {isManagerOrAdmin && (
-              <button onClick={() => navigate('/admin')} className="btn-secondary flex items-center gap-2">
+              <button
+                onClick={() => navigate(isAdmin ? '/admin' : '/time', { state: { showTeam: true } })}
+                className="btn-secondary flex items-center gap-2"
+              >
                 <CheckCircle size={16} />
                 Valider les demandes
               </button>

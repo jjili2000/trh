@@ -71,8 +71,13 @@ export default function AbsenceManagement() {
   const [editingRequest, setEditingRequest] = useState<AbsenceRequest | null>(null);
 
   useEffect(() => {
-    if ((location.state as { openForm?: boolean } | null)?.openForm) {
+    const state = location.state as { openForm?: boolean; showTeam?: boolean } | null;
+    if (state?.openForm) {
       setShowForm(true);
+      window.history.replaceState({}, '');
+    }
+    if (state?.showTeam) {
+      setExpandedSection('team');
       window.history.replaceState({}, '');
     }
   }, [location.state]);
