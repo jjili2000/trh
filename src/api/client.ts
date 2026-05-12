@@ -22,6 +22,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (!res.ok) {
+    // Session expirée ou token invalide → déconnexion automatique
+    if (res.status === 401) {
+      clearToken();
+      window.location.href = '/login';
+      throw new Error('Session expirée, veuillez vous reconnecter.');
+    }
     const err = await res.json().catch(() => ({ error: 'Erreur serveur' }));
     throw new Error(err.error || 'Erreur serveur');
   }
