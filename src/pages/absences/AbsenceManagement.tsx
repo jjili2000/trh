@@ -1,4 +1,5 @@
-import { useState, ReactNode, FormEvent } from 'react';
+import { useState, useEffect, ReactNode, FormEvent } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Plus, Check, X, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { AbsenceRequest } from '../../types';
@@ -55,6 +56,7 @@ function diffDays(start: string, end: string): number {
 }
 
 export default function AbsenceManagement() {
+  const location = useLocation();
   const {
     currentUser,
     users,
@@ -67,6 +69,13 @@ export default function AbsenceManagement() {
 
   const [showForm, setShowForm] = useState(false);
   const [editingRequest, setEditingRequest] = useState<AbsenceRequest | null>(null);
+
+  useEffect(() => {
+    if ((location.state as { openForm?: boolean } | null)?.openForm) {
+      setShowForm(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
   const [form, setForm] = useState<FormData>(emptyForm);
   const [formError, setFormError] = useState('');
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');

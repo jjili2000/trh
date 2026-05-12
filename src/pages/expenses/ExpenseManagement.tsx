@@ -1,4 +1,5 @@
-import { useState, useRef, ReactNode, FormEvent, ChangeEvent } from 'react';
+import { useState, useEffect, useRef, ReactNode, FormEvent, ChangeEvent } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Plus, Check, X, Receipt, ChevronDown, ChevronUp, FileText, Image, Upload } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Expense } from '../../types';
@@ -73,6 +74,7 @@ function formatCurrency(amount: number) {
 }
 
 export default function ExpenseManagement() {
+  const location = useLocation();
   const {
     currentUser,
     users,
@@ -85,6 +87,13 @@ export default function ExpenseManagement() {
 
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+
+  useEffect(() => {
+    if ((location.state as { openForm?: boolean } | null)?.openForm) {
+      setShowForm(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
   const [form, setForm] = useState<FormData>(emptyForm);
   const [formError, setFormError] = useState('');
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');

@@ -1,4 +1,5 @@
-import { useState, ReactNode, FormEvent } from 'react';
+import { useState, useEffect, ReactNode, FormEvent } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Plus, Check, X, Clock, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { TimeEntry } from '../../types';
@@ -40,6 +41,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 export default function TimeTracking() {
+  const location = useLocation();
   const {
     currentUser,
     users,
@@ -53,6 +55,13 @@ export default function TimeTracking() {
 
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+
+  useEffect(() => {
+    if ((location.state as { openForm?: boolean } | null)?.openForm) {
+      setShowForm(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
   const [form, setForm] = useState<EntryFormData>(emptyForm);
   const [formError, setFormError] = useState('');
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');

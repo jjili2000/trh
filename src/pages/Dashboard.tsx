@@ -308,19 +308,19 @@ export default function Dashboard() {
           <h2 className="font-semibold text-gray-900 mb-4">Actions rapides</h2>
           <div className="flex flex-wrap gap-3">
             {hasModule('time') && (
-              <button onClick={() => navigate('/time')} className="btn-primary flex items-center gap-2">
+              <button onClick={() => navigate('/time', { state: { openForm: true } })} className="btn-primary flex items-center gap-2">
                 <Clock size={16} />
                 Saisir des heures
               </button>
             )}
             {hasModule('absences') && (
-              <button onClick={() => navigate('/absences')} className="btn-secondary flex items-center gap-2">
+              <button onClick={() => navigate('/absences', { state: { openForm: true } })} className="btn-secondary flex items-center gap-2">
                 <Calendar size={16} />
                 Déclarer une absence
               </button>
             )}
             {hasModule('expenses') && (
-              <button onClick={() => navigate('/expenses')} className="btn-secondary flex items-center gap-2">
+              <button onClick={() => navigate('/expenses', { state: { openForm: true } })} className="btn-secondary flex items-center gap-2">
                 <Receipt size={16} />
                 Soumettre une note de frais
               </button>
