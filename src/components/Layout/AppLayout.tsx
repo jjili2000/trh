@@ -117,7 +117,7 @@ export default function AppLayout() {
           </NavLink>
         )}
 
-        {isAdmin && (
+        {hasModule('payroll') && (
           <NavLink to="/payroll" className={navLinkClass} onClick={closeSidebar}>
             <DollarSign size={18} />
             Paie

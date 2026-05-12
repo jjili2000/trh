@@ -383,6 +383,28 @@ router.get('/:id/export', async (req, res) => {
   }
 });
 
+// PUT /:id/reopen — réouvre une période validée (admin only)
+router.put('/:id/reopen', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Accès refusé' });
+    const { id } = req.params;
+    const [rows] = await pool.execute('SELECT status FROM payroll_periods WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Période non trouvée' });
+    if (rows[0].status !== 'validated') {
+      return res.status(400).json({ error: 'Seules les périodes validées peuvent être réouvertes' });
+    }
+    await pool.execute(
+      'UPDATE payroll_periods SET status = ?, validated_by = NULL, validated_at = NULL WHERE id = ?',
+      ['draft', id]
+    );
+    const [updated] = await pool.execute('SELECT * FROM payroll_periods WHERE id = ?', [id]);
+    res.json(mapPeriod(updated[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // DELETE /:id — supprime une période brouillon (admin only)
 router.delete('/:id', async (req, res) => {
   try {

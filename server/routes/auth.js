@@ -11,7 +11,7 @@ const DEFAULT_MODULES = ['time', 'absences', 'expenses', 'documents'];
 
 async function getUserModules(userId, role) {
   if (role === 'admin') {
-    return ['time', 'absences', 'expenses', 'documents', 'budget', 'accounting', 'seasons'];
+    return ['time', 'absences', 'expenses', 'documents', 'budget', 'accounting', 'seasons', 'payroll'];
   }
   try {
     const [rows] = await pool.execute(

@@ -27,6 +27,7 @@ const ALL_MODULES = [
   { key: 'budget',     label: 'Budget' },
   { key: 'accounting', label: 'Comptabilité' },
   { key: 'seasons',    label: 'Saisons' },
+  { key: 'payroll',    label: 'Paie' },
 ];
 
 const DEFAULT_MODULES = ['time', 'absences', 'expenses', 'documents'];

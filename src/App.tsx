@@ -85,8 +85,8 @@ function AppRoutes() {
         <Route path="budget/real/:id" element={<RealBudgetDetail />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="accounting" element={<AccountingPage />} />
-        <Route path="payroll" element={<AdminRoute><PayrollList /></AdminRoute>} />
-        <Route path="payroll/:id" element={<AdminRoute><PayrollDetail /></AdminRoute>} />
+        <Route path="payroll" element={<ModuleRoute module="payroll"><PayrollList /></ModuleRoute>} />
+        <Route path="payroll/:id" element={<ModuleRoute module="payroll"><PayrollDetail /></ModuleRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

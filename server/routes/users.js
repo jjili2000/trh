@@ -59,7 +59,7 @@ router.get('/me', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM users WHERE id = ?', [req.user.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });
     const modules = rows[0].role === 'admin'
-      ? ['time', 'absences', 'expenses', 'documents', 'budget', 'accounting', 'seasons']
+      ? ['time', 'absences', 'expenses', 'documents', 'budget', 'accounting', 'seasons', 'payroll']
       : await getUserModules(req.user.id);
     res.json(mapUser(rows[0], modules));
   } catch (err) {
@@ -97,7 +97,7 @@ router.get('/', async (req, res) => {
     res.json(rows.map(row => mapUser(
       row,
       row.role === 'admin'
-        ? ['time', 'absences', 'expenses', 'documents', 'budget', 'accounting', 'seasons']
+        ? ['time', 'absences', 'expenses', 'documents', 'budget', 'accounting', 'seasons', 'payroll']
         : (modulesByUser[row.id] || DEFAULT_MODULES)
     )));
   } catch (err) {

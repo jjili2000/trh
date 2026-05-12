@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Download, CheckCircle, X, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, CheckCircle, X, Trash2, RotateCcw } from 'lucide-react';
 import { api, getToken } from '../../api/client';
+import { useApp } from '../../context/AppContext';
 import { PayrollDetail as IPayrollDetail, PayrollPeriod, PayrollUserRow } from '../../types';
 
 function fmtDate(d: string) {
@@ -27,6 +28,8 @@ type DetailTab = 'heures' | 'absences' | 'frais';
 export default function PayrollDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { currentUser } = useApp();
+  const isAdmin = currentUser?.role === 'admin';
 
   const [data, setData] = useState<IPayrollDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -236,6 +239,23 @@ export default function PayrollDetail() {
           >
             <Download size={16} />
             {exporting ? 'Export…' : 'Exporter Excel'}
+          </button>
+        )}
+        {!isDraft && isAdmin && (
+          <button
+            className="flex items-center gap-2 px-4 py-2 text-sm text-orange-600 border border-orange-200 rounded-lg hover:bg-orange-50 transition-colors"
+            onClick={async () => {
+              if (!confirm('Réouvrir cette période ? Elle repassera en brouillon et pourra être modifiée.')) return;
+              try {
+                const updated = await api.put<PayrollPeriod>(`/payroll/${id}/reopen`, {});
+                setData(prev => prev ? { ...prev, period: updated } : prev);
+              } catch (err: unknown) {
+                alert(err instanceof Error ? err.message : 'Erreur lors de la réouverture');
+              }
+            }}
+          >
+            <RotateCcw size={16} />
+            Réouvrir
           </button>
         )}
       </div>
