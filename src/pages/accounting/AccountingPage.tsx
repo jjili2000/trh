@@ -191,8 +191,8 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
   const [showCatSuggestions, setShowCatSuggestions] = useState(false);
 
   const catSuggestions = category.trim()
-    ? categories.filter(c => c.toLowerCase().includes(category.toLowerCase())).slice(0, 6)
-    : categories.slice(0, 6);
+    ? categories.filter(c => c.toLowerCase().includes(category.toLowerCase()))
+    : categories;
 
   const updateCond  = (idx: number, patch: Partial<RuleCondition>) =>
     setConditions(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c));
@@ -806,9 +806,9 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
   useEffect(() => {
     if (catInput.trim()) {
       const q = catInput.toLowerCase();
-      setCatSuggestions(categories.filter(c => c.toLowerCase().includes(q)).slice(0, 8));
+      setCatSuggestions(categories.filter(c => c.toLowerCase().includes(q)));
     } else {
-      setCatSuggestions(categories.slice(0, 8));
+      setCatSuggestions(categories);
     }
   }, [catInput, categories]);
 
