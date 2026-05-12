@@ -1,7 +1,8 @@
 import { useState, ReactNode, FormEvent } from 'react';
-import { Plus, Edit2, Trash2, X, User, ChevronDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, User, ChevronDown, KeyRound, Ban, CheckCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { User as UserType, UserRole } from '../../types';
+import { api } from '../../api/client';
 
 const typeLabels: Record<string, string> = {
   admin: 'Administrateur',
@@ -34,7 +35,6 @@ interface UserFormData {
   firstName: string;
   lastName: string;
   email: string;
-  password: string;
   role: UserRole;
   managerId: string;
   position: string;
@@ -45,7 +45,6 @@ const emptyForm: UserFormData = {
   firstName: '',
   lastName: '',
   email: '',
-  password: '',
   role: 'user',
   managerId: '',
   position: '',
@@ -76,17 +75,32 @@ function Modal({ title, onClose, children }: ModalProps) {
 
 export default function UserManagement() {
   const { users, positions, currentUser, addUser, updateUser, deleteUser } = useApp();
+
+  // Edit/Add modal
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
   const [form, setForm] = useState<UserFormData>(emptyForm);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
+
+  // Password modal (new user creation or reset)
+  const [passwordModal, setPasswordModal] = useState<{ userId: string; userName: string } | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  // Add modal — separate password field only for new user
+  const [createPassword, setCreatePassword] = useState('');
+
+  // Delete confirm
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   // A "manager" is any user who has subordinates
   const isUserManager = (userId: string) => users.some(u => u.managerId === userId);
 
   const openAdd = () => {
     setForm(emptyForm);
+    setCreatePassword('');
     setEditingUser(null);
     setFormError('');
     setShowModal(true);
@@ -97,7 +111,6 @@ export default function UserManagement() {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      password: user.password,
       role: (user.role === 'admin' ? 'admin' : 'user') as UserRole,
       managerId: user.managerId ?? '',
       position: user.position ?? '',
@@ -121,8 +134,13 @@ export default function UserManagement() {
     e.preventDefault();
     setFormError('');
 
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim() || !form.password.trim()) {
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) {
       setFormError('Tous les champs obligatoires doivent être remplis.');
+      return;
+    }
+
+    if (!editingUser && !createPassword.trim()) {
+      setFormError('Le mot de passe est obligatoire pour un nouvel utilisateur.');
       return;
     }
 
@@ -132,16 +150,19 @@ export default function UserManagement() {
       return;
     }
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       firstName: form.firstName,
       lastName: form.lastName,
       email: form.email,
-      password: form.password,
       role: form.role,
       managerId: form.managerId || undefined,
       position: form.position || undefined,
       moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
     };
+
+    if (!editingUser) {
+      payload.password = createPassword;
+    }
 
     if (editingUser) {
       updateUser(editingUser.id, payload);
@@ -150,6 +171,44 @@ export default function UserManagement() {
     }
 
     setShowModal(false);
+  };
+
+  const openResetPassword = (user: UserType) => {
+    setPasswordModal({ userId: user.id, userName: `${user.firstName} ${user.lastName}` });
+    setNewPassword('');
+    setPasswordError('');
+    setPasswordSuccess(false);
+  };
+
+  const handleResetPassword = async () => {
+    if (!passwordModal) return;
+    if (newPassword.length < 6) {
+      setPasswordError('Le mot de passe doit contenir au moins 6 caractères.');
+      return;
+    }
+    setSavingPassword(true);
+    setPasswordError('');
+    try {
+      await api.put(`/users/${passwordModal.userId}/reset-password`, { password: newPassword });
+      setPasswordSuccess(true);
+      setTimeout(() => setPasswordModal(null), 1500);
+    } catch {
+      setPasswordError('Erreur lors de la réinitialisation.');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleToggleBlocked = async (user: UserType) => {
+    const newBlocked = !user.blocked;
+    const label = newBlocked ? 'bloquer' : 'débloquer';
+    if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} ${user.firstName} ${user.lastName} ?`)) return;
+    try {
+      await api.put(`/users/${user.id}/blocked`, { blocked: newBlocked });
+      updateUser(user.id, { blocked: newBlocked });
+    } catch {
+      // silent
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -188,10 +247,13 @@ export default function UserManagement() {
               <div key={user.id}>
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
                   <User size={14} className="text-tennis-green" />
-                  <span>{user.firstName} {user.lastName}</span>
+                  <span className={user.blocked ? 'line-through text-gray-400' : ''}>{user.firstName} {user.lastName}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${typeBadgeColors[user.role]}`}>
                     {typeLabels[user.role]}
                   </span>
+                  {user.blocked && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600">Bloqué</span>
+                  )}
                   {user.position && (
                     <span className="text-xs text-gray-400">— {user.position}</span>
                   )}
@@ -201,10 +263,13 @@ export default function UserManagement() {
                     {subs.map(sub => (
                       <div key={sub.id} className="flex items-center gap-2 text-sm text-gray-600">
                         <ChevronDown size={12} className="text-gray-400" />
-                        {sub.firstName} {sub.lastName}
+                        <span className={sub.blocked ? 'line-through text-gray-400' : ''}>{sub.firstName} {sub.lastName}</span>
                         <span className={`text-xs px-1.5 py-0.5 rounded-full ${typeBadgeColors[sub.role]}`}>
                           {typeLabels[sub.role]}
                         </span>
+                        {sub.blocked && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Bloqué</span>
+                        )}
                         {sub.position && (
                           <span className="text-xs text-gray-400">— {sub.position}</span>
                         )}
@@ -238,19 +303,26 @@ export default function UserManagement() {
               {users.map(user => {
                 const manager = users.find(u => u.id === user.managerId);
                 return (
-                  <tr key={user.id} className="hover:bg-gray-50">
+                  <tr key={user.id} className={`hover:bg-gray-50 ${user.blocked ? 'opacity-60' : ''}`}>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-tennis-green flex items-center justify-center text-white text-xs font-bold">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${user.blocked ? 'bg-gray-400' : 'bg-tennis-green'}`}>
                           {user.firstName[0]}{user.lastName[0]}
                         </div>
                         <div>
-                          <span className="font-medium text-gray-900">
-                            {user.firstName} {user.lastName}
-                            {user.id === currentUser?.id && (
-                              <span className="ml-2 text-xs text-gray-400">(moi)</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`font-medium ${user.blocked ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                              {user.firstName} {user.lastName}
+                              {user.id === currentUser?.id && (
+                                <span className="ml-2 text-xs text-gray-400 no-underline" style={{ textDecoration: 'none' }}>(moi)</span>
+                              )}
+                            </span>
+                            {user.blocked && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-normal" style={{ textDecoration: 'none' }}>
+                                Bloqué
+                              </span>
                             )}
-                          </span>
+                          </div>
                           {isUserManager(user.id) && (
                             <p className="text-xs text-tennis-green">Responsable d'équipe</p>
                           )}
@@ -269,17 +341,43 @@ export default function UserManagement() {
                     </td>
                     {currentUser?.role === 'admin' && (
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Edit */}
                           <button
                             onClick={() => openEdit(user)}
                             className="p-1.5 text-gray-400 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg transition-colors"
+                            title="Modifier"
                           >
                             <Edit2 size={15} />
                           </button>
+                          {/* Reset password */}
+                          <button
+                            onClick={() => openResetPassword(user)}
+                            className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Réinitialiser le mot de passe"
+                          >
+                            <KeyRound size={15} />
+                          </button>
+                          {/* Block / Unblock */}
+                          {user.id !== currentUser?.id && (
+                            <button
+                              onClick={() => handleToggleBlocked(user)}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                user.blocked
+                                  ? 'text-green-500 hover:text-green-700 hover:bg-green-50'
+                                  : 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
+                              }`}
+                              title={user.blocked ? 'Débloquer' : 'Bloquer'}
+                            >
+                              {user.blocked ? <CheckCircle size={15} /> : <Ban size={15} />}
+                            </button>
+                          )}
+                          {/* Delete */}
                           {user.id !== currentUser?.id && (
                             <button
                               onClick={() => setDeleteConfirm(user.id)}
                               className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Supprimer"
                             >
                               <Trash2 size={15} />
                             </button>
@@ -340,16 +438,20 @@ export default function UserManagement() {
               />
             </div>
 
-            <div>
-              <label className="label">Mot de passe *</label>
-              <input
-                type="password"
-                className="input"
-                value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                required
-              />
-            </div>
+            {/* Mot de passe uniquement pour la création */}
+            {!editingUser && (
+              <div>
+                <label className="label">Mot de passe *</label>
+                <input
+                  type="password"
+                  className="input"
+                  value={createPassword}
+                  onChange={e => setCreatePassword(e.target.value)}
+                  placeholder="Au moins 6 caractères"
+                  required
+                />
+              </div>
+            )}
 
             <div>
               <label className="label">Poste</label>
@@ -422,6 +524,52 @@ export default function UserManagement() {
               </button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* Reset Password Modal */}
+      {passwordModal && (
+        <Modal title="Réinitialiser le mot de passe" onClose={() => setPasswordModal(null)}>
+          <p className="text-sm text-gray-600 mb-4">
+            Définir un nouveau mot de passe pour <strong>{passwordModal.userName}</strong>.
+          </p>
+          {passwordSuccess ? (
+            <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm text-center">
+              ✓ Mot de passe réinitialisé avec succès
+            </div>
+          ) : (
+            <>
+              {passwordError && (
+                <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                  {passwordError}
+                </div>
+              )}
+              <div className="mb-4">
+                <label className="label">Nouveau mot de passe *</label>
+                <input
+                  type="password"
+                  className="input"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="Au moins 6 caractères"
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setPasswordModal(null)} className="btn-secondary">
+                  Annuler
+                </button>
+                <button
+                  onClick={handleResetPassword}
+                  className="btn-primary flex items-center gap-2"
+                  disabled={savingPassword}
+                >
+                  <KeyRound size={15} />
+                  {savingPassword ? 'Enregistrement…' : 'Réinitialiser'}
+                </button>
+              </div>
+            </>
+          )}
         </Modal>
       )}
 

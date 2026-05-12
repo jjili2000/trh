@@ -46,6 +46,7 @@ function mapUser(row, modules) {
     managerId: row.manager_id || undefined,
     position: row.position || undefined,
     moduleAccess: modules || DEFAULT_MODULES,
+    blocked: !!row.blocked,
     createdAt: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
@@ -183,6 +184,49 @@ router.put('/:id', async (req, res) => {
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ error: 'Email déjà utilisé' });
     }
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// PUT /api/users/:id/reset-password — reset password (admin only)
+router.put('/:id/reset-password', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+    const { id } = req.params;
+    const { password } = req.body;
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    const [result] = await pool.execute('UPDATE users SET password = ? WHERE id = ?', [hash, id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// PUT /api/users/:id/blocked — block/unblock user (admin only)
+router.put('/:id/blocked', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+    const { id } = req.params;
+    if (id === req.user.id) {
+      return res.status(400).json({ error: 'Impossible de bloquer votre propre compte' });
+    }
+    const { blocked } = req.body;
+    await pool.execute('UPDATE users SET blocked = ? WHERE id = ?', [blocked ? 1 : 0, id]);
+    const [rows] = await pool.execute('SELECT * FROM users WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    const modules = await getUserModules(id);
+    res.json(mapUser(rows[0], modules));
+  } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
   }

@@ -62,6 +62,9 @@ router.post('/login', async (req, res) => {
     if (!valid) {
       return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
     }
+    if (dbUser.blocked) {
+      return res.status(403).json({ error: 'Ce compte a été désactivé. Contactez un administrateur.' });
+    }
 
     const payload = { id: dbUser.id, role: dbUser.role };
     const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', {

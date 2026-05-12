@@ -10,6 +10,7 @@ export interface User {
   managerId?: string;
   position?: string;
   moduleAccess?: string[];
+  blocked?: boolean;
   createdAt: string;
 }
 
