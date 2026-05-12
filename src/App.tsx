@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { ReactNode } from 'react';
 
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import AppLayout from './components/Layout/AppLayout';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -51,6 +52,7 @@ function AppRoutes() {
         path="/login"
         element={currentUser ? <Navigate to="/dashboard" replace /> : <Login />}
       />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route
         path="/"
         element={

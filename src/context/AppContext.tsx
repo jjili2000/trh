@@ -29,7 +29,7 @@ interface AppContextType {
   notifCount: number;
 
   // Auth
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<true | string>;
   logout: () => void;
 
   // Notifications
@@ -171,7 +171,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<true | string> => {
     try {
       const { token, user } = await api.post<{ token: string; user: User }>('/auth/login', {
         email,
@@ -181,8 +181,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCurrentUser(user);
       await loadAll();
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Email ou mot de passe incorrect.';
     }
   };
 

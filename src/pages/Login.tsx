@@ -33,18 +33,55 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Forgot password modal state
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     await new Promise(r => setTimeout(r, 200));
-    const ok = await login(email, password);
+    const result = await login(email, password);
     setLoading(false);
-    if (ok) {
+    if (result === true) {
       navigate('/dashboard');
     } else {
-      setError('Email ou mot de passe incorrect.');
+      setError(result);
     }
+  };
+
+  const handleForgotSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotLoading(true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setForgotError(data.error || 'Une erreur est survenue.');
+      } else {
+        setForgotSent(true);
+      }
+    } catch {
+      setForgotError('Impossible de joindre le serveur.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const closeForgot = () => {
+    setShowForgot(false);
+    setForgotEmail('');
+    setForgotSent(false);
+    setForgotError('');
   };
 
   return (
@@ -99,7 +136,16 @@ export default function Login() {
               </div>
 
               <div>
-                <label className="label" htmlFor="password">Mot de passe</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="label mb-0" htmlFor="password">Mot de passe</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgot(true)}
+                    className="text-xs text-tennis-green hover:text-tennis-green-dark hover:underline"
+                  >
+                    Mot de passe oublié ?
+                  </button>
+                </div>
                 <input
                   id="password"
                   type="password"
@@ -124,6 +170,93 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+      {/* Forgot password modal */}
+      {showForgot && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onMouseDown={e => { if (e.target === e.currentTarget) closeForgot(); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-tennis-green-dark to-tennis-green px-6 py-5 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Mot de passe oublié</h3>
+              <button
+                onClick={closeForgot}
+                className="text-white/70 hover:text-white text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-6">
+              {forgotSent ? (
+                <div className="text-center space-y-4">
+                  <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-7 h-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-700 font-medium">Email envoyé !</p>
+                  <p className="text-gray-500 text-sm">
+                    Si l'adresse <strong>{forgotEmail}</strong> est associée à un compte,
+                    vous recevrez un email avec un lien de réinitialisation valable <strong>1 heure</strong>.
+                  </p>
+                  <button
+                    onClick={closeForgot}
+                    className="w-full btn-primary py-2.5 mt-2"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-gray-600 text-sm mb-5">
+                    Saisissez votre adresse email. Vous recevrez un lien pour réinitialiser votre mot de passe.
+                  </p>
+
+                  {forgotError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                      {forgotError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleForgotSubmit} className="space-y-4">
+                    <div>
+                      <label className="label" htmlFor="forgot-email">Adresse email</label>
+                      <input
+                        id="forgot-email"
+                        type="email"
+                        className="input"
+                        placeholder="nom@tennisclub.fr"
+                        value={forgotEmail}
+                        onChange={e => setForgotEmail(e.target.value)}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div className="flex gap-3 pt-1">
+                      <button
+                        type="button"
+                        onClick={closeForgot}
+                        className="flex-1 btn-secondary py-2.5"
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={forgotLoading}
+                        className="flex-1 btn-primary py-2.5 disabled:opacity-60"
+                      >
+                        {forgotLoading ? 'Envoi...' : 'Envoyer'}
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

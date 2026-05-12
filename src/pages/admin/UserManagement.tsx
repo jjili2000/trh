@@ -150,23 +150,28 @@ export default function UserManagement() {
       return;
     }
 
-    const payload: Record<string, unknown> = {
-      firstName: form.firstName,
-      lastName: form.lastName,
-      email: form.email,
-      role: form.role,
-      managerId: form.managerId || undefined,
-      position: form.position || undefined,
-      moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
-    };
-
-    if (!editingUser) {
-      payload.password = createPassword;
-    }
-
     if (editingUser) {
+      const payload: Partial<UserType> = {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        role: form.role,
+        managerId: form.managerId || undefined,
+        position: form.position || undefined,
+        moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
+      };
       updateUser(editingUser.id, payload);
     } else {
+      const payload: Omit<UserType, 'id' | 'createdAt'> = {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        password: createPassword,
+        role: form.role,
+        managerId: form.managerId || undefined,
+        position: form.position || undefined,
+        moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
+      };
       addUser(payload);
     }
 
