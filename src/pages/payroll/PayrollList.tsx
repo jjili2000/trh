@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ChevronRight, X } from 'lucide-react';
+import { Plus, ChevronRight, X, Trash2 } from 'lucide-react';
 import { api } from '../../api/client';
 import { PayrollPeriod, PayrollStatus } from '../../types';
 
@@ -227,12 +227,32 @@ export default function PayrollList() {
                       {new Date(period.createdAt).toLocaleDateString('fr-FR')}
                     </td>
                     <td className="py-3 text-right">
-                      <button
-                        className="btn-secondary text-xs flex items-center gap-1 ml-auto"
-                        onClick={e => { e.stopPropagation(); navigate(`/payroll/${period.id}`); }}
-                      >
-                        Voir <ChevronRight size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {period.status === 'draft' && (
+                          <button
+                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Supprimer"
+                            onClick={async e => {
+                              e.stopPropagation();
+                              if (!confirm('Supprimer cette période de paie ?')) return;
+                              try {
+                                await api.delete(`/payroll/${period.id}`);
+                                setPeriods(prev => prev.filter(p => p.id !== period.id));
+                              } catch {
+                                alert('Erreur lors de la suppression');
+                              }
+                            }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                        <button
+                          className="btn-secondary text-xs flex items-center gap-1"
+                          onClick={e => { e.stopPropagation(); navigate(`/payroll/${period.id}`); }}
+                        >
+                          Voir <ChevronRight size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

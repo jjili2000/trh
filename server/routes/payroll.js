@@ -383,4 +383,22 @@ router.get('/:id/export', async (req, res) => {
   }
 });
 
+// DELETE /:id — supprime une période brouillon (admin only)
+router.delete('/:id', async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Accès refusé' });
+    const { id } = req.params;
+    const [rows] = await pool.execute('SELECT status FROM payroll_periods WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Période non trouvée' });
+    if (rows[0].status !== 'draft') {
+      return res.status(400).json({ error: 'Seules les périodes en brouillon peuvent être supprimées' });
+    }
+    await pool.execute('DELETE FROM payroll_periods WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 module.exports = router;

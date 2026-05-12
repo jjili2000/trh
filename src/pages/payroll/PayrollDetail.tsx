@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Download, CheckCircle, X } from 'lucide-react';
+import { ArrowLeft, Download, CheckCircle, X, Trash2 } from 'lucide-react';
 import { api, getToken } from '../../api/client';
 import { PayrollDetail as IPayrollDetail, PayrollPeriod, PayrollUserRow } from '../../types';
 
@@ -209,6 +209,23 @@ export default function PayrollDetail() {
           >
             <CheckCircle size={16} />
             Valider la période
+          </button>
+        )}
+        {isDraft && (
+          <button
+            className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+            onClick={async () => {
+              if (!confirm('Supprimer cette période de paie ?')) return;
+              try {
+                await api.delete(`/payroll/${id}`);
+                navigate('/payroll');
+              } catch {
+                alert('Erreur lors de la suppression');
+              }
+            }}
+          >
+            <Trash2 size={16} />
+            Supprimer
           </button>
         )}
         {!isDraft && (
