@@ -8,24 +8,22 @@ function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function addDays(dateStr: string, n: number): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  const [y, m, day] = dateStr.split('-').map(Number);
+  const d = new Date(y, m - 1, day + n);
+  return localDateStr(d);
 }
 
 function computeEndDate(startStr: string): string {
-  // startStr = 'YYYY-MM-DD'
-  const parts = startStr.split('-');
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10); // 1-based
-  const day = parseInt(parts[2], 10);
-  // Fin = même jour du mois suivant - 1 jour
-  // new Date(year, month, day - 1) : month est 1-based dans le split,
-  // en JS month est 0-based donc new Date(year, month, day-1) donne bien
-  // (year, month+1, day) - 1 jour = dernier jour inclus
-  const end = new Date(year, month, day - 1);
-  return end.toISOString().slice(0, 10);
+  // Fin = J/M+1 - 1 jour  →  new Date(year, month, day-1) en utilisant month 1-based
+  // (JS month est 0-based donc month 1-based = month+1 en 0-based = mois suivant)
+  const [year, month, day] = startStr.split('-').map(Number);
+  const end = new Date(year, month, day - 1); // month = next month in 0-based JS
+  return localDateStr(end);
 }
 
 const statusBadge: Record<PayrollStatus, { label: string; cls: string }> = {

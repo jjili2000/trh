@@ -12,13 +12,14 @@ function fmtCurrency(n: number) {
   return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 }
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function computeEndDate(startStr: string): string {
-  const parts = startStr.split('-');
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10);
-  const day = parseInt(parts[2], 10);
+  const [year, month, day] = startStr.split('-').map(Number);
   const end = new Date(year, month, day - 1);
-  return end.toISOString().slice(0, 10);
+  return localDateStr(end);
 }
 
 type DetailTab = 'heures' | 'absences' | 'frais';
