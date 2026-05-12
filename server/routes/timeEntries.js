@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -73,7 +73,7 @@ router.post('/', async (req, res) => {
     if (!date || hours === undefined) {
       return res.status(400).json({ error: 'Date et heures requis' });
     }
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO time_entries (id, user_id, date, hours, activity_type_id, description, status)
        VALUES (?, ?, ?, ?, ?, ?, 'pending')`,

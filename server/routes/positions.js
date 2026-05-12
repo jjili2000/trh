@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -32,7 +32,7 @@ router.post('/', async (req, res) => {
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Nom requis' });
     }
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const protected_flag = isProtected ? 1 : 0;
     await pool.execute(
       'INSERT INTO positions (id, name, is_protected) VALUES (?, ?, ?)',

@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -81,7 +81,7 @@ router.post('/', checkAM, async (req, res) => {
   try {
     const { name, startDate, endDate } = req.body;
     if (!name || !startDate || !endDate) return res.status(400).json({ error: 'Champs requis manquants' });
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute('INSERT INTO seasons (id, name, start_date, end_date) VALUES (?, ?, ?, ?)', [id, name, startDate, endDate]);
     const [rows] = await pool.execute('SELECT * FROM seasons WHERE id = ?', [id]);
     res.status(201).json(mapSeason(rows[0]));
@@ -128,7 +128,7 @@ router.post('/:seasonId/template-weeks', checkAM, async (req, res) => {
   try {
     const { label } = req.body;
     if (!label) return res.status(400).json({ error: 'Libellé requis' });
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute('INSERT INTO template_weeks (id, season_id, label) VALUES (?, ?, ?)', [id, req.params.seasonId, label]);
     res.status(201).json(await twWithCourses(id));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
@@ -141,7 +141,7 @@ router.post('/:seasonId/template-weeks/copy', checkAM, async (req, res) => {
     if (!sourceTemplateWeekId) return res.status(400).json({ error: 'sourceTemplateWeekId requis' });
     const [srcRows] = await pool.execute('SELECT * FROM template_weeks WHERE id = ?', [sourceTemplateWeekId]);
     if (!srcRows.length) return res.status(404).json({ error: 'Semaine type source non trouvée' });
-    const newId = uuidv4();
+    const newId = crypto.randomUUID();
     await pool.execute(
       'INSERT INTO template_weeks (id, season_id, label) VALUES (?, ?, ?)',
       [newId, req.params.seasonId, srcRows[0].label + ' (copie)']
@@ -152,7 +152,7 @@ router.post('/:seasonId/template-weeks/copy', checkAM, async (req, res) => {
     for (const c of srcCourses) {
       await pool.execute(
         'INSERT INTO template_courses (id, template_week_id, label, day_of_week, start_time, end_time, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [uuidv4(), newId, c.label, c.day_of_week, c.start_time, c.end_time, c.teacher_id]
+        [crypto.randomUUID(), newId, c.label, c.day_of_week, c.start_time, c.end_time, c.teacher_id]
       );
     }
     res.status(201).json(await twWithCourses(newId));
@@ -181,7 +181,7 @@ router.post('/:seasonId/template-weeks/:twId/courses', checkAM, async (req, res)
   try {
     const { label, dayOfWeek, startTime, endTime, teacherId } = req.body;
     if (!label || !dayOfWeek || !startTime || !endTime) return res.status(400).json({ error: 'Champs requis manquants' });
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute(
       'INSERT INTO template_courses (id, template_week_id, label, day_of_week, start_time, end_time, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [id, req.params.twId, label, dayOfWeek, startTime, endTime, teacherId || null]
@@ -242,7 +242,7 @@ router.put('/:seasonId/assignments', checkAM, async (req, res) => {
       );
       return res.json({ success: true, removed: true });
     }
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date)
        VALUES (?, ?, ?, ?)
@@ -272,7 +272,7 @@ router.post('/:seasonId/assignments/apply-rule', checkAM, async (req, res) => {
       if (typeof ws !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(ws)) continue;
       await pool.execute(
         'INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date) VALUES (?, ?, ?, ?)',
-        [uuidv4(), req.params.seasonId, templateWeekId, ws]
+        [crypto.randomUUID(), req.params.seasonId, templateWeekId, ws]
       );
       count++;
     }

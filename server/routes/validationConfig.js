@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -68,7 +68,7 @@ router.put('/:type', async (req, res) => {
     for (const pos of safePositions) {
       await pool.execute(
         'INSERT INTO validation_config_positions (id, config_type, position_name) VALUES (?, ?, ?)',
-        [uuidv4(), type, pos]
+        [crypto.randomUUID(), type, pos]
       );
     }
 

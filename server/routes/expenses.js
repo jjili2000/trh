@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -72,7 +72,7 @@ router.post('/', async (req, res) => {
     if (!date || amount === undefined || !reason) {
       return res.status(400).json({ error: 'Date, montant et motif requis' });
     }
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO expenses (id, user_id, date, amount, reason, receipt_file, receipt_file_name, receipt_file_type, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,

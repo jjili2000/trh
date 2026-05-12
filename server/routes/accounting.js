@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -314,7 +314,7 @@ router.post('/import/confirm', async (req, res) => {
 
     const { rows } = rawRowsToMapped(rawRows);
 
-    const importId = uuidv4();
+    const importId = crypto.randomUUID();
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
     // Parse all rows
@@ -361,7 +361,7 @@ router.post('/import/confirm', async (req, res) => {
       const thirdParty = extractThirdParty(rawLabel, paymentMethod, direction);
 
       operations.push({
-        id: uuidv4(),
+        id: crypto.randomUUID(),
         importId,
         operationDate,
         direction,
@@ -542,7 +542,7 @@ router.post('/rules', async (req, res) => {
     const { label, conditionOperator, category, conditions, priority } = req.body;
     if (!label || !category) return res.status(400).json({ error: 'Libellé et catégorie requis' });
 
-    const ruleId = uuidv4();
+    const ruleId = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO accounting_rules (id, userId, label, conditionOperator, category, priority, createdAt) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
       [ruleId, req.user.id, label, conditionOperator || 'AND', category, priority || 0]
@@ -552,7 +552,7 @@ router.post('/rules', async (req, res) => {
       for (const cond of conditions) {
         await pool.execute(
           `INSERT INTO accounting_rule_conditions (id, ruleId, field, operator, value) VALUES (?, ?, ?, ?, ?)`,
-          [uuidv4(), ruleId, cond.field, cond.operator, cond.value]
+          [crypto.randomUUID(), ruleId, cond.field, cond.operator, cond.value]
         );
       }
     }
@@ -588,7 +588,7 @@ router.put('/rules/:id', async (req, res) => {
       for (const cond of conditions) {
         await pool.execute(
           `INSERT INTO accounting_rule_conditions (id, ruleId, field, operator, value) VALUES (?, ?, ?, ?, ?)`,
-          [uuidv4(), id, cond.field, cond.operator, cond.value]
+          [crypto.randomUUID(), id, cond.field, cond.operator, cond.value]
         );
       }
     }

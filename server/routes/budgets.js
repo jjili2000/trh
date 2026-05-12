@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -35,7 +35,7 @@ async function getBudgetValidators() {
 
 async function createNotification(userId, type, title, body, refType, refId) {
   try {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO notifications (id, user_id, type, title, body, ref_type, ref_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [id, userId, type, title, body || null, refType || null, refId || null]
@@ -165,7 +165,7 @@ router.post('/requests', async (req, res) => {
     if (!label || !startDate || !endDate) {
       return res.status(400).json({ error: 'Libellé, date de début et date de fin requis' });
     }
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO budget_requests (id, user_id, label, start_date, end_date, comment, status) VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
       [id, req.user.id, label, startDate, endDate, comment || null]
@@ -173,7 +173,7 @@ router.post('/requests', async (req, res) => {
     if (Array.isArray(lines) && lines.length > 0) {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        const lineId = uuidv4();
+        const lineId = crypto.randomUUID();
         const qty = parseFloat(line.qty) || 1;
         const unitPrice = parseFloat(line.unitPrice) || 0;
         await pool.execute(
@@ -255,7 +255,7 @@ router.put('/requests/:id', async (req, res) => {
       await pool.execute('DELETE FROM budget_request_lines WHERE request_id = ?', [id]);
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        const lineId = uuidv4();
+        const lineId = crypto.randomUUID();
         const qty = parseFloat(line.qty) || 1;
         const unitPrice = parseFloat(line.unitPrice) || 0;
         await pool.execute(
@@ -337,7 +337,7 @@ router.post('/requests/:id/approve', async (req, res) => {
     );
 
     // Create real budget
-    const realBudgetId = uuidv4();
+    const realBudgetId = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO real_budgets (id, request_id, user_id, label, start_date, end_date, status) VALUES (?, ?, ?, ?, ?, ?, 'active')`,
       [realBudgetId, id, request.user_id, request.label, request.start_date, request.end_date]
@@ -349,7 +349,7 @@ router.post('/requests/:id/approve', async (req, res) => {
       [id]
     );
     for (const line of lineRows) {
-      const realLineId = uuidv4();
+      const realLineId = crypto.randomUUID();
       await pool.execute(
         `INSERT INTO real_budget_lines (id, real_budget_id, source_line_id, type, label, forecast_amount, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [realLineId, realBudgetId, line.id, line.type, line.label, line.amount, line.sort_order]
@@ -568,7 +568,7 @@ router.post('/real/:id/lines', async (req, res) => {
       [id]
     );
     const sortOrder = (maxOrder[0].mo || 0) + 1;
-    const lineId = uuidv4();
+    const lineId = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO real_budget_lines (id, real_budget_id, type, label, forecast_amount, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
       [lineId, id, type, label, forecastAmount || 0, sortOrder]
@@ -622,7 +622,7 @@ router.post('/real/:id/lines/:lineId/details', async (req, res) => {
     if (!detailDate || !label || !paymentMethod || amount === undefined) {
       return res.status(400).json({ error: 'Date, libellé, mode de paiement et montant requis' });
     }
-    const detailId = uuidv4();
+    const detailId = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO budget_line_details (id, line_id, detail_date, label, payment_method, qty, unit_price, amount, receipt_file, receipt_file_name, receipt_file_type, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [detailId, lineId, detailDate, label, paymentMethod, parseFloat(qty) || 1, parseFloat(unitPrice) || 0, amount, receiptFile || null, receiptFileName || null, receiptFileType || null, req.user.id]
@@ -709,7 +709,7 @@ router.post('/real/:id/access', async (req, res) => {
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId requis' });
 
-    const grantId = uuidv4();
+    const grantId = crypto.randomUUID();
     await pool.execute(
       `INSERT IGNORE INTO budget_access_grants (id, real_budget_id, user_id, granted_by) VALUES (?, ?, ?, ?)`,
       [grantId, id, userId, req.user.id]

@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 
 const router = express.Router();
@@ -25,7 +25,7 @@ router.post('/', async (req, res) => {
     if (!name || !color) {
       return res.status(400).json({ error: 'Nom et couleur requis' });
     }
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute(
       'INSERT INTO activity_types (id, name, color) VALUES (?, ?, ?)',
       [id, name, color]

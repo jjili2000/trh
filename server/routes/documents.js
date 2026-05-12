@@ -1,5 +1,5 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const pool = require('../db');
 const { recognizeDocument } = require('../services/recognition');
 const { sendDocumentNotification } = require('../services/email');
@@ -71,7 +71,7 @@ router.post('/', async (req, res) => {
     // Auto-recognize
     const recognized = await recognizeDocument(fileData, fileType, fileName);
 
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO documents (id, file_name, file_type, file_data, document_type, detected_employee_name, period_start, period_end, notes, status, uploaded_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_validation', ?)`,
