@@ -16,6 +16,7 @@ import {
   Wallet,
   Bell,
   BarChart2,
+  DollarSign,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -113,6 +114,13 @@ export default function AppLayout() {
           <NavLink to="/accounting" className={navLinkClass} onClick={closeSidebar}>
             <BarChart2 size={18} />
             Comptabilité
+          </NavLink>
+        )}
+
+        {isAdmin && (
+          <NavLink to="/payroll" className={navLinkClass} onClick={closeSidebar}>
+            <DollarSign size={18} />
+            Paie
           </NavLink>
         )}
 

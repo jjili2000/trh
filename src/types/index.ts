@@ -246,3 +246,35 @@ export interface AccountingRule {
   createdAt: string;
   conditions: RuleCondition[];
 }
+
+// ─── Payroll ──────────────────────────────────────────────────────────────────
+
+export type PayrollStatus = 'draft' | 'validated';
+
+export interface PayrollPeriod {
+  id: string;
+  startDate: string;
+  endDate: string;
+  status: PayrollStatus;
+  createdBy: string;
+  validatedBy?: string;
+  validatedAt?: string;
+  createdAt: string;
+}
+
+export interface PayrollUserRow {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  totalHours: number;
+  absenceDays: number;
+  totalExpenses: number;
+  timeEntries: TimeEntry[];
+  absenceRequests: AbsenceRequest[];
+  expenses: Expense[];
+}
+
+export interface PayrollDetail {
+  period: PayrollPeriod;
+  rows: PayrollUserRow[];
+}
