@@ -10,6 +10,4 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
   validated_by VARCHAR(36)   NULL DEFAULT NULL,
   validated_at DATETIME      NULL DEFAULT NULL,
   created_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_payroll_created_by  FOREIGN KEY (created_by)   REFERENCES users(id),
-  CONSTRAINT fk_payroll_validated_by FOREIGN KEY (validated_by) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
