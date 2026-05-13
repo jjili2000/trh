@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import * as XLSX from 'xlsx';
 import {
   Pencil,
   Trash2,
@@ -1163,20 +1162,22 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
     const file = e.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
+    setError(null);
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const data = ev.target?.result;
-      const wb = XLSX.read(data, { type: 'array', cellDates: false, raw: false });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      // Convert sheet to array of arrays (all cells as strings)
-      const rows: string[][] = XLSX.utils.sheet_to_json(ws, {
-        header: 1,
-        defval: '',
-        raw: false,
-      }) as string[][];
-      setParsedRows(rows);
+    reader.onload = async (ev) => {
+      const fileData = ev.target?.result as string;
+      try {
+        const { rawRows } = await api.post<{ rawRows: string[][] }>(
+          '/accounting/import/parse-file',
+          { fileData, fileName: file.name }
+        );
+        setParsedRows(rawRows);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Impossible de lire le fichier');
+        setParsedRows([]);
+      }
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsDataURL(file);
   };
 
   const handlePreview = async () => {

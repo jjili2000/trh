@@ -279,8 +279,65 @@ function rawRowsToMapped(rawRows) {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+// POST /accounting/import/parse-file
+// Reçoit { fileData: string (base64 data-URL), fileName: string }
+// Retourne { rawRows: string[][] }
+router.post('/import/parse-file', async (req, res) => {
+  try {
+    const { fileData, fileName } = req.body;
+    if (!fileData) return res.status(400).json({ error: 'fileData requis' });
+
+    // Séparer le préfixe data-URL du contenu base64
+    const base64 = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+    const buffer = Buffer.from(base64, 'base64');
+    const ext = (fileName || '').split('.').pop().toLowerCase();
+
+    let rawRows;
+
+    if (ext === 'xlsx' || ext === 'xls') {
+      // Parsing Excel avec exceljs
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const ws = workbook.worksheets[0];
+      rawRows = [];
+      ws.eachRow(row => {
+        rawRows.push(row.values.slice(1).map(v => {
+          if (v == null) return '';
+          if (v instanceof Date) return v.toISOString().slice(0, 10);
+          if (typeof v === 'object' && v.text) return String(v.text);
+          return String(v);
+        }));
+      });
+    } else {
+      // Parsing CSV / TXT
+      const text = buffer.toString('utf8').replace(/^﻿/, ''); // strip BOM
+      const lines = text.split(/\r?\n/);
+      rawRows = lines.map(line => {
+        // Gère les séparateurs , et ; et les champs entre guillemets
+        const sep = line.includes(';') ? ';' : ',';
+        const cells = [];
+        let cur = '', inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"') { inQ = !inQ; }
+          else if (c === sep && !inQ) { cells.push(cur.trim()); cur = ''; }
+          else { cur += c; }
+        }
+        cells.push(cur.trim());
+        return cells;
+      }).filter(row => row.some(c => c !== ''));
+    }
+
+    res.json({ rawRows });
+  } catch (err) {
+    console.error('[parse-file]', err.message);
+    res.status(500).json({ error: `Impossible de lire le fichier : ${err.message}` });
+  }
+});
+
 // POST /accounting/import/preview
-// Accepts: { rawRows: string[][], filename } (pre-parsed by SheetJS on client)
+// Accepts: { rawRows: string[][], filename } (parsed server-side via /import/parse-file)
 router.post('/import/preview', async (req, res) => {
   try {
     const { rawRows, filename } = req.body;
