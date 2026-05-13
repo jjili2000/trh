@@ -20,15 +20,44 @@ const absenceTypeLabels = {
 interface FormData {
   startDate: string;
   endDate: string;
+  durationDays: number;
   type: AbsenceRequest['type'];
   reason: string;
 }
 
-const today = new Date().toISOString().slice(0, 10);
+// ── Helpers date ─────────────────────────────────────────────────────────────
+
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Calcule endDate à partir de startDate et d'une durée (peut être décimale).
+ *  Règle : calendarDays = ceil(durationDays), endDate = start + calendarDays - 1
+ *  Ex : 0.5 → endDate = startDate  |  1 → startDate  |  1.5 → start + 1  |  2 → start + 1 */
+function endDateFromDuration(start: string, durationDays: number): string {
+  const [y, m, d] = start.split('-').map(Number);
+  const calDays = Math.max(0, Math.ceil(durationDays) - 1);
+  return localDateStr(new Date(y, m - 1, d + calDays));
+}
+
+/** Calcule la durée entière (jours) à partir de deux dates (arrondi au 0.5 le plus proche) */
+function durationFromDates(start: string, end: string): number {
+  const s = new Date(start + 'T00:00:00');
+  const e = new Date(end + 'T00:00:00');
+  return Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+}
+
+/** Formate un nombre de jours pour l'affichage (ex: 0.5 → "0,5 j", 1 → "1 j") */
+function fmtDuration(n: number): string {
+  return `${n.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} j`;
+}
+
+const today = localDateStr(new Date());
 
 const emptyForm: FormData = {
   startDate: today,
   endDate: today,
+  durationDays: 1,
   type: 'vacation',
   reason: '',
 };
@@ -112,6 +141,7 @@ export default function AbsenceManagement() {
     setForm({
       startDate: req.startDate,
       endDate: req.endDate,
+      durationDays: req.durationDays ?? durationFromDates(req.startDate, req.endDate),
       type: req.type,
       reason: req.reason ?? '',
     });
@@ -136,6 +166,7 @@ export default function AbsenceManagement() {
       updateAbsenceRequest(editingRequest.id, {
         startDate: form.startDate,
         endDate: form.endDate,
+        durationDays: form.durationDays,
         type: form.type,
         reason: form.reason || undefined,
         status: 'pending',
@@ -147,6 +178,7 @@ export default function AbsenceManagement() {
         userId: currentUser!.id,
         startDate: form.startDate,
         endDate: form.endDate,
+        durationDays: form.durationDays,
         type: form.type,
         reason: form.reason || undefined,
       });
@@ -188,7 +220,8 @@ export default function AbsenceManagement() {
           <p className="text-3xl font-bold text-tennis-green">
             {myRequests
               .filter(r => r.status === 'approved')
-              .reduce((sum, r) => sum + diffDays(r.startDate, r.endDate), 0)}
+              .reduce((sum, r) => sum + (r.durationDays ?? diffDays(r.startDate, r.endDate)), 0)
+              .toLocaleString('fr-FR', { maximumFractionDigits: 1 })}
           </p>
           <p className="text-sm text-gray-500 mt-1">Jours approuvés</p>
         </div>
@@ -235,11 +268,11 @@ export default function AbsenceManagement() {
                           <span className={`badge-${req.status}`}>{statusLabels[req.status]}</span>
                         </div>
                         <p className="text-sm text-gray-500">
-                          {new Date(req.startDate).toLocaleDateString('fr-FR')}
+                          {new Date(req.startDate + 'T00:00:00').toLocaleDateString('fr-FR')}
                           {' → '}
-                          {new Date(req.endDate).toLocaleDateString('fr-FR')}
+                          {new Date(req.endDate + 'T00:00:00').toLocaleDateString('fr-FR')}
                           {' · '}
-                          <span className="font-medium">{diffDays(req.startDate, req.endDate)} jour(s)</span>
+                          <span className="font-medium">{fmtDuration(req.durationDays ?? diffDays(req.startDate, req.endDate))}</span>
                         </p>
                         {req.reason && (
                           <p className="text-sm text-gray-400 mt-1 italic">« {req.reason} »</p>
@@ -305,11 +338,11 @@ export default function AbsenceManagement() {
                               <span className={`badge-${req.status}`}>{statusLabels[req.status]}</span>
                             </div>
                             <p className="text-sm text-gray-500 ml-8">
-                              {new Date(req.startDate).toLocaleDateString('fr-FR')}
+                              {new Date(req.startDate + 'T00:00:00').toLocaleDateString('fr-FR')}
                               {' → '}
-                              {new Date(req.endDate).toLocaleDateString('fr-FR')}
+                              {new Date(req.endDate + 'T00:00:00').toLocaleDateString('fr-FR')}
                               {' · '}
-                              <span className="font-medium">{diffDays(req.startDate, req.endDate)} jour(s)</span>
+                              <span className="font-medium">{fmtDuration(req.durationDays ?? diffDays(req.startDate, req.endDate))}</span>
                             </p>
                             {req.reason && (
                               <p className="text-sm text-gray-400 ml-8 mt-1 italic">« {req.reason} »</p>
@@ -378,7 +411,13 @@ export default function AbsenceManagement() {
                   type="date"
                   className="input"
                   value={form.startDate}
-                  onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+                  onChange={e => {
+                    const newStart = e.target.value;
+                    if (!newStart) { setForm(f => ({ ...f, startDate: newStart })); return; }
+                    // La date de fin suit en gardant la durée courante
+                    const newEnd = endDateFromDuration(newStart, form.durationDays);
+                    setForm(f => ({ ...f, startDate: newStart, endDate: newEnd }));
+                  }}
                   required
                 />
               </div>
@@ -389,17 +428,43 @@ export default function AbsenceManagement() {
                   className="input"
                   value={form.endDate}
                   min={form.startDate}
-                  onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
+                  onChange={e => {
+                    const newEnd = e.target.value;
+                    if (!newEnd || !form.startDate) { setForm(f => ({ ...f, endDate: newEnd })); return; }
+                    // Recalcul de la durée (toujours entier quand on change la fin)
+                    const newDuration = durationFromDates(form.startDate, newEnd);
+                    setForm(f => ({ ...f, endDate: newEnd, durationDays: newDuration }));
+                  }}
                   required
                 />
               </div>
             </div>
 
-            {form.startDate && form.endDate && (
-              <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-                Durée : <strong>{diffDays(form.startDate, form.endDate)} jour(s)</strong>
+            {/* Champ durée */}
+            <div>
+              <label className="label">Nombre de jours *</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  className="input w-32"
+                  value={form.durationDays}
+                  min={0.5}
+                  step={0.5}
+                  onChange={e => {
+                    const raw = parseFloat(e.target.value);
+                    if (isNaN(raw) || raw <= 0) return;
+                    const newDuration = Math.round(raw * 2) / 2; // arrondi au 0.5 le plus proche
+                    const newEnd = form.startDate ? endDateFromDuration(form.startDate, newDuration) : form.endDate;
+                    setForm(f => ({ ...f, durationDays: newDuration, endDate: newEnd }));
+                  }}
+                  required
+                />
+                <span className="text-sm text-gray-500">
+                  {form.durationDays % 1 !== 0 ? 'demi-journée(s) incluse(s)' : 'jour(s) complet(s)'}
+                </span>
               </div>
-            )}
+              <p className="text-xs text-gray-400 mt-1">Utilisez 0,5 pour une demi-journée. Les flèches avancent par pas de 0,5.</p>
+            </div>
 
             <div>
               <label className="label">Motif (optionnel)</label>

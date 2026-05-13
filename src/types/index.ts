@@ -49,6 +49,7 @@ export interface AbsenceRequest {
   userId: string;
   startDate: string;
   endDate: string;
+  durationDays?: number; // peut être décimal (0.5 = demi-journée)
   type: 'vacation' | 'sick' | 'personal' | 'other';
   reason?: string;
   status: 'pending' | 'approved' | 'rejected';

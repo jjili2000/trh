@@ -5,15 +5,28 @@ const pool = require('../db');
 const router = express.Router();
 
 function mapRequest(row) {
+  const startStr = row.start_date instanceof Date
+    ? row.start_date.toISOString().slice(0, 10)
+    : String(row.start_date).slice(0, 10);
+  const endStr = row.end_date instanceof Date
+    ? row.end_date.toISOString().slice(0, 10)
+    : String(row.end_date).slice(0, 10);
+
+  // duration_days : valeur stockée ou fallback calculé depuis les dates
+  let durationDays;
+  if (row.duration_days != null) {
+    durationDays = parseFloat(row.duration_days);
+  } else {
+    const s = new Date(startStr), e = new Date(endStr);
+    durationDays = Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1;
+  }
+
   return {
     id: row.id,
     userId: row.user_id,
-    startDate: row.start_date instanceof Date
-      ? row.start_date.toISOString().slice(0, 10)
-      : String(row.start_date).slice(0, 10),
-    endDate: row.end_date instanceof Date
-      ? row.end_date.toISOString().slice(0, 10)
-      : String(row.end_date).slice(0, 10),
+    startDate: startStr,
+    endDate: endStr,
+    durationDays,
     type: row.type,
     reason: row.reason || undefined,
     status: row.status,
@@ -61,19 +74,44 @@ router.get('/', async (req, res) => {
 // POST /api/absence-requests
 router.post('/', async (req, res) => {
   try {
-    const { startDate, endDate, type, reason } = req.body;
+    const { startDate, endDate, durationDays, type, reason } = req.body;
     if (!startDate || !endDate || !type) {
       return res.status(400).json({ error: 'Dates et type requis' });
     }
+    // Calcul fallback si durationDays non fourni
+    const duration = durationDays != null
+      ? parseFloat(durationDays)
+      : (() => {
+          const s = new Date(startDate), e = new Date(endDate);
+          return Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1;
+        })();
+
     const id = crypto.randomUUID();
     await pool.execute(
-      `INSERT INTO absence_requests (id, user_id, start_date, end_date, type, reason, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      [id, req.user.id, startDate, endDate, type, reason || null]
+      `INSERT INTO absence_requests (id, user_id, start_date, end_date, duration_days, type, reason, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [id, req.user.id, startDate, endDate, duration, type, reason || null]
     );
     const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     res.status(201).json(mapRequest(rows[0]));
   } catch (err) {
+    // Si la colonne n'existe pas encore (migration non jouée), fallback sans duration_days
+    if (err.code === 'ER_BAD_FIELD_ERROR') {
+      try {
+        const id = crypto.randomUUID();
+        const { startDate, endDate, type, reason } = req.body;
+        await pool.execute(
+          `INSERT INTO absence_requests (id, user_id, start_date, end_date, type, reason, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+          [id, req.user.id, startDate, endDate, type, reason || null]
+        );
+        const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
+        return res.status(201).json(mapRequest(rows[0]));
+      } catch (e2) {
+        console.error(e2);
+        return res.status(500).json({ error: 'Erreur serveur' });
+      }
+    }
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -94,13 +132,14 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Seules les demandes en attente peuvent être modifiées' });
     }
 
-    const { startDate, endDate, type, reason } = req.body;
+    const { startDate, endDate, durationDays, type, reason } = req.body;
     const updates = [];
     const values = [];
-    if (startDate !== undefined) { updates.push('start_date = ?'); values.push(startDate); }
-    if (endDate !== undefined)   { updates.push('end_date = ?');   values.push(endDate); }
-    if (type !== undefined)      { updates.push('type = ?');       values.push(type); }
-    if (reason !== undefined)    { updates.push('reason = ?');     values.push(reason || null); }
+    if (startDate !== undefined)     { updates.push('start_date = ?');    values.push(startDate); }
+    if (endDate !== undefined)       { updates.push('end_date = ?');      values.push(endDate); }
+    if (durationDays !== undefined)  { updates.push('duration_days = ?'); values.push(parseFloat(durationDays)); }
+    if (type !== undefined)          { updates.push('type = ?');          values.push(type); }
+    if (reason !== undefined)        { updates.push('reason = ?');        values.push(reason || null); }
 
     if (updates.length > 0) {
       values.push(id);
