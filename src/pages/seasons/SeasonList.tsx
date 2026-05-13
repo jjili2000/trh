@@ -1,6 +1,6 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Calendar, ChevronRight, X } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, X, Trash2 } from 'lucide-react';
 import { api } from '../../api/client';
 import { Season, SeasonStatus } from '../../types';
 
@@ -33,6 +33,8 @@ export default function SeasonList() {
   const [nameEdited, setNameEdited] = useState(false);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -64,6 +66,15 @@ export default function SeasonList() {
       ...f, startMonth: month, startYear: year,
       name: nameEdited ? f.name : autoName(month, year),
     }));
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeleting(true);
+    try {
+      await api.delete(`/seasons/${id}`);
+      await load();
+    } catch { /* ignore */ }
+    finally { setDeleting(false); setConfirmDelete(null); }
   };
 
   const handleCreate = async (e: FormEvent) => {
@@ -109,15 +120,17 @@ export default function SeasonList() {
           {seasons.map(s => {
             const cfg = STATUS_CFG[s.status];
             return (
-              <div
-                key={s.id}
-                onClick={() => navigate(`/seasons/${s.id}`)}
-                className="card flex items-center gap-4 cursor-pointer hover:shadow-md transition-shadow"
-              >
-                <div className="w-12 h-12 rounded-xl bg-tennis-green/10 flex items-center justify-center flex-shrink-0">
+              <div key={s.id} className="card flex items-center gap-4 hover:shadow-md transition-shadow">
+                <div
+                  className="w-12 h-12 rounded-xl bg-tennis-green/10 flex items-center justify-center flex-shrink-0 cursor-pointer"
+                  onClick={() => navigate(`/seasons/${s.id}`)}
+                >
                   <Calendar size={22} className="text-tennis-green" />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div
+                  className="flex-1 min-w-0 cursor-pointer"
+                  onClick={() => navigate(`/seasons/${s.id}`)}
+                >
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="font-semibold text-gray-900">{s.name}</span>
                     <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${cfg.color}`}>{cfg.label}</span>
@@ -126,7 +139,42 @@ export default function SeasonList() {
                     {formatDate(s.startDate)} → {formatDate(s.endDate)}
                   </p>
                 </div>
-                <ChevronRight size={18} className="text-gray-400 flex-shrink-0" />
+
+                {s.status === 'draft' && confirmDelete === s.id ? (
+                  <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                    <span className="text-sm text-gray-600">Supprimer ?</span>
+                    <button
+                      onClick={() => handleDelete(s.id)}
+                      disabled={deleting}
+                      className="px-2.5 py-1 text-xs font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                    >
+                      Oui
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(null)}
+                      className="px-2.5 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                    >
+                      Non
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {s.status === 'draft' && (
+                      <button
+                        onClick={e => { e.stopPropagation(); setConfirmDelete(s.id); }}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Supprimer la saison"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                    <ChevronRight
+                      size={18}
+                      className="text-gray-400 cursor-pointer"
+                      onClick={() => navigate(`/seasons/${s.id}`)}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}

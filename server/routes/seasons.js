@@ -96,6 +96,19 @@ router.get('/:id', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
+router.delete('/:id', checkAM, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await pool.execute('SELECT * FROM seasons WHERE id = ?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Saison non trouvée' });
+    if (rows[0].status !== 'draft') {
+      return res.status(400).json({ error: 'Seules les saisons en brouillon peuvent être supprimées' });
+    }
+    await pool.execute("UPDATE seasons SET status = 'deleted' WHERE id = ?", [id]);
+    res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
 router.put('/:id', checkAM, async (req, res) => {
   try {
     const { name, startDate, endDate, status } = req.body;
