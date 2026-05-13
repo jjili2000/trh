@@ -9,12 +9,14 @@ interface Preview {
   timeEntries: number;
   absenceRequests: number;
   expenses: number;
+  expenseReceipts: number;
   payrollPeriods: number;
   budgetRequests: number;
   realBudgets: number;
   bankOperations: number;
   bankImports: number;
   notifications: number;
+  seasons: number;
   documents: number;
   nonAdminUsers: number;
 }
@@ -29,6 +31,7 @@ interface DeletedCounts {
   bankOperations?: number;
   bankImports?: number;
   notifications?: number;
+  seasons?: number;
   documents?: number;
   users?: number;
 }
@@ -93,8 +96,9 @@ export default function ResetData() {
     }
   };
 
+  const hasFilesToBackup = (preview?.documents ?? 0) > 0 || (preview?.expenseReceipts ?? 0) > 0;
   const canProceedToConfirm =
-    !deleteDocuments || zipDownloaded || (preview?.documents ?? 0) === 0;
+    !deleteDocuments || zipDownloaded || !hasFilesToBackup;
 
   const handleReset = async () => {
     if (confirmText !== 'SUPPRIMER') return;
@@ -141,6 +145,7 @@ export default function ResetData() {
             {result.realBudgets    ? <p>• {fmtCount(result.realBudgets)} budget(s) réel(s)</p> : null}
             {result.bankImports    ? <p>• {fmtCount(result.bankImports)} import(s) bancaire(s)</p> : null}
             {result.bankOperations ? <p>• {fmtCount(result.bankOperations)} opération(s) bancaire(s)</p> : null}
+            {result.seasons        ? <p>• {fmtCount(result.seasons)} saison(s)</p> : null}
             {result.notifications  ? <p>• {fmtCount(result.notifications)} notification(s)</p> : null}
             {result.documents      ? <p>• {fmtCount(result.documents)} document(s)</p> : null}
             {result.users          ? <p>• {fmtCount(result.users)} utilisateur(s)</p> : null}
@@ -190,6 +195,7 @@ export default function ResetData() {
             <p>• Toutes les périodes de paie</p>
             <p>• Toutes les demandes de budget et budgets réels</p>
             <p>• Tous les imports et opérations bancaires</p>
+            <p>• Toutes les saisons et leurs plannings</p>
             <p>• Toutes les notifications</p>
             {deleteDocuments && <p>• Tous les documents RH</p>}
             {deleteUsers     && <p>• Tous les utilisateurs (hors administrateurs)</p>}
@@ -272,6 +278,8 @@ export default function ResetData() {
             <span className="font-medium text-gray-800">{fmtCount(preview?.realBudgets)}</span>
             <span>Opérations bancaires</span>
             <span className="font-medium text-gray-800">{fmtCount(preview?.bankOperations)}</span>
+            <span>Saisons</span>
+            <span className="font-medium text-gray-800">{fmtCount(preview?.seasons)}</span>
             <span>Notifications</span>
             <span className="font-medium text-gray-800">{fmtCount(preview?.notifications)}</span>
           </div>
@@ -289,7 +297,6 @@ export default function ResetData() {
           <p>• Types d'activités et postes</p>
           <p>• Règles de validation</p>
           <p>• Règles et catégories comptables</p>
-          <p>• Modèles de saisons</p>
           <p>• Accès modules des utilisateurs</p>
         </div>
       </div>
@@ -333,14 +340,16 @@ export default function ResetData() {
             </div>
             {!loadingPreview && (
               <p className="text-sm text-gray-500 mt-0.5">
-                {fmtCount(preview?.documents)} document(s) concerné(s)
+                {fmtCount(preview?.documents)} document(s) RH
+                {(preview?.expenseReceipts ?? 0) > 0 &&
+                  ` · ${fmtCount(preview?.expenseReceipts)} justificatif(s) de frais`}
               </p>
             )}
           </div>
         </label>
 
         {/* Bloc de téléchargement ZIP */}
-        {deleteDocuments && (preview?.documents ?? 0) > 0 && (
+        {deleteDocuments && ((preview?.documents ?? 0) > 0 || (preview?.expenseReceipts ?? 0) > 0) && (
           <div className={`mt-3 ml-7 p-3 rounded-lg border text-sm ${
             zipDownloaded
               ? 'bg-green-50 border-green-200 text-green-700'
@@ -355,6 +364,8 @@ export default function ResetData() {
               <>
                 <p className="mb-2 font-medium">
                   Téléchargez d'abord la sauvegarde avant de supprimer les documents.
+                  Le ZIP contient les documents RH (<code>documents/</code>) et les
+                  justificatifs de frais (<code>justificatifs/</code>).
                 </p>
                 <button
                   className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm hover:bg-amber-700 transition-colors disabled:opacity-60"

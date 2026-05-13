@@ -14,20 +14,46 @@ async function safeDelete(conn, table, where = '1=1') {
   }
 }
 
+// ── Helper : dédoublonner les noms de fichiers dans une archive ─────────────
+function uniqueName(counters, rawName) {
+  let name = rawName || 'fichier';
+  if (counters[name] === undefined) {
+    counters[name] = 0;
+    return name;
+  }
+  counters[name]++;
+  const ext  = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+  const base = name.slice(0, name.length - ext.length);
+  return `${base}_${counters[name]}${ext}`;
+}
+
 // GET /api/admin/reset/documents-zip
-// Génère un ZIP de sauvegarde de tous les documents
+// Génère un ZIP de sauvegarde :
+//   documents/   → tous les documents RH
+//   justificatifs/ → justificatifs de notes de frais (avec justificatif joint)
 router.get('/documents-zip', async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
 
-    const [rows] = await pool.execute(
-      'SELECT id, file_name, file_type, file_data FROM documents ORDER BY created_at DESC'
+    const [docRows] = await pool.execute(
+      'SELECT id, file_name, file_data FROM documents ORDER BY created_at DESC'
     );
 
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Aucun document à exporter' });
+    const [expRows] = await pool.execute(
+      `SELECT e.id, e.date, e.reason, e.amount,
+              e.receipt_file, e.receipt_file_name,
+              u.first_name, u.last_name
+       FROM expenses e
+       LEFT JOIN users u ON u.id = e.user_id
+       WHERE e.receipt_file IS NOT NULL AND e.receipt_file != ''
+       ORDER BY e.date DESC`
+    );
+
+    const hasContent = docRows.length > 0 || expRows.length > 0;
+    if (!hasContent) {
+      return res.status(404).json({ error: 'Aucun fichier à exporter' });
     }
 
     const archiver = require('archiver');
@@ -36,7 +62,7 @@ router.get('/documents-zip', async (req, res) => {
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="documents_backup_${new Date().toISOString().slice(0, 10)}.zip"`
+      `attachment; filename="sauvegarde_${new Date().toISOString().slice(0, 10)}.zip"`
     );
     res.setHeader('Cache-Control', 'no-cache');
 
@@ -47,20 +73,30 @@ router.get('/documents-zip', async (req, res) => {
 
     archive.pipe(res);
 
-    // Dédoublonner les noms de fichiers
-    const nameCounts = {};
-    for (const doc of rows) {
-      const buffer = Buffer.from(doc.file_data, 'base64');
-      let name = doc.file_name || `document_${doc.id}`;
-      if (nameCounts[name] !== undefined) {
-        nameCounts[name]++;
-        const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
-        const base = name.slice(0, name.length - ext.length);
-        name = `${base}_${nameCounts[name]}${ext}`;
-      } else {
-        nameCounts[name] = 0;
+    // ── Dossier documents/ ───────────────────────────────────────────────────
+    if (docRows.length > 0) {
+      const docCounters = {};
+      for (const doc of docRows) {
+        const buffer = Buffer.from(doc.file_data, 'base64');
+        const name   = uniqueName(docCounters, doc.file_name || `document_${doc.id}`);
+        archive.append(buffer, { name: `documents/${name}` });
       }
-      archive.append(buffer, { name });
+    }
+
+    // ── Dossier justificatifs/ ───────────────────────────────────────────────
+    if (expRows.length > 0) {
+      const rcptCounters = {};
+      for (const exp of expRows) {
+        const buffer = Buffer.from(exp.receipt_file, 'base64');
+        // Nom lisible : YYYY-MM-DD_Nom_Prénom_Motif.ext
+        const safeName = (s) => (s || '').replace(/[^a-zA-Z0-9À-ÿ._-]/g, '_').slice(0, 40);
+        const ext      = exp.receipt_file_name
+          ? exp.receipt_file_name.slice(exp.receipt_file_name.lastIndexOf('.'))
+          : '';
+        const base     = `${exp.date ? String(exp.date).slice(0, 10) : 'date'}_${safeName(exp.last_name)}_${safeName(exp.first_name)}_${safeName(exp.reason)}${ext}`;
+        const name     = uniqueName(rcptCounters, base);
+        archive.append(buffer, { name: `justificatifs/${name}` });
+      }
     }
 
     await archive.finalize();
@@ -87,22 +123,29 @@ router.get('/preview', async (req, res) => {
       } catch { return 0; }
     };
 
-    const [result] = await pool.execute(
+    const [[userRow]] = await pool.execute(
       "SELECT COUNT(*) AS n FROM users WHERE role != 'admin'"
     );
+
+    // Justificatifs (frais avec pièce jointe)
+    const [[rcptRow]] = await pool.execute(
+      "SELECT COUNT(*) AS n FROM expenses WHERE receipt_file IS NOT NULL AND receipt_file != ''"
+    ).catch(() => [[{ n: 0 }]]);
 
     res.json({
       timeEntries:       await count('time_entries'),
       absenceRequests:   await count('absence_requests'),
       expenses:          await count('expenses'),
+      expenseReceipts:   rcptRow.n,
       payrollPeriods:    await count('payroll_periods'),
       budgetRequests:    await count('budget_requests'),
       realBudgets:       await count('real_budgets'),
       bankOperations:    await count('bank_operations'),
       bankImports:       await count('bank_imports'),
       notifications:     await count('notifications'),
+      seasons:           await count('seasons'),
       documents:         await count('documents'),
-      nonAdminUsers:     result[0].n,
+      nonAdminUsers:     userRow.n,
     });
   } catch (err) {
     console.error(err);
@@ -138,16 +181,19 @@ router.post('/', async (req, res) => {
       deleted.payrollPeriods  = await safeDelete(conn, 'payroll_periods');
 
       // Budget
-      deleted.budgetLineDetails   = await safeDelete(conn, 'budget_line_details');
-      deleted.budgetRequestLines  = await safeDelete(conn, 'budget_request_lines');
-      deleted.realBudgetLines     = await safeDelete(conn, 'real_budget_lines');
-      deleted.realBudgets         = await safeDelete(conn, 'real_budgets');
-      deleted.budgetRequests      = await safeDelete(conn, 'budget_requests');
-      deleted.budgetAccessGrants  = await safeDelete(conn, 'budget_access_grants');
+      deleted.budgetLineDetails  = await safeDelete(conn, 'budget_line_details');
+      deleted.budgetRequestLines = await safeDelete(conn, 'budget_request_lines');
+      deleted.realBudgetLines    = await safeDelete(conn, 'real_budget_lines');
+      deleted.realBudgets        = await safeDelete(conn, 'real_budgets');
+      deleted.budgetRequests     = await safeDelete(conn, 'budget_requests');
+      deleted.budgetAccessGrants = await safeDelete(conn, 'budget_access_grants');
 
       // Comptabilité transactionnelle (règles/catégories conservées)
       deleted.bankOperations = await safeDelete(conn, 'bank_operations');
       deleted.bankImports    = await safeDelete(conn, 'bank_imports');
+
+      // Saisons et calendriers (cascade : assignments → courses → weeks → seasons)
+      deleted.seasons = await safeDelete(conn, 'seasons');
 
       // Divers
       deleted.notifications       = await safeDelete(conn, 'notifications');
@@ -160,7 +206,6 @@ router.post('/', async (req, res) => {
 
       // ── Utilisateurs non-admin (optionnel) ──────────────────────────────
       if (deleteUsers) {
-        // NULLer les manager_id qui pointent vers des non-admins
         await safeDelete(conn, 'user_module_access',
           `user_id IN (SELECT id FROM (SELECT id FROM users WHERE role != 'admin') AS tmp)`
         );
