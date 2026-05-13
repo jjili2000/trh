@@ -32,6 +32,7 @@ app.use('/api/notifications',   require('./middleware/auth'), require('./routes/
 app.use('/api/accounting',         require('./middleware/auth'), require('./routes/accounting'));
 app.use('/api/validation-config', require('./middleware/auth'), require('./routes/validationConfig'));
 app.use('/api/payroll',           require('./middleware/auth'), require('./routes/payroll'));
+app.use('/api/admin/reset',       require('./middleware/auth'), require('./routes/adminReset'));
 
 // Serve React frontend in production
 const distPath = path.join(__dirname, '../dist');

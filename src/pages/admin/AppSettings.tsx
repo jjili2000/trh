@@ -71,27 +71,6 @@ export default function AppSettings() {
           </div>
         </div>
 
-        {/* Danger zone (admin only) */}
-        {isAdmin && (
-          <div className="card mt-4 border-red-100">
-            <h4 className="font-medium text-red-600 mb-2">Zone de danger</h4>
-            <p className="text-sm text-gray-500 mb-4">
-              Réinitialiser toutes les données de l'application. Cette action est irréversible.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm('Êtes-vous sûr de vouloir réinitialiser toutes les données ? Cette action est irréversible.')) {
-                  localStorage.clear();
-                  window.location.reload();
-                }
-              }}
-              className="btn-danger text-sm"
-            >
-              Réinitialiser toutes les données
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

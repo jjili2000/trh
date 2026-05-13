@@ -1,10 +1,11 @@
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Users, Tag, Settings, Briefcase, ShieldCheck } from 'lucide-react';
+import { Users, Tag, Settings, Briefcase, ShieldCheck, Trash2 } from 'lucide-react';
 import UserManagement from './UserManagement';
 import ActivityTypes from './ActivityTypes';
 import Positions from './Positions';
 import AppSettings from './AppSettings';
 import ValidationConfig from './ValidationConfig';
+import ResetData from './ResetData';
 
 export default function AdminDashboard() {
   const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -44,6 +45,16 @@ export default function AdminDashboard() {
             <Settings size={16} />
             Paramètres
           </NavLink>
+          <NavLink to="/admin/reset" className={({ isActive }) =>
+            `flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              isActive
+                ? 'border-red-500 text-red-600'
+                : 'border-transparent text-gray-500 hover:text-red-500 hover:border-red-300'
+            }`
+          }>
+            <Trash2 size={16} />
+            Remise à zéro
+          </NavLink>
         </nav>
       </div>
 
@@ -54,6 +65,7 @@ export default function AdminDashboard() {
         <Route path="positions" element={<Positions />} />
         <Route path="validation" element={<ValidationConfig />} />
         <Route path="settings" element={<AppSettings />} />
+        <Route path="reset" element={<ResetData />} />
       </Routes>
     </div>
   );
