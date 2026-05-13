@@ -52,6 +52,7 @@ interface AppContextType {
 
   // Time Entries
   addTimeEntry: (entry: Omit<TimeEntry, 'id' | 'createdAt' | 'status'>) => Promise<void>;
+  bulkAddTimeEntries: (entries: Omit<TimeEntry, 'id' | 'createdAt' | 'status'>[]) => Promise<void>;
   updateTimeEntry: (id: string, data: Partial<TimeEntry>) => Promise<void>;
   approveTimeEntry: (id: string) => Promise<void>;
   rejectTimeEntry: (id: string) => Promise<void>;
@@ -282,6 +283,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeEntries(updated);
   };
 
+  const bulkAddTimeEntries = async (entries: Omit<TimeEntry, 'id' | 'createdAt' | 'status'>[]) => {
+    await api.post('/time-entries/bulk', { entries });
+    const updated = await api.get<TimeEntry[]>('/time-entries');
+    setTimeEntries(updated);
+  };
+
   const updateTimeEntry = async (id: string, data: Partial<TimeEntry>) => {
     await api.put(`/time-entries/${id}`, data);
     const updated = await api.get<TimeEntry[]>('/time-entries');
@@ -421,6 +428,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updatePosition,
         deletePosition,
         addTimeEntry,
+        bulkAddTimeEntries,
         updateTimeEntry,
         approveTimeEntry,
         rejectTimeEntry,

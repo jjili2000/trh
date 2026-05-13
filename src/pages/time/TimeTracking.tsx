@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo, ReactNode, FormEvent } from 'react';
+import { useState, useEffect, useMemo, useRef, ReactNode, FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
-  Plus, Check, X, Clock, ChevronDown, ChevronUp, Pencil,
+  Plus, Check, X, Clock, ChevronDown, ChevronUp, Pencil, Calendar,
   Filter, ChevronsUpDown, ChevronUp as SortAsc, ChevronDown as SortDesc,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { TimeEntry } from '../../types';
+import { api } from '../../api/client';
 
 const statusLabels: Record<string, string> = {
   pending: 'En attente',
@@ -54,6 +55,7 @@ export default function TimeTracking() {
     activityTypes,
     timeEntries,
     addTimeEntry,
+    bulkAddTimeEntries,
     updateTimeEntry,
     approveTimeEntry,
     rejectTimeEntry,
@@ -65,6 +67,19 @@ export default function TimeTracking() {
   const [form, setForm] = useState<EntryFormData>(emptyForm);
   const [formError, setFormError] = useState('');
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');
+  const [showNewMenu, setShowNewMenu] = useState(false);
+  const [showCalendarEntry, setShowCalendarEntry] = useState(false);
+  const newMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
+        setShowNewMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // ── Team filters & sort ──────────────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false);
@@ -242,10 +257,31 @@ export default function TimeTracking() {
           <h1 className="text-2xl font-bold text-gray-900">Gestion du temps</h1>
           <p className="text-gray-500 mt-1">Saisissez et suivez vos heures de travail.</p>
         </div>
-        <button onClick={openAdd} className="btn-primary flex items-center gap-2">
-          <Plus size={16} />
-          Nouvelle saisie
-        </button>
+        <div className="relative" ref={newMenuRef}>
+          <button onClick={() => setShowNewMenu(v => !v)} className="btn-primary flex items-center gap-2">
+            <Plus size={16} />
+            Nouvelle saisie
+            <ChevronDown size={14} />
+          </button>
+          {showNewMenu && (
+            <div className="absolute right-0 mt-1 w-52 bg-white rounded-xl shadow-lg border border-gray-100 z-20 overflow-hidden">
+              <button
+                onClick={() => { setShowNewMenu(false); openAdd(); }}
+                className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Pencil size={15} className="text-gray-400" />
+                Saisie manuelle
+              </button>
+              <button
+                onClick={() => { setShowNewMenu(false); setShowCalendarEntry(true); }}
+                className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Calendar size={15} className="text-gray-400" />
+                Saisie calendrier
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Stats row */}
@@ -616,6 +652,228 @@ export default function TimeTracking() {
           </form>
         </Modal>
       )}
+
+      {/* Calendar Entry Modal */}
+      {showCalendarEntry && (
+        <CalendarEntryModal
+          activityTypes={activityTypes}
+          currentUserId={currentUser!.id}
+          onClose={() => setShowCalendarEntry(false)}
+          onSubmit={async (entries) => {
+            await bulkAddTimeEntries(entries);
+            setShowCalendarEntry(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── CalendarEntryModal ────────────────────────────────────────────────────────
+
+interface CalendarSuggestion {
+  date: string;
+  dayLabel: string;
+  courses: { label: string; startTime: string; endTime: string }[];
+  totalHours: number;
+}
+
+interface CalendarRow {
+  date: string;
+  dayLabel: string;
+  courses: { label: string; startTime: string; endTime: string }[];
+  hours: string;
+  activityTypeId: string;
+  included: boolean;
+}
+
+function CalendarEntryModal({
+  activityTypes,
+  currentUserId,
+  onClose,
+  onSubmit,
+}: {
+  activityTypes: { id: string; name: string }[];
+  currentUserId: string;
+  onClose: () => void;
+  onSubmit: (entries: Omit<import('../../types').TimeEntry, 'id' | 'createdAt' | 'status'>[]) => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [rows, setRows] = useState<CalendarRow[]>([]);
+  const [submitError, setSubmitError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const suggestions = await api.get<CalendarSuggestion[]>('/time-entries/calendar-suggestions');
+        setRows(suggestions.map(s => ({
+          date: s.date,
+          dayLabel: s.dayLabel,
+          courses: s.courses,
+          hours: String(s.totalHours),
+          activityTypeId: '',
+          included: true,
+        })));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Erreur lors du chargement des suggestions');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const includedRows = rows.filter(r => r.included);
+  const totalIncludedHours = includedRows.reduce((sum, r) => sum + (parseFloat(r.hours) || 0), 0);
+
+  const handleSubmit = async () => {
+    setSubmitError('');
+    const missing = includedRows.find(r => !r.activityTypeId);
+    if (missing) {
+      setSubmitError(`Veuillez sélectionner un type d'activité pour ${missing.dayLabel}.`);
+      return;
+    }
+    if (includedRows.length === 0) {
+      setSubmitError('Aucune saisie sélectionnée.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSubmit(
+        includedRows.map(r => ({
+          userId: currentUserId,
+          date: r.date,
+          hours: parseFloat(r.hours),
+          activityTypeId: r.activityTypeId,
+          description: undefined,
+        }))
+      );
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Erreur lors de la soumission');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Calendar size={18} className="text-tennis-green" />
+            <h2 className="font-semibold text-gray-900">Saisie calendrier</h2>
+          </div>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin w-8 h-8 border-2 border-tennis-green border-t-transparent rounded-full" />
+            </div>
+          ) : error ? (
+            <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <Calendar size={36} className="mx-auto mb-3 opacity-40" />
+              <p className="font-medium text-gray-500">Aucune journée à saisir</p>
+              <p className="text-sm mt-1">Toutes vos journées planifiées ont déjà été saisies, ou aucun cours n'est planifié dans cette période.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="py-2 pr-3 w-8" />
+                    <th className="text-left py-2 pr-4 text-gray-500 font-medium">Jour</th>
+                    <th className="text-left py-2 pr-4 text-gray-500 font-medium">Cours</th>
+                    <th className="text-left py-2 pr-4 text-gray-500 font-medium w-24">Heures</th>
+                    <th className="text-left py-2 text-gray-500 font-medium">Type d'activité</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {rows.map((row, i) => (
+                    <tr key={row.date} className={`${!row.included ? 'opacity-40' : ''} hover:bg-gray-50`}>
+                      <td className="py-3 pr-3">
+                        <input
+                          type="checkbox"
+                          checked={row.included}
+                          onChange={() => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, included: !r.included } : r))}
+                          className="rounded border-gray-300 text-tennis-green"
+                        />
+                      </td>
+                      <td className="py-3 pr-4 font-semibold text-gray-800 whitespace-nowrap">{row.dayLabel}</td>
+                      <td className="py-3 pr-4">
+                        <div className="space-y-0.5">
+                          {row.courses.map((c, ci) => (
+                            <p key={ci} className="text-xs text-gray-500">{c.label} {c.startTime}–{c.endTime}</p>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-4">
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0.5"
+                          max="24"
+                          value={row.hours}
+                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, hours: e.target.value } : r))}
+                          className="input text-sm py-1 w-20"
+                          disabled={!row.included}
+                        />
+                      </td>
+                      <td className="py-3">
+                        <select
+                          value={row.activityTypeId}
+                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, activityTypeId: e.target.value } : r))}
+                          className="input text-sm py-1"
+                          disabled={!row.included}
+                          required={row.included}
+                        >
+                          <option value="">— Sélectionner —</option>
+                          {activityTypes.map(at => (
+                            <option key={at.id} value={at.id}>{at.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {!loading && !error && rows.length > 0 && (
+          <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">
+            {submitError && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{submitError}</div>
+            )}
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500">
+                Total : <span className="font-semibold text-gray-800">{totalIncludedHours.toFixed(1)}h</span> sur {includedRows.length} saisie(s)
+              </p>
+              <div className="flex items-center gap-3">
+                <button onClick={onClose} className="btn-secondary text-sm">Annuler</button>
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting || includedRows.length === 0}
+                  className="btn-primary text-sm flex items-center gap-2 disabled:opacity-60"
+                >
+                  {submitting && <div className="animate-spin w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full" />}
+                  Valider {includedRows.length} saisie(s)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

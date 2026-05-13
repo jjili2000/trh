@@ -43,6 +43,143 @@ async function isAnyonesManager(userId) {
   return rows[0].cnt > 0;
 }
 
+// GET /api/time-entries/calendar-suggestions
+router.get('/calendar-suggestions', async (req, res) => {
+  try {
+    // Find the last entry date for this user, or 60 days ago if none
+    const [lastEntryRows] = await pool.execute(
+      'SELECT MAX(date) as last_date FROM time_entries WHERE user_id = ?',
+      [req.user.id]
+    );
+    let afterDate;
+    if (lastEntryRows[0].last_date) {
+      afterDate = lastEntryRows[0].last_date instanceof Date
+        ? lastEntryRows[0].last_date.toISOString().slice(0, 10)
+        : String(lastEntryRows[0].last_date).slice(0, 10);
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() - 60);
+      afterDate = d.toISOString().slice(0, 10);
+    }
+
+    // Query season_week_assignments joined with template_courses
+    const [rows] = await pool.execute(
+      `SELECT
+         DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) AS actual_date,
+         tc.label,
+         tc.start_time,
+         tc.end_time
+       FROM season_week_assignments swa
+       JOIN template_courses tc ON tc.template_week_id = swa.template_week_id
+       JOIN seasons s ON s.id = swa.season_id
+       WHERE tc.teacher_id = ?
+         AND s.status IN ('published', 'closed')
+         AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) > ?
+         AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) <= CURDATE()
+       ORDER BY actual_date ASC`,
+      [req.user.id, afterDate]
+    );
+
+    // Get dates that already have time entries for this user
+    const [existingEntryRows] = await pool.execute(
+      'SELECT DISTINCT date FROM time_entries WHERE user_id = ?',
+      [req.user.id]
+    );
+    const existingDates = new Set(
+      existingEntryRows.map(r =>
+        r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10)
+      )
+    );
+
+    // Group by date
+    const byDate = new Map();
+    for (const row of rows) {
+      const dateStr = row.actual_date instanceof Date
+        ? row.actual_date.toISOString().slice(0, 10)
+        : String(row.actual_date).slice(0, 10);
+
+      if (existingDates.has(dateStr)) continue;
+
+      if (!byDate.has(dateStr)) {
+        byDate.set(dateStr, { date: dateStr, courses: [] });
+      }
+      byDate.get(dateStr).courses.push({
+        label: row.label,
+        startTime: row.start_time,
+        endTime: row.end_time,
+      });
+    }
+
+    // Build response
+    const parseMinutes = (timeStr) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const result = [];
+    for (const [dateStr, entry] of byDate) {
+      const totalHours = entry.courses.reduce((sum, c) => {
+        return sum + (parseMinutes(c.endTime) - parseMinutes(c.startTime)) / 60;
+      }, 0);
+
+      const label = new Date(dateStr + 'T12:00:00').toLocaleDateString('fr-FR', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      });
+      const dayLabel = label.charAt(0).toUpperCase() + label.slice(1);
+
+      result.push({
+        date: dateStr,
+        dayLabel,
+        courses: entry.courses.map(c => ({ label: c.label, startTime: c.startTime, endTime: c.endTime })),
+        totalHours,
+      });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /api/time-entries/bulk
+router.post('/bulk', async (req, res) => {
+  try {
+    const { entries } = req.body;
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ error: 'entries requis' });
+    }
+    if (entries.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 entrées' });
+    }
+
+    const createdIds = [];
+    for (const entry of entries) {
+      const { date, hours, activityTypeId, description } = entry;
+      if (!date || hours === undefined) {
+        return res.status(400).json({ error: 'Date et heures requis pour chaque entrée' });
+      }
+      const id = crypto.randomUUID();
+      await pool.execute(
+        `INSERT INTO time_entries (id, user_id, date, hours, activity_type_id, description, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+        [id, req.user.id, date, hours, activityTypeId || null, description || null]
+      );
+      createdIds.push(id);
+    }
+
+    const placeholders = createdIds.map(() => '?').join(', ');
+    const [rows] = await pool.execute(
+      `SELECT * FROM time_entries WHERE id IN (${placeholders})`,
+      createdIds
+    );
+    res.status(201).json(rows.map(mapEntry));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // GET /api/time-entries
 router.get('/', async (req, res) => {
   try {
