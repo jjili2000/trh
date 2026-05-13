@@ -161,6 +161,7 @@ export default function ExpenseManagement() {
     updateExpense,
     approveExpense,
     rejectExpense,
+    deleteExpense,
   } = useApp();
 
   // Stats de remboursement
@@ -183,6 +184,7 @@ export default function ExpenseManagement() {
   // UI state
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');
   const [previewExpense, setPreviewExpense] = useState<Expense | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -467,13 +469,41 @@ export default function ExpenseManagement() {
                           </button>
                         )}
                       </div>
-                      {expense.status === 'pending' && (
-                        <button
-                          onClick={() => openEdit(expense)}
-                          className="text-xs text-tennis-green hover:underline flex-shrink-0"
-                        >
-                          Modifier
-                        </button>
+                      {(expense.status === 'pending' || expense.status === 'rejected') && (
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          {expense.status === 'pending' && (
+                            <button
+                              onClick={() => openEdit(expense)}
+                              className="text-xs text-tennis-green hover:underline"
+                            >
+                              Modifier
+                            </button>
+                          )}
+                          {confirmDeleteId === expense.id ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500">Confirmer ?</span>
+                              <button
+                                onClick={() => { deleteExpense(expense.id); setConfirmDeleteId(null); }}
+                                className="text-xs text-red-600 font-medium hover:underline"
+                              >
+                                Oui
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="text-xs text-gray-400 hover:underline"
+                              >
+                                Non
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDeleteId(expense.id)}
+                              className="text-xs text-red-400 hover:text-red-600 hover:underline"
+                            >
+                              Supprimer
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

@@ -67,6 +67,7 @@ interface AppContextType {
   updateExpense: (id: string, data: Partial<Expense>) => Promise<void>;
   approveExpense: (id: string) => Promise<void>;
   rejectExpense: (id: string) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
 
   // Documents
   addDocument: (data: { fileName: string; fileType: string; fileData: string }) => Promise<HRDocument>;
@@ -351,6 +352,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setExpenses(updated);
   };
 
+  const deleteExpense = async (id: string) => {
+    await api.delete(`/expenses/${id}`);
+    setExpenses(prev => prev.filter(e => e.id !== id));
+  };
+
   // ── Documents ─────────────────────────────────────────────────────────────────
 
   const addDocument = async (data: { fileName: string; fileType: string; fileData: string }): Promise<HRDocument> => {
@@ -426,6 +432,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateExpense,
         approveExpense,
         rejectExpense,
+        deleteExpense,
         addDocument,
         updateDocument,
         deleteDocument,

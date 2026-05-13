@@ -223,6 +223,29 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/expenses/:id — suppression par le propriétaire (pending ou rejected)
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [existing] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
+    if (existing.length === 0) return res.status(404).json({ error: 'Dépense non trouvée' });
+
+    const record = existing[0];
+    if (record.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+    if (record.status === 'approved') {
+      return res.status(400).json({ error: 'Une dépense approuvée ne peut pas être supprimée' });
+    }
+
+    await pool.execute('DELETE FROM expenses WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // PUT /api/expenses/:id/approve
 router.put('/:id/approve', async (req, res) => {
   try {
