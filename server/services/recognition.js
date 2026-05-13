@@ -85,14 +85,17 @@ Réponds UNIQUEMENT avec le JSON, sans markdown.`,
  * @returns {Promise<{vendor, date, amountHt, vatLines, amountTtc}>}
  */
 async function recognizeExpense(fileData, fileType) {
-  try {
-    // Strip data-URL prefix if present  (data:image/jpeg;base64,XXXX → XXXX)
-    const base64 = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+  // Strip data-URL prefix if present  (data:image/jpeg;base64,XXXX → XXXX)
+  const base64 = fileData.includes(',') ? fileData.split(',')[1] : fileData;
 
-    const isImage = fileType.startsWith('image/');
-    const isPdf   = fileType === 'application/pdf';
+  const isImage = fileType.startsWith('image/');
+  const isPdf   = fileType === 'application/pdf';
 
-    const prompt = `Analyse ce justificatif de dépense (ticket de caisse, facture…) et extrais les informations suivantes au format JSON strict :
+  if (!isImage && !isPdf) {
+    throw new Error(`Type de fichier non supporté : ${fileType}`);
+  }
+
+  const prompt = `Analyse ce justificatif de dépense (ticket de caisse, facture…) et extrais les informations suivantes au format JSON strict :
 {
   "vendor": "Nom du prestataire / fournisseur ou null",
   "date": "YYYY-MM-DD ou null (date de la facture ou du ticket)",
@@ -107,42 +110,40 @@ Règles :
 - Si un champ est introuvable, utilise null (sauf vatLines qui reste []).
 Réponds UNIQUEMENT avec le JSON, sans markdown ni explication.`;
 
-    let content;
-    if (isImage) {
-      content = [
-        { type: 'image', source: { type: 'base64', media_type: fileType, data: base64 } },
-        { type: 'text', text: prompt },
-      ];
-    } else if (isPdf) {
-      content = [
-        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-        { type: 'text', text: prompt },
-      ];
-    } else {
-      return { vendor: null, date: null, amountHt: null, vatLines: [], amountTtc: null };
-    }
-
-    const response = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 600,
-      messages: [{ role: 'user', content }],
-    });
-
-    const text   = response.content[0].text.trim();
-    const parsed = JSON.parse(text);
-    return {
-      vendor:    parsed.vendor    ?? null,
-      date:      parsed.date      ?? null,
-      amountHt:  parsed.amountHt  != null ? parseFloat(parsed.amountHt)  : null,
-      vatLines:  Array.isArray(parsed.vatLines)
-                   ? parsed.vatLines.map(l => ({ rate: String(l.rate), amount: parseFloat(l.amount) }))
-                   : [],
-      amountTtc: parsed.amountTtc != null ? parseFloat(parsed.amountTtc) : null,
-    };
-  } catch (err) {
-    console.error('recognizeExpense error:', err.message);
-    return { vendor: null, date: null, amountHt: null, vatLines: [], amountTtc: null };
+  let content;
+  if (isImage) {
+    content = [
+      { type: 'image', source: { type: 'base64', media_type: fileType, data: base64 } },
+      { type: 'text', text: prompt },
+    ];
+  } else {
+    content = [
+      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+      { type: 'text', text: prompt },
+    ];
   }
+
+  const response = await client.messages.create({
+    model: 'claude-opus-4-5',
+    max_tokens: 600,
+    messages: [{ role: 'user', content }],
+  });
+
+  const text = response.content[0].text.trim();
+  // Extraire le JSON même si le modèle ajoute du texte autour
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('Réponse IA invalide : JSON non trouvé');
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  return {
+    vendor:    parsed.vendor    ?? null,
+    date:      parsed.date      ?? null,
+    amountHt:  parsed.amountHt  != null ? parseFloat(parsed.amountHt)  : null,
+    vatLines:  Array.isArray(parsed.vatLines)
+                 ? parsed.vatLines.map(l => ({ rate: String(l.rate), amount: parseFloat(l.amount) }))
+                 : [],
+    amountTtc: parsed.amountTtc != null ? parseFloat(parsed.amountTtc) : null,
+  };
 }
 
 module.exports = { recognizeDocument, recognizeExpense };

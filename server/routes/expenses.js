@@ -113,8 +113,9 @@ router.post('/recognize', async (req, res) => {
     const result = await recognizeExpense(fileData, fileType);
     res.json(result);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur lors de la reconnaissance' });
+    const msg = err?.message || String(err);
+    console.error('[recognize]', msg);
+    res.status(500).json({ error: `Reconnaissance impossible : ${msg}` });
   }
 });
 

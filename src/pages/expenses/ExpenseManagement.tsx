@@ -256,8 +256,9 @@ export default function ExpenseManagement() {
         vatLines: result.vatLines.map(l => ({ rate: l.rate, amount: String(l.amount) })),
         amount:   result.amountTtc != null ? String(result.amountTtc) : '',
       }));
-    } catch {
-      setRecognizeError('La reconnaissance automatique a échoué. Vous pouvez saisir les informations manuellement.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue';
+      setRecognizeError(`Reconnaissance automatique indisponible : ${msg}`);
     } finally {
       setFormStep('form');
     }
