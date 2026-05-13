@@ -397,18 +397,27 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   };
 
   const goToToday = () => {
-    if (!todayInSeason) return;
+    if (allWeeks.length === 0) return;
     const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayMonday = getMonday(today);
+    // Find the week index for today, clamped to season bounds
+    let targetIdx = allWeeks.findIndex(w => isoDate(w) === isoDate(todayMonday));
+    if (targetIdx === -1) {
+      // Today is outside season: go to first week if before season, last week if after
+      targetIdx = isoDate(today) < season.startDate ? 0 : allWeeks.length - 1;
+    }
     if (viewMode === 'week') {
-      const idx = allWeeks.findIndex(w => isoDate(w) === isoDate(getMonday(today)));
-      if (idx !== -1) setWeekIdx(idx);
+      setWeekIdx(targetIdx);
     } else if (viewMode === 'day') {
-      setDayDate(today);
+      if (todayInSeason) {
+        setDayDate(today);
+      } else {
+        setDayDate(allWeeks[targetIdx]);
+      }
     } else {
-      // Year view : scroll jusqu'à la ligne de la semaine courante
-      setTimeout(() => {
-        document.getElementById('cal-today-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 0);
+      // Year view: switch to week view showing today (or nearest week)
+      setWeekIdx(targetIdx);
+      setViewMode('week');
     }
   };
 
@@ -550,8 +559,12 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
         {/* Aujourd'hui */}
         <button
           onClick={goToToday}
-          disabled={!todayInSeason}
-          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          disabled={allWeeks.length === 0}
+          className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            todayInSeason
+              ? 'border-tennis-green/40 bg-tennis-green/5 text-tennis-green hover:bg-tennis-green/10'
+              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
         >
           Aujourd'hui
         </button>
