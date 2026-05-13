@@ -58,13 +58,21 @@ export interface AbsenceRequest {
   createdAt: string;
 }
 
+export interface VatLine {
+  rate: string;   // ex: "20"
+  amount: number; // montant TVA
+}
+
 export interface Expense {
   id: string;
   userId: string;
   date: string;
-  amount: number;
+  amount: number;       // montant TTC (compatibilité existante)
   reason: string;
-  receiptFile?: string; // base64
+  vendor?: string;
+  amountHt?: number;
+  vatDetails?: VatLine[];
+  receiptFile?: string; // base64 data-URL
   receiptFileName?: string;
   receiptFileType?: string;
   status: 'pending' | 'approved' | 'rejected';
