@@ -1,6 +1,16 @@
 const Anthropic = require('@anthropic-ai/sdk');
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Initialisation lazy : le module charge même si la clé est absente.
+// L'erreur sera levée à l'appel, et capturée dans le try/catch du route handler.
+let _client = null;
+function getClient() {
+  if (!_client) {
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key) throw new Error('ANTHROPIC_API_KEY non configurée sur ce serveur');
+    _client = new Anthropic({ apiKey: key });
+  }
+  return _client;
+}
 
 /**
  * Analyze a document and extract metadata
@@ -57,7 +67,7 @@ Réponds UNIQUEMENT avec le JSON, sans markdown.`,
       return { documentType: 'autre', detectedEmployeeName: null, periodStart: null, periodEnd: null, notes: `Fichier: ${fileName}` };
     }
 
-    const response = await client.messages.create({
+    const response = await getClient().messages.create({
       model: 'claude-opus-4-5',
       max_tokens: 500,
       messages: [{ role: 'user', content }],
@@ -123,7 +133,7 @@ Réponds UNIQUEMENT avec le JSON, sans markdown ni explication.`;
     ];
   }
 
-  const response = await client.messages.create({
+  const response = await getClient().messages.create({
     model: 'claude-opus-4-5',
     max_tokens: 600,
     messages: [{ role: 'user', content }],

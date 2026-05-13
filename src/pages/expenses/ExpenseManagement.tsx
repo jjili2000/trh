@@ -72,6 +72,29 @@ function formatCurrency(amount: number) {
   return amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 }
 
+/** Compresse une image via Canvas (JPEG, max 1600px, qualité 82 %).
+ *  Les PDF et fichiers non-image sont renvoyés tels quels. */
+function compressImage(dataUrl: string, fileType: string): Promise<string> {
+  return new Promise(resolve => {
+    if (!fileType.startsWith('image/')) { resolve(dataUrl); return; }
+    const img = new window.Image();
+    img.onload = () => {
+      const MAX = 1600;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+        else                { width  = Math.round(width  * MAX / height); height = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => resolve(dataUrl); // fallback sans compression
+    img.src = dataUrl;
+  });
+}
+
 function expenseToForm(expense: Expense): FormData {
   return {
     date: expense.date,
@@ -223,13 +246,13 @@ export default function ExpenseManagement() {
     }
     setRecognizeError('');
     const reader = new FileReader();
-    reader.onload = ev => {
-      const fileData     = ev.target?.result as string;
-      const fileName     = file.name;
-      const fileType     = file.type;
-      // Update form file fields immediately
+    reader.onload = async ev => {
+      const raw      = ev.target?.result as string;
+      const fileName = file.name;
+      const fileType = file.type;
+      // Compression des images avant envoi (réduit la taille de la requête)
+      const fileData = await compressImage(raw, fileType);
       setForm(f => ({ ...f, receiptFile: fileData, receiptFileName: fileName, receiptFileType: fileType }));
-      // Start recognition
       startRecognition(fileData, fileType);
     };
     reader.readAsDataURL(file);
