@@ -46,21 +46,13 @@ async function isAnyonesManager(userId) {
 // GET /api/time-entries/calendar-suggestions
 router.get('/calendar-suggestions', async (req, res) => {
   try {
-    // Find the last entry date for this user, or 60 days ago if none
-    const [lastEntryRows] = await pool.execute(
-      'SELECT MAX(date) as last_date FROM time_entries WHERE user_id = ?',
-      [req.user.id]
-    );
-    let afterDate;
-    if (lastEntryRows[0].last_date) {
-      afterDate = lastEntryRows[0].last_date instanceof Date
-        ? lastEntryRows[0].last_date.toISOString().slice(0, 10)
-        : String(lastEntryRows[0].last_date).slice(0, 10);
-    } else {
-      const d = new Date();
-      d.setDate(d.getDate() - 60);
-      afterDate = d.toISOString().slice(0, 10);
-    }
+    // Fenêtre glissante : 90 jours en arrière jusqu'à aujourd'hui.
+    // On ne se fie plus au MAX(date) des saisies existantes comme point de départ,
+    // car cette logique exclut les jours antérieurs à la dernière saisie même s'ils
+    // n'ont pas été saisis (ex : saisie faite pour le mer. mais pas pour le lun.).
+    const d = new Date();
+    d.setDate(d.getDate() - 90);
+    const lookbackDate = d.toISOString().slice(0, 10);
 
     // Query season_week_assignments joined with template_courses
     const [rows] = await pool.execute(
@@ -74,10 +66,10 @@ router.get('/calendar-suggestions', async (req, res) => {
        JOIN seasons s ON s.id = swa.season_id
        WHERE tc.teacher_id = ?
          AND s.status IN ('published', 'closed')
-         AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) > ?
+         AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) >= ?
          AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) <= CURDATE()
        ORDER BY actual_date ASC`,
-      [req.user.id, afterDate]
+      [req.user.id, lookbackDate]
     );
 
     // Get dates that already have time entries for this user
