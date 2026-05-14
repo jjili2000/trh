@@ -46,15 +46,8 @@ async function isAnyonesManager(userId) {
 // GET /api/time-entries/calendar-suggestions
 router.get('/calendar-suggestions', async (req, res) => {
   try {
-    // Fenêtre glissante : 90 jours en arrière jusqu'à aujourd'hui.
-    // On ne se fie plus au MAX(date) des saisies existantes comme point de départ,
-    // car cette logique exclut les jours antérieurs à la dernière saisie même s'ils
-    // n'ont pas été saisis (ex : saisie faite pour le mer. mais pas pour le lun.).
-    const d = new Date();
-    d.setDate(d.getDate() - 90);
-    const lookbackDate = d.toISOString().slice(0, 10);
-
-    // Query season_week_assignments joined with template_courses
+    // On récupère toutes les dates planifiées jusqu'à aujourd'hui (saisons publiées/clôturées).
+    // Pas de borne inférieure arbitraire : c'est existingDates qui filtre les jours déjà saisis.
     const [rows] = await pool.execute(
       `SELECT
          DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) AS actual_date,
@@ -66,10 +59,9 @@ router.get('/calendar-suggestions', async (req, res) => {
        JOIN seasons s ON s.id = swa.season_id
        WHERE tc.teacher_id = ?
          AND s.status IN ('published', 'closed')
-         AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) >= ?
          AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) <= CURDATE()
        ORDER BY actual_date ASC`,
-      [req.user.id, lookbackDate]
+      [req.user.id]
     );
 
     // Get dates that already have time entries for this user
