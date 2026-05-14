@@ -1461,6 +1461,7 @@ export default function SeasonDetail() {
   const [statusEditing, setStatusEditing] = useState(false);
   const [nameEditing, setNameEditing] = useState(false);
   const [nameVal, setNameVal] = useState('');
+  const [deptEditing, setDeptEditing] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -1497,6 +1498,12 @@ export default function SeasonDetail() {
     setSeason(updated); setNameEditing(false);
   };
 
+  const handleDeptChange = async (departmentId: string | null) => {
+    if (!id) return;
+    const updated = await api.put<Season>(`/seasons/${id}`, { departmentId });
+    setSeason(updated); setDeptEditing(false);
+  };
+
   const handleEditTemplateWeek = (twId: string) => {
     setPanelSelectedTWId(twId);
     setActiveTab('template-weeks');
@@ -1529,14 +1536,35 @@ export default function SeasonDetail() {
               <h1 className="text-2xl font-bold text-gray-900">{season.name}</h1>
               <button onClick={() => { setNameVal(season.name); setNameEditing(true); }}
                 className="p-1 text-gray-300 hover:text-gray-500"><Edit2 size={15} /></button>
-              {season.departmentId && (() => {
-                const dept = departments.find(d => d.id === season.departmentId);
-                return dept ? (
-                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 font-medium">
-                    <Building2 size={10} />{dept.name}
-                  </span>
-                ) : null;
-              })()}
+              {deptEditing ? (
+                <div className="flex items-center gap-1">
+                  <select
+                    autoFocus
+                    className="text-xs border border-purple-300 rounded-lg px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                    value={season.departmentId ?? ''}
+                    onChange={e => handleDeptChange(e.target.value || null)}
+                  >
+                    <option value="">— Aucune direction —</option>
+                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                  <button onClick={() => setDeptEditing(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded"><X size={13} /></button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setDeptEditing(true)}
+                  className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${
+                    season.departmentId
+                      ? 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                      : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                  }`}
+                  title="Modifier la direction"
+                >
+                  <Building2 size={10} />
+                  {season.departmentId
+                    ? (departments.find(d => d.id === season.departmentId)?.name ?? 'Direction')
+                    : 'Ajouter une direction'}
+                </button>
+              )}
             </div>
           )}
           <p className="text-sm text-gray-500 mt-0.5">
