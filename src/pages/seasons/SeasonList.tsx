@@ -1,7 +1,8 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Calendar, ChevronRight, X, Trash2 } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, X, Trash2, Building2 } from 'lucide-react';
 import { api } from '../../api/client';
+import { useApp } from '../../context/AppContext';
 import { Season, SeasonStatus } from '../../types';
 
 const STATUS_CFG: Record<SeasonStatus, { label: string; color: string }> = {
@@ -26,10 +27,11 @@ function computeEndDate(month: number, year: number): string {
 
 export default function SeasonList() {
   const navigate = useNavigate();
+  const { departments } = useApp();
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: '', startMonth: 9, startYear: new Date().getFullYear() });
+  const [form, setForm] = useState({ name: '', startMonth: 9, startYear: new Date().getFullYear(), departmentId: '' });
   const [nameEdited, setNameEdited] = useState(false);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -55,7 +57,7 @@ export default function SeasonList() {
       month = next.getMonth() + 1;
       year  = next.getFullYear();
     }
-    setForm({ name: autoName(month, year), startMonth: month, startYear: year });
+    setForm({ name: autoName(month, year), startMonth: month, startYear: year, departmentId: '' });
     setNameEdited(false);
     setFormError('');
     setShowModal(true);
@@ -85,7 +87,7 @@ export default function SeasonList() {
     try {
       const startDate = `${form.startYear}-${String(form.startMonth).padStart(2, '0')}-01`;
       const endDate   = computeEndDate(form.startMonth, form.startYear);
-      await api.post('/seasons', { name: form.name, startDate, endDate });
+      await api.post('/seasons', { name: form.name, startDate, endDate, departmentId: form.departmentId || null });
       await load();
       setShowModal(false);
     } catch { setFormError('Erreur lors de la création.'); }
@@ -99,8 +101,8 @@ export default function SeasonList() {
     <div className="p-6 md:p-8 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Saisons d'enseignement</h1>
-          <p className="text-gray-500 mt-1">Gérez les saisons et leurs calendriers de cours.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Calendrier saisonnier</h1>
+          <p className="text-gray-500 mt-1">Gérez les saisons et leurs plannings d'activités.</p>
         </div>
         <button onClick={openNew} className="btn-primary flex items-center gap-2">
           <Plus size={16} /> Nouvelle saison
@@ -113,7 +115,7 @@ export default function SeasonList() {
         <div className="card text-center py-16">
           <Calendar size={48} className="mx-auto text-gray-200 mb-4" />
           <h3 className="text-gray-500 font-medium">Aucune saison</h3>
-          <p className="text-gray-400 text-sm mt-1">Créez votre première saison d'enseignement.</p>
+          <p className="text-gray-400 text-sm mt-1">Créez votre première saison.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -134,6 +136,14 @@ export default function SeasonList() {
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="font-semibold text-gray-900">{s.name}</span>
                     <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${cfg.color}`}>{cfg.label}</span>
+                    {s.departmentId && (() => {
+                      const dept = departments.find(d => d.id === s.departmentId);
+                      return dept ? (
+                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 font-medium">
+                          <Building2 size={10} />{dept.name}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                   <p className="text-sm text-gray-500 mt-0.5">
                     {formatDate(s.startDate)} → {formatDate(s.endDate)}
@@ -210,6 +220,21 @@ export default function SeasonList() {
                     onChange={e => updateDates(form.startMonth, parseInt(e.target.value))} />
                 </div>
               </div>
+              {departments.length > 0 && (
+                <div>
+                  <label className="label">Direction (optionnel)</label>
+                  <select
+                    className="input"
+                    value={form.departmentId}
+                    onChange={e => setForm(f => ({ ...f, departmentId: e.target.value }))}
+                  >
+                    <option value="">— Global (toutes directions) —</option>
+                    {departments.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="p-3 bg-tennis-green/5 border border-tennis-green/20 rounded-lg text-sm text-gray-600">
                 <strong>Période :</strong>{' '}
                 1 {MONTHS[form.startMonth - 1]} {form.startYear}

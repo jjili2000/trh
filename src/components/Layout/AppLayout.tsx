@@ -148,7 +148,7 @@ export default function AppLayout() {
         {hasModule('seasons') && (
           <NavLink to="/seasons" className={navLinkClass} onClick={closeSidebar}>
             <GraduationCap size={18} />
-            Saisons
+            Calendrier saisonnier
           </NavLink>
         )}
 

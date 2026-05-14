@@ -9,6 +9,7 @@ export interface User {
   role: UserRole;
   managerId?: string;
   position?: string;
+  departmentId?: string | null;
   moduleAccess?: string[];
   blocked?: boolean;
   createdAt: string;
@@ -18,6 +19,15 @@ export interface ActivityType {
   id: string;
   name: string;
   color: string;
+  isGlobal?: boolean;
+  departmentIds?: string[];
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: string;
 }
 
 export interface Position {
@@ -96,6 +106,7 @@ export interface Season {
   startDate: string;
   endDate: string;
   status: SeasonStatus;
+  departmentId?: string | null;
   createdAt: string;
 }
 

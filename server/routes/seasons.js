@@ -32,7 +32,7 @@ function fmtDate(v) {
 }
 
 function mapSeason(r) {
-  return { id: r.id, name: r.name, startDate: fmtDate(r.start_date), endDate: fmtDate(r.end_date), status: r.status, createdAt: r.created_at };
+  return { id: r.id, name: r.name, startDate: fmtDate(r.start_date), endDate: fmtDate(r.end_date), status: r.status, departmentId: r.department_id || null, createdAt: r.created_at };
 }
 
 function mapTW(r) {
@@ -81,10 +81,10 @@ router.get('/', async (req, res) => {
 
 router.post('/', checkAM, async (req, res) => {
   try {
-    const { name, startDate, endDate } = req.body;
+    const { name, startDate, endDate, departmentId } = req.body;
     if (!name || !startDate || !endDate) return res.status(400).json({ error: 'Champs requis manquants' });
     const id = crypto.randomUUID();
-    await pool.execute('INSERT INTO seasons (id, name, start_date, end_date) VALUES (?, ?, ?, ?)', [id, name, startDate, endDate]);
+    await pool.execute('INSERT INTO seasons (id, name, start_date, end_date, department_id) VALUES (?, ?, ?, ?, ?)', [id, name, startDate, endDate, departmentId || null]);
     const [rows] = await pool.execute('SELECT * FROM seasons WHERE id = ?', [id]);
     res.status(201).json(mapSeason(rows[0]));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
@@ -113,12 +113,13 @@ router.delete('/:id', checkAM, async (req, res) => {
 
 router.put('/:id', checkAM, async (req, res) => {
   try {
-    const { name, startDate, endDate, status } = req.body;
+    const { name, startDate, endDate, status, departmentId } = req.body;
     const upd = []; const vals = [];
-    if (name      !== undefined) { upd.push('name = ?');       vals.push(name); }
-    if (startDate !== undefined) { upd.push('start_date = ?'); vals.push(startDate); }
-    if (endDate   !== undefined) { upd.push('end_date = ?');   vals.push(endDate); }
-    if (status    !== undefined) { upd.push('status = ?');     vals.push(status); }
+    if (name         !== undefined) { upd.push('name = ?');          vals.push(name); }
+    if (startDate    !== undefined) { upd.push('start_date = ?');    vals.push(startDate); }
+    if (endDate      !== undefined) { upd.push('end_date = ?');      vals.push(endDate); }
+    if (status       !== undefined) { upd.push('status = ?');        vals.push(status); }
+    if (departmentId !== undefined) { upd.push('department_id = ?'); vals.push(departmentId || null); }
     if (!upd.length) return res.status(400).json({ error: 'Rien à mettre à jour' });
     vals.push(req.params.id);
     await pool.execute(`UPDATE seasons SET ${upd.join(', ')} WHERE id = ?`, vals);

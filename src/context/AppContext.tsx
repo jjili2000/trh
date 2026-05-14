@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 import {
   User,
   ActivityType,
+  Department,
   Position,
   TimeEntry,
   AbsenceRequest,
@@ -18,6 +19,7 @@ interface AppContextType {
   currentUser: User | null;
   users: User[];
   activityTypes: ActivityType[];
+  departments: Department[];
   positions: Position[];
   timeEntries: TimeEntry[];
   absenceRequests: AbsenceRequest[];
@@ -44,6 +46,11 @@ interface AppContextType {
   addActivityType: (at: Omit<ActivityType, 'id'>) => Promise<void>;
   updateActivityType: (id: string, data: Partial<ActivityType>) => Promise<void>;
   deleteActivityType: (id: string) => Promise<void>;
+
+  // Departments
+  addDepartment: (data: { name: string; parentId?: string | null }) => Promise<void>;
+  updateDepartment: (id: string, data: { name?: string; parentId?: string | null }) => Promise<void>;
+  deleteDepartment: (id: string) => Promise<void>;
 
   // Positions
   addPosition: (data: Omit<Position, 'id'>) => Promise<void>;
@@ -92,6 +99,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [absenceRequests, setAbsenceRequests] = useState<AbsenceRequest[]>([]);
@@ -112,6 +120,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const [
         fetchedUsers,
         fetchedActivityTypes,
+        fetchedDepartments,
         fetchedPositions,
         fetchedTimeEntries,
         fetchedAbsenceRequests,
@@ -122,6 +131,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ] = await Promise.all([
         api.get<User[]>('/users').catch(() => []),
         api.get<ActivityType[]>('/activity-types'),
+        api.get<Department[]>('/departments').catch(() => []),
         api.get<Position[]>('/positions'),
         api.get<TimeEntry[]>('/time-entries'),
         api.get<AbsenceRequest[]>('/absence-requests'),
@@ -135,6 +145,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ]);
       setUsers(fetchedUsers);
       setActivityTypes(fetchedActivityTypes);
+      setDepartments(fetchedDepartments);
       setPositions(fetchedPositions);
       setTimeEntries(fetchedTimeEntries);
       setAbsenceRequests(fetchedAbsenceRequests);
@@ -193,6 +204,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
     setUsers([]);
     setActivityTypes([]);
+    setDepartments([]);
     setTimeEntries([]);
     setAbsenceRequests([]);
     setExpenses([]);
@@ -253,6 +265,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await api.delete(`/positions/${id}`);
     const updated = await api.get<Position[]>('/positions');
     setPositions(updated);
+  };
+
+  // ── Departments ───────────────────────────────────────────────────────────────
+
+  const addDepartment = async (data: { name: string; parentId?: string | null }) => {
+    await api.post('/departments', data);
+    const updated = await api.get<Department[]>('/departments');
+    setDepartments(updated);
+  };
+
+  const updateDepartment = async (id: string, data: { name?: string; parentId?: string | null }) => {
+    await api.put(`/departments/${id}`, data);
+    const updated = await api.get<Department[]>('/departments');
+    setDepartments(updated);
+  };
+
+  const deleteDepartment = async (id: string) => {
+    await api.delete(`/departments/${id}`);
+    const updated = await api.get<Department[]>('/departments');
+    setDepartments(updated);
   };
 
   // ── Activity Types ────────────────────────────────────────────────────────────
@@ -406,6 +438,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentUser,
         users,
         activityTypes,
+        departments,
         positions,
         timeEntries,
         absenceRequests,
@@ -424,6 +457,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addActivityType,
         updateActivityType,
         deleteActivityType,
+        addDepartment,
+        updateDepartment,
+        deleteDepartment,
         addPosition,
         updatePosition,
         deletePosition,

@@ -1,14 +1,16 @@
 import { useState, ReactNode, FormEvent } from 'react';
-import { Plus, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Globe, Building2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { ActivityType } from '../../types';
 
 interface FormData {
   name: string;
   color: string;
+  isGlobal: boolean;
+  departmentIds: string[];
 }
 
-const emptyForm: FormData = { name: '', color: '#2d6a4f' };
+const emptyForm: FormData = { name: '', color: '#2d6a4f', isGlobal: true, departmentIds: [] };
 
 const presetColors = [
   '#2d6a4f', '#52b788', '#8db570', '#d4e157',
@@ -25,7 +27,7 @@ interface ModalProps {
 function Modal({ title, onClose, children }: ModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">{title}</h2>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
@@ -39,7 +41,7 @@ function Modal({ title, onClose, children }: ModalProps) {
 }
 
 export default function ActivityTypes() {
-  const { activityTypes, currentUser, addActivityType, updateActivityType, deleteActivityType } = useApp();
+  const { activityTypes, departments, currentUser, addActivityType, updateActivityType, deleteActivityType } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<ActivityType | null>(null);
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -56,10 +58,24 @@ export default function ActivityTypes() {
   };
 
   const openEdit = (at: ActivityType) => {
-    setForm({ name: at.name, color: at.color });
+    setForm({
+      name: at.name,
+      color: at.color,
+      isGlobal: at.isGlobal !== false,
+      departmentIds: at.departmentIds ?? [],
+    });
     setEditing(at);
     setFormError('');
     setShowModal(true);
+  };
+
+  const toggleDept = (id: string) => {
+    setForm(f => ({
+      ...f,
+      departmentIds: f.departmentIds.includes(id)
+        ? f.departmentIds.filter(d => d !== id)
+        : [...f.departmentIds, id],
+    }));
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -77,12 +93,26 @@ export default function ActivityTypes() {
       return;
     }
 
+    const payload = {
+      name: form.name,
+      color: form.color,
+      isGlobal: form.isGlobal,
+      departmentIds: form.isGlobal ? [] : form.departmentIds,
+    };
+
     if (editing) {
-      updateActivityType(editing.id, form);
+      updateActivityType(editing.id, payload);
     } else {
-      addActivityType(form);
+      addActivityType(payload);
     }
     setShowModal(false);
+  };
+
+  const getDeptNames = (at: ActivityType) => {
+    if (at.isGlobal !== false) return null;
+    const ids = at.departmentIds ?? [];
+    if (ids.length === 0) return null;
+    return ids.map(id => departments.find(d => d.id === id)?.name).filter(Boolean).join(', ');
   };
 
   return (
@@ -101,34 +131,50 @@ export default function ActivityTypes() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {activityTypes.map(at => (
-          <div key={at.id} className="card flex items-center gap-4">
-            <div
-              className="w-10 h-10 rounded-xl flex-shrink-0 shadow-sm"
-              style={{ backgroundColor: at.color }}
-            />
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-gray-800 truncate">{at.name}</p>
-              <p className="text-xs text-gray-400 font-mono">{at.color}</p>
-            </div>
-            {isAdmin && (
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <button
-                  onClick={() => openEdit(at)}
-                  className="p-1.5 text-gray-400 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg transition-colors"
-                >
-                  <Edit2 size={15} />
-                </button>
-                <button
-                  onClick={() => setDeleteConfirm(at.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                >
-                  <Trash2 size={15} />
-                </button>
+        {activityTypes.map(at => {
+          const deptNames = getDeptNames(at);
+          return (
+            <div key={at.id} className="card flex items-center gap-4">
+              <div
+                className="w-10 h-10 rounded-xl flex-shrink-0 shadow-sm"
+                style={{ backgroundColor: at.color }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-800 truncate">{at.name}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {at.isGlobal !== false ? (
+                    <span className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                      <Globe size={10} />Global
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
+                      <Building2 size={10} />Direction
+                    </span>
+                  )}
+                  {deptNames && (
+                    <span className="text-xs text-gray-400 truncate" title={deptNames}>{deptNames}</span>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+              {isAdmin && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => openEdit(at)}
+                    className="p-1.5 text-gray-400 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg transition-colors"
+                  >
+                    <Edit2 size={15} />
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirm(at.id)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {activityTypes.length === 0 && (
           <div className="col-span-3 text-center py-12 text-gray-400">
@@ -192,6 +238,55 @@ export default function ActivityTypes() {
               </div>
             </div>
 
+            {/* Scope */}
+            <div>
+              <label className="label">Portée</label>
+              <div className="flex gap-3 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, isGlobal: true }))}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    form.isGlobal
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <Globe size={15} /> Global
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, isGlobal: false }))}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    !form.isGlobal
+                      ? 'border-purple-500 bg-purple-50 text-purple-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  <Building2 size={15} /> Par direction
+                </button>
+              </div>
+            </div>
+
+            {/* Department links — only when not global */}
+            {!form.isGlobal && departments.length > 0 && (
+              <div>
+                <label className="label">Directions concernées</label>
+                <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                  {departments.map(d => (
+                    <label key={d.id} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-tennis-green rounded border-gray-300"
+                        checked={form.departmentIds.includes(d.id)}
+                        onChange={() => toggleDept(d.id)}
+                      />
+                      <span className="text-sm text-gray-700">{d.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
               <div className="w-8 h-8 rounded-lg" style={{ backgroundColor: form.color }} />
               <span className="text-sm text-gray-600">{form.name || 'Aperçu'}</span>
@@ -219,7 +314,7 @@ export default function ActivityTypes() {
             <button onClick={() => setDeleteConfirm(null)} className="btn-secondary">Annuler</button>
             <button
               onClick={() => {
-                deleteActivityType(deleteConfirm);
+                deleteActivityType(deleteConfirm!);
                 setDeleteConfirm(null);
               }}
               className="btn-danger"

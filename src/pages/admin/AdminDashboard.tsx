@@ -1,7 +1,8 @@
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Users, Tag, Settings, Briefcase, ShieldCheck, Trash2 } from 'lucide-react';
+import { Users, Tag, Settings, Briefcase, ShieldCheck, Trash2, Building2 } from 'lucide-react';
 import UserManagement from './UserManagement';
 import ActivityTypes from './ActivityTypes';
+import Departments from './Departments';
 import Positions from './Positions';
 import AppSettings from './AppSettings';
 import ValidationConfig from './ValidationConfig';
@@ -28,6 +29,10 @@ export default function AdminDashboard() {
           <NavLink to="/admin/users" className={tabClass}>
             <Users size={16} />
             Utilisateurs
+          </NavLink>
+          <NavLink to="/admin/departments" className={tabClass}>
+            <Building2 size={16} />
+            Directions
           </NavLink>
           <NavLink to="/admin/activity-types" className={tabClass}>
             <Tag size={16} />
@@ -61,6 +66,7 @@ export default function AdminDashboard() {
       <Routes>
         <Route index element={<Navigate to="/admin/users" replace />} />
         <Route path="users" element={<UserManagement />} />
+        <Route path="departments" element={<Departments />} />
         <Route path="activity-types" element={<ActivityTypes />} />
         <Route path="positions" element={<Positions />} />
         <Route path="validation" element={<ValidationConfig />} />

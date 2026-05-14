@@ -26,7 +26,7 @@ const ALL_MODULES = [
   { key: 'documents',  label: 'Documents' },
   { key: 'budget',     label: 'Budget' },
   { key: 'accounting', label: 'Comptabilité' },
-  { key: 'seasons',    label: 'Saisons' },
+  { key: 'seasons',    label: 'Calendrier saisonnier' },
   { key: 'payroll',    label: 'Paie' },
 ];
 
@@ -39,6 +39,7 @@ interface UserFormData {
   role: UserRole;
   managerId: string;
   position: string;
+  departmentId: string;
   moduleAccess: string[];
 }
 
@@ -49,6 +50,7 @@ const emptyForm: UserFormData = {
   role: 'user',
   managerId: '',
   position: '',
+  departmentId: '',
   moduleAccess: DEFAULT_MODULES,
 };
 
@@ -75,7 +77,7 @@ function Modal({ title, onClose, children }: ModalProps) {
 }
 
 export default function UserManagement() {
-  const { users, positions, currentUser, addUser, updateUser, deleteUser } = useApp();
+  const { users, positions, departments, currentUser, addUser, updateUser, deleteUser } = useApp();
 
   // Edit/Add modal
   const [showModal, setShowModal] = useState(false);
@@ -115,6 +117,7 @@ export default function UserManagement() {
       role: (user.role === 'admin' ? 'admin' : 'user') as UserRole,
       managerId: user.managerId ?? '',
       position: user.position ?? '',
+      departmentId: user.departmentId ?? '',
       moduleAccess: user.moduleAccess ?? DEFAULT_MODULES,
     });
     setEditingUser(user);
@@ -159,6 +162,7 @@ export default function UserManagement() {
         role: form.role,
         managerId: form.managerId || undefined,
         position: form.position || undefined,
+        departmentId: form.departmentId || null,
         moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
       };
       updateUser(editingUser.id, payload);
@@ -171,6 +175,7 @@ export default function UserManagement() {
         role: form.role,
         managerId: form.managerId || undefined,
         position: form.position || undefined,
+        departmentId: form.departmentId || null,
         moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
       };
       addUser(payload);
@@ -472,6 +477,22 @@ export default function UserManagement() {
                 ))}
               </select>
             </div>
+
+            {departments.length > 0 && (
+              <div>
+                <label className="label">Direction</label>
+                <select
+                  className="input"
+                  value={form.departmentId}
+                  onChange={e => setForm(f => ({ ...f, departmentId: e.target.value }))}
+                >
+                  <option value="">— Aucune —</option>
+                  {departments.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="label">Type d'utilisateur *</label>

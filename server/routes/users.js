@@ -45,6 +45,7 @@ function mapUser(row, modules) {
     role: row.role,
     managerId: row.manager_id || undefined,
     position: row.position || undefined,
+    departmentId: row.department_id || null,
     moduleAccess: modules || DEFAULT_MODULES,
     blocked: !!row.blocked,
     createdAt: row.created_at instanceof Date
@@ -112,16 +113,16 @@ router.post('/', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const { firstName, lastName, email, password, role, managerId, position, moduleAccess } = req.body;
+    const { firstName, lastName, email, password, role, managerId, position, departmentId, moduleAccess } = req.body;
     if (!firstName || !lastName || !email || !password || !role) {
       return res.status(400).json({ error: 'Champs requis manquants' });
     }
     const id = crypto.randomUUID();
     const hash = await bcrypt.hash(password, 10);
     await pool.execute(
-      `INSERT INTO users (id, first_name, last_name, email, password, role, manager_id, position)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, firstName, lastName, email, hash, role || 'user', managerId || null, position || null]
+      `INSERT INTO users (id, first_name, last_name, email, password, role, manager_id, position, department_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, firstName, lastName, email, hash, role || 'user', managerId || null, position || null, departmentId || null]
     );
 
     // Set module access (default if not provided)
@@ -146,17 +147,18 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { id } = req.params;
-    const { firstName, lastName, email, password, role, managerId, position, moduleAccess } = req.body;
+    const { firstName, lastName, email, password, role, managerId, position, departmentId, moduleAccess } = req.body;
 
     const updates = [];
     const values = [];
 
-    if (firstName !== undefined) { updates.push('first_name = ?'); values.push(firstName); }
-    if (lastName !== undefined)  { updates.push('last_name = ?');  values.push(lastName); }
-    if (email !== undefined)     { updates.push('email = ?');      values.push(email); }
-    if (role !== undefined)      { updates.push('role = ?');       values.push(role); }
-    if (managerId !== undefined) { updates.push('manager_id = ?'); values.push(managerId || null); }
-    if (position !== undefined)  { updates.push('position = ?');   values.push(position || null); }
+    if (firstName    !== undefined) { updates.push('first_name = ?');    values.push(firstName); }
+    if (lastName     !== undefined) { updates.push('last_name = ?');     values.push(lastName); }
+    if (email        !== undefined) { updates.push('email = ?');         values.push(email); }
+    if (role         !== undefined) { updates.push('role = ?');          values.push(role); }
+    if (managerId    !== undefined) { updates.push('manager_id = ?');    values.push(managerId || null); }
+    if (position     !== undefined) { updates.push('position = ?');      values.push(position || null); }
+    if (departmentId !== undefined) { updates.push('department_id = ?'); values.push(departmentId || null); }
     if (password) {
       const hash = await bcrypt.hash(password, 10);
       updates.push('password = ?');

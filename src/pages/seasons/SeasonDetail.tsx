@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Edit2, Calendar, BookOpen, Plus, X, Trash2,
-  ChevronLeft, ChevronRight, Check, AlertCircle, AlertTriangle, Copy, Loader,
+  ChevronLeft, ChevronRight, Check, AlertCircle, AlertTriangle, Copy, Loader, Building2,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
@@ -789,7 +789,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                                     {tw.label}
                                   </button>
                                   {hasConflict && (
-                                    <span title="Un ou plusieurs cours sont en conflit d'agenda">
+                                    <span title="Une ou plusieurs activités sont en conflit d'agenda">
                                       <AlertTriangle size={13} className="text-yellow-500" />
                                     </span>
                                   )}
@@ -851,7 +851,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                 >
                   <span className="w-4 h-4 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
                   <span className="text-sm font-medium text-gray-800">{tw.label}</span>
-                  <span className="text-xs text-gray-400 ml-1">{tw.courses.length} cours</span>
+                  <span className="text-xs text-gray-400 ml-1">{tw.courses.length} activité{tw.courses.length !== 1 ? 's' : ''}</span>
                   {active && <Check size={14} className="ml-auto text-tennis-green" />}
                 </button>
               );
@@ -864,7 +864,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
       {/* Course create / edit modal (from calendar) */}
       {calCourseModal && (
         <Modal
-          title={calCourseModal.editing ? 'Modifier le cours' : 'Nouveau cours'}
+          title={calCourseModal.editing ? "Modifier l'activité" : 'Nouvelle activité'}
           onClose={() => setCalCourseModal(null)}
         >
           <p className="text-xs text-gray-400 mb-4">
@@ -875,7 +875,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{calCourseError}</div>
             )}
             <div>
-              <label className="label">Intitulé du cours *</label>
+              <label className="label">Intitulé de l'activité *</label>
               <input className="input" value={calCourseForm.label}
                 onChange={e => setCalCourseForm(f => ({ ...f, label: e.target.value }))}
                 placeholder="Ex: Tennis débutants" autoFocus required />
@@ -908,7 +908,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="label">Type de cours</label>
+                <label className="label">Type d'activité</label>
                 <input className="input" list="course-type-list" value={calCourseForm.courseType}
                   onChange={e => setCalCourseForm(f => ({ ...f, courseType: e.target.value }))}
                   placeholder="Ex: Collectif adulte" />
@@ -925,7 +925,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
             <datalist id="course-type-list">
               <option value="Collectif adulte" />
               <option value="Collectif enfant" />
-              <option value="Cours particulier" />
+              <option value="Activité particulière" />
               <option value="Mini tennis" />
               <option value="Stage" />
               <option value="Compétition" />
@@ -1200,13 +1200,13 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
               </button>
               <button onClick={() => openAddCourse(selectedTW)}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-tennis-green/10 text-tennis-green rounded-lg hover:bg-tennis-green/20 transition-colors">
-                <Plus size={13} /> Ajouter un cours
+                <Plus size={13} /> Ajouter une activité
               </button>
             </div>
 
             {selectedTW.courses.length === 0 ? (
               <div className="card text-center py-10 text-gray-400">
-                <p className="text-sm">Aucun cours. Cliquez sur &laquo; Ajouter un cours &raquo;.</p>
+                <p className="text-sm">Aucune activité. Cliquez sur &laquo; Ajouter une activité &raquo;.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -1254,7 +1254,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
         ) : (
           <div className="card text-center py-16 text-gray-400">
             <BookOpen size={36} className="mx-auto mb-3 opacity-20" />
-            <p className="text-sm">Sélectionnez une semaine type pour gérer ses cours.</p>
+            <p className="text-sm">Sélectionnez une semaine type pour gérer ses activités.</p>
           </div>
         )}
       </div>
@@ -1279,11 +1279,11 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
 
       {/* Course form modal */}
       {courseModal && (
-        <Modal title={courseModal.editing ? 'Modifier le cours' : 'Nouveau cours'} onClose={() => setCourseModal(null)}>
+        <Modal title={courseModal.editing ? "Modifier l'activité" : 'Nouvelle activité'} onClose={() => setCourseModal(null)}>
           <form onSubmit={saveCourse} className="space-y-4">
             {courseError && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{courseError}</div>}
             <div>
-              <label className="label">Intitulé du cours *</label>
+              <label className="label">Intitulé de l'activité *</label>
               <input className="input" value={courseForm.label} onChange={e => setCourseForm(f => ({ ...f, label: e.target.value }))}
                 placeholder="Ex: Tennis débutants" required />
             </div>
@@ -1314,14 +1314,14 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="label">Type de cours</label>
+                <label className="label">Type d'activité</label>
                 <input className="input" list="course-type-list-tw" value={courseForm.courseType}
                   onChange={e => setCourseForm(f => ({ ...f, courseType: e.target.value }))}
                   placeholder="Ex: Collectif adulte" />
                 <datalist id="course-type-list-tw">
                   <option value="Collectif adulte" />
                   <option value="Collectif enfant" />
-                  <option value="Cours particulier" />
+                  <option value="Activité particulière" />
                   <option value="Mini tennis" />
                   <option value="Stage" />
                   <option value="Compétition" />
@@ -1386,7 +1386,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
                       }`}
                     >
                       <span className="text-sm font-medium text-gray-800">{tw.label}</span>
-                      <span className="text-xs text-gray-400 ml-auto">{tw.courses.length} cours</span>
+                      <span className="text-xs text-gray-400 ml-auto">{tw.courses.length} activité{tw.courses.length !== 1 ? 's' : ''}</span>
                       {copySourceTWId === tw.id && <Check size={14} className="text-tennis-green" />}
                     </button>
                   ))}
@@ -1455,7 +1455,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
 export default function SeasonDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { users } = useApp();
+  const { users, departments } = useApp();
 
   const [season, setSeason] = useState<Season | null>(null);
   const [templateWeeks, setTemplateWeeks] = useState<TemplateWeek[]>([]);
@@ -1533,10 +1533,18 @@ export default function SeasonDetail() {
               <button onClick={() => setNameEditing(false)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded"><X size={16} /></button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold text-gray-900">{season.name}</h1>
               <button onClick={() => { setNameVal(season.name); setNameEditing(true); }}
                 className="p-1 text-gray-300 hover:text-gray-500"><Edit2 size={15} /></button>
+              {season.departmentId && (() => {
+                const dept = departments.find(d => d.id === season.departmentId);
+                return dept ? (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 font-medium">
+                    <Building2 size={10} />{dept.name}
+                  </span>
+                ) : null;
+              })()}
             </div>
           )}
           <p className="text-sm text-gray-500 mt-0.5">
