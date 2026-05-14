@@ -924,7 +924,9 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               </div>
             </div>
             <datalist id="course-type-list">
-              {activityTypes.map(at => <option key={at.id} value={at.name} />)}
+              {activityTypes
+                .filter(at => at.isGlobal !== false || (season.departmentId && at.departmentIds?.includes(season.departmentId)))
+                .map(at => <option key={at.id} value={at.name} />)}
             </datalist>
             <div className="flex justify-end gap-3 pt-2">
               <button type="button" onClick={() => setCalCourseModal(null)} className="btn-secondary">Annuler</button>
@@ -1316,7 +1318,9 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
                   onChange={e => setCourseForm(f => ({ ...f, courseType: e.target.value }))}
                   placeholder="Ex: Collectif adulte" />
                 <datalist id="course-type-list-tw">
-                  {activityTypes.map(at => <option key={at.id} value={at.name} />)}
+                  {activityTypes
+                    .filter(at => at.isGlobal !== false || (season.departmentId && at.departmentIds?.includes(season.departmentId)))
+                    .map(at => <option key={at.id} value={at.name} />)}
                 </datalist>
               </div>
               <div>
