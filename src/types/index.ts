@@ -27,6 +27,7 @@ export interface Department {
   id: string;
   name: string;
   parentId: string | null;
+  directorId: string | null;
   createdAt: string;
 }
 

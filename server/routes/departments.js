@@ -9,6 +9,7 @@ function mapDept(r) {
     id: r.id,
     name: r.name,
     parentId: r.parent_id || null,
+    directorId: r.director_id || null,
     createdAt: r.created_at,
   };
 }
@@ -30,12 +31,12 @@ router.post('/', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const { name, parentId } = req.body;
+    const { name, parentId, directorId } = req.body;
     if (!name) return res.status(400).json({ error: 'Nom requis' });
     const id = crypto.randomUUID();
     await pool.execute(
-      'INSERT INTO departments (id, name, parent_id) VALUES (?, ?, ?)',
-      [id, name, parentId || null]
+      'INSERT INTO departments (id, name, parent_id, director_id) VALUES (?, ?, ?, ?)',
+      [id, name, parentId || null, directorId || null]
     );
     const [rows] = await pool.execute('SELECT * FROM departments WHERE id = ?', [id]);
     res.status(201).json(mapDept(rows[0]));
@@ -52,12 +53,13 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { id } = req.params;
-    const { name, parentId } = req.body;
+    const { name, parentId, directorId } = req.body;
 
     const updates = [];
     const values = [];
-    if (name !== undefined)     { updates.push('name = ?');      values.push(name); }
-    if (parentId !== undefined) { updates.push('parent_id = ?'); values.push(parentId || null); }
+    if (name       !== undefined) { updates.push('name = ?');        values.push(name); }
+    if (parentId   !== undefined) { updates.push('parent_id = ?');   values.push(parentId || null); }
+    if (directorId !== undefined) { updates.push('director_id = ?'); values.push(directorId || null); }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });

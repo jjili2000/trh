@@ -48,8 +48,8 @@ interface AppContextType {
   deleteActivityType: (id: string) => Promise<void>;
 
   // Departments
-  addDepartment: (data: { name: string; parentId?: string | null }) => Promise<void>;
-  updateDepartment: (id: string, data: { name?: string; parentId?: string | null }) => Promise<void>;
+  addDepartment: (data: { name: string; parentId?: string | null; directorId?: string | null }) => Promise<void>;
+  updateDepartment: (id: string, data: { name?: string; parentId?: string | null; directorId?: string | null }) => Promise<void>;
   deleteDepartment: (id: string) => Promise<void>;
 
   // Positions
@@ -269,13 +269,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Departments ───────────────────────────────────────────────────────────────
 
-  const addDepartment = async (data: { name: string; parentId?: string | null }) => {
+  const addDepartment = async (data: { name: string; parentId?: string | null; directorId?: string | null }) => {
     await api.post('/departments', data);
     const updated = await api.get<Department[]>('/departments');
     setDepartments(updated);
   };
 
-  const updateDepartment = async (id: string, data: { name?: string; parentId?: string | null }) => {
+  const updateDepartment = async (id: string, data: { name?: string; parentId?: string | null; directorId?: string | null }) => {
     await api.put(`/departments/${id}`, data);
     const updated = await api.get<Department[]>('/departments');
     setDepartments(updated);
