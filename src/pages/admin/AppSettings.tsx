@@ -5,13 +5,15 @@ import { useApp } from '../../context/AppContext';
 export default function AppSettings() {
   const { appSettings, updateSettings, currentUser } = useApp();
   const [clubName, setClubName] = useState(appSettings.clubName);
+  const [calendarStartHour, setCalendarStartHour] = useState(appSettings.calendarStartHour ?? 8);
+  const [calendarEndHour,   setCalendarEndHour]   = useState(appSettings.calendarEndHour   ?? 21);
   const [saved, setSaved] = useState(false);
 
   const isAdmin = currentUser?.role === 'admin';
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    updateSettings({ clubName });
+    updateSettings({ clubName, calendarStartHour, calendarEndHour });
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -47,6 +49,41 @@ export default function AppSettings() {
               />
               <p className="text-xs text-gray-400 mt-1">
                 Ce nom apparaît dans la barre latérale et les en-têtes de l'application.
+              </p>
+            </div>
+
+            <div>
+              <label className="label">Plage horaire du calendrier</label>
+              <div className="flex items-center gap-3 mt-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">De</span>
+                  <select
+                    className="input w-24"
+                    value={calendarStartHour}
+                    onChange={e => setCalendarStartHour(Number(e.target.value))}
+                    disabled={!isAdmin}
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i} disabled={i >= calendarEndHour}>{String(i).padStart(2,'0')}h00</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">à</span>
+                  <select
+                    className="input w-24"
+                    value={calendarEndHour}
+                    onChange={e => setCalendarEndHour(Number(e.target.value))}
+                    disabled={!isAdmin}
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i} disabled={i <= calendarStartHour}>{String(i).padStart(2,'0')}h00</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                Plage affichée dans les vues calendrier hebdomadaire et semaines type.
               </p>
             </div>
 

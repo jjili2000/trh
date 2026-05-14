@@ -95,6 +95,8 @@ export interface Expense {
 export interface AppSettings {
   clubName: string;
   clubLogo?: string;
+  calendarStartHour?: number;
+  calendarEndHour?: number;
 }
 
 // ─── Seasons ──────────────────────────────────────────────────────────────────

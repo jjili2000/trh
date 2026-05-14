@@ -23,8 +23,8 @@ const STATUS_CFG: Record<SeasonStatus, { label: string; color: string }> = {
   closed:    { label: 'Clôturée',  color: 'bg-blue-100 text-blue-700' },
   deleted:   { label: 'Supprimée', color: 'bg-red-100 text-red-700' },
 };
-const START_HOUR = 8;
-const END_HOUR   = 21;
+const DEFAULT_START_HOUR = 8;
+const DEFAULT_END_HOUR   = 21;
 const SLOT_H     = 30; // px per 30 min
 
 // Lundi de référence pour l'affichage des semaines type (2024-01-01 est un lundi)
@@ -184,6 +184,9 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
   onEditCourse?: (course: TemplateCourse) => void;
   onAddCourse?:  (dayOfWeek: number, startTime: string) => void;
 }) {
+  const { appSettings } = useApp();
+  const START_HOUR = appSettings.calendarStartHour ?? DEFAULT_START_HOUR;
+  const END_HOUR   = appSettings.calendarEndHour   ?? DEFAULT_END_HOUR;
   const totalSlots = (END_HOUR - START_HOUR) * 2;
   const totalH     = totalSlots * SLOT_H;
   const days       = Array.from({ length: numDays }, (_, i) => addDays(startDay, i));
@@ -317,8 +320,8 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
                       {isConflict && <AlertTriangle size={10} className="text-yellow-300 flex-shrink-0 mt-0.5" />}
                     </div>
                     {height > 30 && <div className="opacity-80 truncate">{c.startTime} – {c.endTime}</div>}
-                    {height > 50 && c.courseType && <div className="opacity-70 truncate italic">{c.courseType}</div>}
-                    {height > 70 && teacherName && <div className="opacity-70 truncate">{teacherName}</div>}
+                    {height > 50 && teacherName && <div className="opacity-70 truncate">{teacherName}</div>}
+                    {height > 70 && c.courseType && <div className="opacity-70 truncate italic">{c.courseType}</div>}
                   </div>
                 );
               })}
@@ -364,7 +367,8 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   onRefresh: () => Promise<void>;
   onEditTemplateWeek: (twId: string) => void;
 }) {
-  const { activityTypes } = useApp();
+  const { activityTypes, appSettings } = useApp();
+  const END_HOUR   = appSettings.calendarEndHour   ?? DEFAULT_END_HOUR;
   const [viewMode, setViewMode] = useState<ViewMode>('year');
   const [weekIdx, setWeekIdx]   = useState(0);
   const [dayDate, setDayDate]   = useState<Date>(() => {
@@ -940,7 +944,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                   placeholder="Ex: Collectif adulte" />
               </div>
               <div>
-                <label className="label">Enseignant</label>
+                <label className="label">Qui</label>
                 <select className="input" value={calCourseForm.teacherId}
                   onChange={e => setCalCourseForm(f => ({ ...f, teacherId: e.target.value }))}>
                   <option value="">— Aucun —</option>
@@ -977,7 +981,8 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   selectedTWId: string | null;
   onSelectedTWChange: (id: string | null) => void;
 }) {
-  const { activityTypes } = useApp();
+  const { activityTypes, appSettings } = useApp();
+  const END_HOUR   = appSettings.calendarEndHour   ?? DEFAULT_END_HOUR;
   const [twModal, setTWModal]       = useState<{ editing: TemplateWeek | null } | null>(null);
   const [courseModal, setCourseModal] = useState<{ tw: TemplateWeek; editing: TemplateCourse | null } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'tw' | 'course'; id: string; twId?: string } | null>(null);
@@ -1338,7 +1343,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
                 </datalist>
               </div>
               <div>
-                <label className="label">Enseignant</label>
+                <label className="label">Qui</label>
                 <select className="input" value={courseForm.teacherId}
                   onChange={e => setCourseForm(f => ({ ...f, teacherId: e.target.value }))}>
                   <option value="">— Aucun —</option>
