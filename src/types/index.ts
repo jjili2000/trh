@@ -114,7 +114,8 @@ export interface TemplateCourse {
   dayOfWeek: number; // 1=Lundi … 7=Dimanche
   startTime: string; // HH:MM
   endTime: string;   // HH:MM
-  teacherId: string | null;
+  teacherId:  string | null;
+  courseType: string | null;
   createdAt: string;
 }
 

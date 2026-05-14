@@ -73,7 +73,7 @@ router.get('/calendar-suggestions', async (req, res) => {
        JOIN template_courses tc ON tc.template_week_id = swa.template_week_id
        JOIN seasons s ON s.id = swa.season_id
        WHERE tc.teacher_id = ?
-         AND s.status IN ('draft', 'published', 'closed')
+         AND s.status IN ('published', 'closed')
          AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) > ?
          AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) <= CURDATE()
        ORDER BY actual_date ASC`,

@@ -208,14 +208,14 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
 
   return (
     <div
-      className="overflow-x-auto rounded-xl border border-gray-100"
+      className="overflow-x-auto rounded-xl border border-gray-200 bg-white"
       onMouseMove={e => { mousePos.current = { x: e.clientX, y: e.clientY }; }}
     >
       {/* Day headers */}
-      <div className="flex border-b border-gray-100">
+      <div className="flex border-b border-gray-200">
         <div className="w-12 flex-shrink-0" />
         {days.map((d, i) => (
-          <div key={i} className="flex-1 min-w-20 text-center py-2 text-xs font-semibold text-gray-600 border-l border-gray-100">
+          <div key={i} className="flex-1 min-w-20 text-center py-2 text-xs font-semibold text-gray-600 border-l border-gray-200">
             <div>{DAYS_SHORT[getDayOfWeek(d) - 1]}</div>
             <div className="text-gray-400 font-normal">{d.getDate()}</div>
           </div>
@@ -225,7 +225,7 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
       {/* Time grid */}
       <div className="flex" style={{ height: totalH }}>
         {/* Time labels */}
-        <div className="w-12 flex-shrink-0 relative border-r border-gray-100">
+        <div className="w-12 flex-shrink-0 relative border-r border-gray-200">
           {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => (
             <div key={i} className="absolute right-1 text-xs text-gray-300 -translate-y-2"
               style={{ top: i * 60 * (SLOT_H / 30) }}>
@@ -241,29 +241,49 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
             (!filterUserId || c.teacherId === filterUserId)
           )) || [];
           return (
-            <div key={di} className="flex-1 min-w-20 relative border-l border-gray-100" style={{ height: totalH }}>
+            <div key={di} className="flex-1 min-w-20 relative border-l border-gray-200" style={{ height: totalH }}>
               {/* Hour grid lines */}
               {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => (
-                <div key={i} className="absolute inset-x-0 border-t border-gray-100"
+                <div key={i} className="absolute inset-x-0 border-t border-gray-200"
                   style={{ top: (i + 1) * 60 * (SLOT_H / 30) }} />
               ))}
 
-              {/* Right-gutter add-course strips (20 px) — one per 30-min slot, z-20 */}
+              {/* Add-course zones per 30-min slot */}
               {onAddCourse && Array.from({ length: totalSlots }, (_, si) => {
-                const startMin = START_HOUR * 60 + si * 30;
-                const h = Math.floor(startMin / 60);
-                const m = startMin % 60;
-                const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-                const isHov   = hoverSlot?.day === di + 1 && hoverSlot.slotIndex === si;
+                const startMin  = START_HOUR * 60 + si * 30;
+                const h         = Math.floor(startMin / 60);
+                const m         = startMin % 60;
+                const timeStr   = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                const isHov     = hoverSlot?.day === di + 1 && hoverSlot.slotIndex === si;
+                // Check if any course overlaps this slot
+                const slotEnd   = startMin + 30;
+                const hasOverlap = dayCourses.some(c =>
+                  timeToMin(c.startTime) < slotEnd && timeToMin(c.endTime) > startMin
+                );
+                if (hasOverlap) {
+                  // Small right-side strip when a course occupies this slot
+                  return (
+                    <div key={si}
+                      className={`absolute right-0 z-20 flex items-center justify-center cursor-pointer transition-colors ${isHov ? 'bg-tennis-green/10' : ''}`}
+                      style={{ top: si * SLOT_H, height: SLOT_H, width: 20 }}
+                      onMouseEnter={() => setHoverSlot({ day: di + 1, slotIndex: si, time: timeStr })}
+                      onMouseLeave={() => setHoverSlot(null)}
+                      onClick={() => onAddCourse(di + 1, timeStr)}
+                    >
+                      {isHov && <Plus size={11} className="text-tennis-green" />}
+                    </div>
+                  );
+                }
+                // Full-width zone with centered "+" when slot is empty
                 return (
                   <div key={si}
-                    className={`absolute right-0 z-20 flex items-center justify-center cursor-pointer transition-colors ${isHov ? 'bg-tennis-green/10' : ''}`}
-                    style={{ top: si * SLOT_H, height: SLOT_H, width: 20 }}
+                    className={`absolute inset-x-0 z-10 flex items-center justify-center cursor-pointer transition-colors ${isHov ? 'bg-tennis-green/10' : ''}`}
+                    style={{ top: si * SLOT_H, height: SLOT_H }}
                     onMouseEnter={() => setHoverSlot({ day: di + 1, slotIndex: si, time: timeStr })}
                     onMouseLeave={() => setHoverSlot(null)}
                     onClick={() => onAddCourse(di + 1, timeStr)}
                   >
-                    {isHov && <Plus size={11} className="text-tennis-green" />}
+                    {isHov && <Plus size={18} className="text-tennis-green" />}
                   </div>
                 );
               })}
@@ -294,12 +314,13 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
                       {isConflict && <AlertTriangle size={10} className="text-yellow-300 flex-shrink-0 mt-0.5" />}
                     </div>
                     {height > 30 && <div className="opacity-80 truncate">{c.startTime} – {c.endTime}</div>}
-                    {height > 50 && teacherName && <div className="opacity-70 truncate">{teacherName}</div>}
+                    {height > 50 && c.courseType && <div className="opacity-70 truncate italic">{c.courseType}</div>}
+                    {height > 70 && teacherName && <div className="opacity-70 truncate">{teacherName}</div>}
                   </div>
                 );
               })}
 
-              {dayCourses.length === 0 && <div className="h-full bg-gray-50/50" />}
+              {/* Empty column — no separate background needed (white from parent) */}
             </div>
           );
         })}
@@ -311,6 +332,7 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
           style={{ left: tooltip.x + 14, top: tooltip.y - 8 }}>
           <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl max-w-52 space-y-0.5">
             <div className="font-semibold">{tooltip.course.label}</div>
+            {tooltip.course.courseType && <div className="text-gray-300">{tooltip.course.courseType}</div>}
             <div className="text-gray-300">{tooltip.course.startTime} – {tooltip.course.endTime} · {duration(tooltip.course.startTime, tooltip.course.endTime)}</div>
             {tooltip.teacherName && <div className="text-gray-400">{tooltip.teacherName}</div>}
             {tooltip.isConflict && (
@@ -357,7 +379,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
     tw: TemplateWeek; editing: TemplateCourse | null;
   } | null>(null);
   const [calCourseForm, setCalCourseForm] = useState({
-    label: '', dayOfWeek: 1, startTime: '09:00', endTime: '10:00', teacherId: '',
+    label: '', dayOfWeek: 1, startTime: '09:00', endTime: '10:00', teacherId: '', courseType: '',
   });
   const [calCourseError, setCalCourseError] = useState('');
   const [calCourseSaving, setCalCourseSaving] = useState(false);
@@ -435,7 +457,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
     setCalCourseForm({
       label: course.label, dayOfWeek: course.dayOfWeek,
       startTime: course.startTime, endTime: course.endTime,
-      teacherId: course.teacherId || '',
+      teacherId: course.teacherId || '', courseType: course.courseType || '',
     });
     setCalCourseError('');
     setCalCourseModal({ tw: activeTW, editing: course });
@@ -449,7 +471,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
     setCalCourseForm({
       label: '', dayOfWeek, startTime,
       endTime: `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`,
-      teacherId: '',
+      teacherId: '', courseType: '',
     });
     setCalCourseError('');
     setCalCourseModal({ tw: activeTW, editing: null });
@@ -468,6 +490,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
       label: calCourseForm.label, dayOfWeek: Number(calCourseForm.dayOfWeek),
       startTime: calCourseForm.startTime, endTime: calCourseForm.endTime,
       teacherId: calCourseForm.teacherId || null,
+      courseType: calCourseForm.courseType.trim() || null,
     };
     setCalCourseSaving(true);
     try {
@@ -883,14 +906,30 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                 </div>
               </div>
             </div>
-            <div>
-              <label className="label">Enseignant</label>
-              <select className="input" value={calCourseForm.teacherId}
-                onChange={e => setCalCourseForm(f => ({ ...f, teacherId: e.target.value }))}>
-                <option value="">— Aucun —</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Type de cours</label>
+                <input className="input" list="course-type-list" value={calCourseForm.courseType}
+                  onChange={e => setCalCourseForm(f => ({ ...f, courseType: e.target.value }))}
+                  placeholder="Ex: Collectif adulte" />
+              </div>
+              <div>
+                <label className="label">Enseignant</label>
+                <select className="input" value={calCourseForm.teacherId}
+                  onChange={e => setCalCourseForm(f => ({ ...f, teacherId: e.target.value }))}>
+                  <option value="">— Aucun —</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
+                </select>
+              </div>
             </div>
+            <datalist id="course-type-list">
+              <option value="Collectif adulte" />
+              <option value="Collectif enfant" />
+              <option value="Cours particulier" />
+              <option value="Mini tennis" />
+              <option value="Stage" />
+              <option value="Compétition" />
+            </datalist>
             <div className="flex justify-end gap-3 pt-2">
               <button type="button" onClick={() => setCalCourseModal(null)} className="btn-secondary">Annuler</button>
               <button type="submit" disabled={calCourseSaving} className="btn-primary">
@@ -923,7 +962,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
 
   const [twForm, setTWForm] = useState({ label: '' });
   const [twError, setTWError] = useState('');
-  const [courseForm, setCourseForm] = useState({ label: '', dayOfWeek: 1, startTime: '09:00', endTime: '10:00', teacherId: '' });
+  const [courseForm, setCourseForm] = useState({ label: '', dayOfWeek: 1, startTime: '09:00', endTime: '10:00', teacherId: '', courseType: '' });
   const [courseError, setCourseError] = useState('');
   const [twSaving, setTWSaving] = useState(false);
   const [courseSaving, setCourseSaving] = useState(false);
@@ -967,11 +1006,11 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   };
 
   const openAddCourse = (tw: TemplateWeek) => {
-    setCourseForm({ label: '', dayOfWeek: 1, startTime: '09:00', endTime: '10:00', teacherId: '' });
+    setCourseForm({ label: '', dayOfWeek: 1, startTime: '09:00', endTime: '10:00', teacherId: '', courseType: '' });
     setCourseError(''); setCourseModal({ tw, editing: null });
   };
   const openEditCourse = (tw: TemplateWeek, c: TemplateCourse) => {
-    setCourseForm({ label: c.label, dayOfWeek: c.dayOfWeek, startTime: c.startTime, endTime: c.endTime, teacherId: c.teacherId || '' });
+    setCourseForm({ label: c.label, dayOfWeek: c.dayOfWeek, startTime: c.startTime, endTime: c.endTime, teacherId: c.teacherId || '', courseType: c.courseType || '' });
     setCourseError(''); setCourseModal({ tw, editing: c });
   };
 
@@ -992,6 +1031,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
       startTime:  courseForm.startTime,
       endTime:    courseForm.endTime,
       teacherId:  courseForm.teacherId || null,
+      courseType: courseForm.courseType.trim() || null,
     };
     setCourseSaving(true);
     try {
@@ -1194,6 +1234,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
                               </div>
                               <div className="text-xs text-gray-400">
                                 {c.startTime} – {c.endTime} · {duration(c.startTime, c.endTime)}
+                                {c.courseType && <span className="ml-1 px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{c.courseType}</span>}
                                 {teacher && ` · ${teacher.firstName} ${teacher.lastName}`}
                               </div>
                             </div>
@@ -1271,13 +1312,29 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
                 </div>
               </div>
             </div>
-            <div>
-              <label className="label">Enseignant</label>
-              <select className="input" value={courseForm.teacherId}
-                onChange={e => setCourseForm(f => ({ ...f, teacherId: e.target.value }))}>
-                <option value="">— Aucun —</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Type de cours</label>
+                <input className="input" list="course-type-list-tw" value={courseForm.courseType}
+                  onChange={e => setCourseForm(f => ({ ...f, courseType: e.target.value }))}
+                  placeholder="Ex: Collectif adulte" />
+                <datalist id="course-type-list-tw">
+                  <option value="Collectif adulte" />
+                  <option value="Collectif enfant" />
+                  <option value="Cours particulier" />
+                  <option value="Mini tennis" />
+                  <option value="Stage" />
+                  <option value="Compétition" />
+                </datalist>
+              </div>
+              <div>
+                <label className="label">Enseignant</label>
+                <select className="input" value={courseForm.teacherId}
+                  onChange={e => setCourseForm(f => ({ ...f, teacherId: e.target.value }))}>
+                  <option value="">— Aucun —</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>)}
+                </select>
+              </div>
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button type="button" onClick={() => setCourseModal(null)} className="btn-secondary">Annuler</button>

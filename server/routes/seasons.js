@@ -45,7 +45,9 @@ function mapCourse(r) {
     dayOfWeek: r.day_of_week,
     startTime: String(r.start_time).substring(0, 5),
     endTime:   String(r.end_time).substring(0, 5),
-    teacherId: r.teacher_id || null, createdAt: r.created_at,
+    teacherId:  r.teacher_id  || null,
+    courseType: r.course_type || null,
+    createdAt: r.created_at,
   };
 }
 
@@ -192,12 +194,12 @@ router.delete('/:seasonId/template-weeks/:twId', checkAM, async (req, res) => {
 
 router.post('/:seasonId/template-weeks/:twId/courses', checkAM, async (req, res) => {
   try {
-    const { label, dayOfWeek, startTime, endTime, teacherId } = req.body;
+    const { label, dayOfWeek, startTime, endTime, teacherId, courseType } = req.body;
     if (!label || !dayOfWeek || !startTime || !endTime) return res.status(400).json({ error: 'Champs requis manquants' });
     const id = crypto.randomUUID();
     await pool.execute(
-      'INSERT INTO template_courses (id, template_week_id, label, day_of_week, start_time, end_time, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, req.params.twId, label, dayOfWeek, startTime, endTime, teacherId || null]
+      'INSERT INTO template_courses (id, template_week_id, label, day_of_week, start_time, end_time, teacher_id, course_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, req.params.twId, label, dayOfWeek, startTime, endTime, teacherId || null, courseType || null]
     );
     const [rows] = await pool.execute('SELECT * FROM template_courses WHERE id = ?', [id]);
     res.status(201).json(mapCourse(rows[0]));
@@ -206,13 +208,14 @@ router.post('/:seasonId/template-weeks/:twId/courses', checkAM, async (req, res)
 
 router.put('/:seasonId/template-weeks/:twId/courses/:cId', checkAM, async (req, res) => {
   try {
-    const { label, dayOfWeek, startTime, endTime, teacherId } = req.body;
+    const { label, dayOfWeek, startTime, endTime, teacherId, courseType } = req.body;
     const upd = []; const vals = [];
-    if (label     !== undefined) { upd.push('label = ?');       vals.push(label); }
-    if (dayOfWeek !== undefined) { upd.push('day_of_week = ?'); vals.push(dayOfWeek); }
-    if (startTime !== undefined) { upd.push('start_time = ?');  vals.push(startTime); }
-    if (endTime   !== undefined) { upd.push('end_time = ?');    vals.push(endTime); }
-    if (teacherId !== undefined) { upd.push('teacher_id = ?');  vals.push(teacherId || null); }
+    if (label      !== undefined) { upd.push('label = ?');       vals.push(label); }
+    if (dayOfWeek  !== undefined) { upd.push('day_of_week = ?'); vals.push(dayOfWeek); }
+    if (startTime  !== undefined) { upd.push('start_time = ?');  vals.push(startTime); }
+    if (endTime    !== undefined) { upd.push('end_time = ?');    vals.push(endTime); }
+    if (teacherId  !== undefined) { upd.push('teacher_id = ?');  vals.push(teacherId || null); }
+    if (courseType !== undefined) { upd.push('course_type = ?'); vals.push(courseType || null); }
     if (!upd.length) return res.status(400).json({ error: 'Rien à mettre à jour' });
     vals.push(req.params.cId);
     await pool.execute(`UPDATE template_courses SET ${upd.join(', ')} WHERE id = ?`, vals);
