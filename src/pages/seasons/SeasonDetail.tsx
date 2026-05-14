@@ -1007,7 +1007,6 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   const [applyResult, setApplyResult] = useState('');
 
   const selectedTW = templateWeeks.find(tw => tw.id === selectedTWId) || templateWeeks[0] || null;
-  const twColorMap = Object.fromEntries(templateWeeks.map((tw, i) => [tw.id, TW_COLORS[i % TW_COLORS.length]]));
 
   const openAddTW = () => { setTWForm({ label: '' }); setTWError(''); setTWModal({ editing: null }); };
   const openEditTW = (tw: TemplateWeek) => { setTWForm({ label: tw.label }); setTWError(''); setTWModal({ editing: tw }); };
@@ -1192,84 +1191,76 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   // duration() est défini au niveau module
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Left: TW list */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-gray-700">Semaines type</h3>
-          <div className="flex gap-1">
-            <button onClick={() => setCopyModal(true)}
-              className="p-1.5 text-gray-400 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg" title="Importer">
-              <Copy size={15} />
-            </button>
-            <button onClick={openAddTW}
-              className="p-1.5 text-gray-400 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg" title="Ajouter">
-              <Plus size={15} />
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-2">
+    <div className="space-y-4">
+      {/* Top bar: TW selector + actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Semaine type chips */}
+        <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto pb-1">
           {templateWeeks.map((tw, i) => {
             const color = TW_COLORS[i % TW_COLORS.length];
             const isSelected = (selectedTW?.id || templateWeeks[0]?.id) === tw.id;
             return (
               <div key={tw.id}
-                onClick={() => onSelectedTWChange(tw.id)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer border-2 transition-colors ${
-                  isSelected ? 'border-tennis-green bg-tennis-green/5' : 'border-transparent hover:border-gray-100 bg-white'
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer border-2 transition-colors flex-shrink-0 ${
+                  isSelected ? 'border-tennis-green bg-tennis-green/5' : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
+                onClick={() => onSelectedTWChange(tw.id)}
               >
-                <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
-                <span className="flex-1 text-sm font-medium text-gray-800 truncate">{tw.label}</span>
-                <span className="text-xs text-gray-400">{tw.courses.length}</span>
+                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
+                <span className="text-sm font-medium text-gray-800 whitespace-nowrap">{tw.label}</span>
+                <span className="text-xs text-gray-400">({tw.courses.length})</span>
                 <button onClick={e => { e.stopPropagation(); openEditTW(tw); }}
-                  className="p-1 text-gray-300 hover:text-tennis-green rounded"><Edit2 size={13} /></button>
+                  className="p-0.5 text-gray-300 hover:text-tennis-green rounded ml-1"><Edit2 size={12} /></button>
                 <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ type: 'tw', id: tw.id }); }}
-                  className="p-1 text-gray-300 hover:text-red-500 rounded"><Trash2 size={13} /></button>
+                  className="p-0.5 text-gray-300 hover:text-red-500 rounded"><Trash2 size={12} /></button>
               </div>
             );
           })}
           {templateWeeks.length === 0 && (
-            <div className="text-center py-8 text-gray-400 text-sm">
-              Aucune semaine type.<br />
-              <button onClick={openAddTW} className="text-tennis-green hover:underline mt-1">En créer une</button>
-            </div>
+            <span className="text-sm text-gray-400">Aucune semaine type.</span>
           )}
+        </div>
+
+        {/* Global actions */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button onClick={() => setCopyModal(true)}
+            className="p-1.5 text-gray-400 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg" title="Importer une semaine type">
+            <Copy size={15} />
+          </button>
+          <button onClick={openAddTW}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-tennis-green/10 text-tennis-green rounded-lg hover:bg-tennis-green/20 transition-colors font-medium">
+            <Plus size={14} /> Nouvelle semaine
+          </button>
         </div>
       </div>
 
-      {/* Right: courses */}
-      <div className="lg:col-span-2">
-        {selectedTW ? (
-          <div>
-            <div className="flex items-center gap-3 mb-3">
-              <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: twColorMap[selectedTW.id] }} />
-              <h3 className="font-semibold text-gray-800">{selectedTW.label}</h3>
-              <button onClick={() => setApplyModal({ tw: selectedTW })}
-                className="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors">
-                <Calendar size={13} /> Règle Zone C
-              </button>
-              <button onClick={() => openAddCourse(selectedTW)}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-tennis-green/10 text-tennis-green rounded-lg hover:bg-tennis-green/20 transition-colors">
-                <Plus size={13} /> Ajouter une activité
-              </button>
-            </div>
-            <WeekTimeGrid
-              templateWeek={selectedTW}
-              startDay={TEMPLATE_WEEK_START}
-              users={users}
-              onEditCourse={(course) => openEditCourse(selectedTW, course)}
-              onAddCourse={(dayOfWeek, startTime) => openAddCourse(selectedTW, dayOfWeek, startTime)}
-            />
+      {/* Full-width calendar */}
+      {selectedTW ? (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <button onClick={() => setApplyModal({ tw: selectedTW })}
+              className="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors">
+              <Calendar size={13} /> Règle Zone C
+            </button>
+            <button onClick={() => openAddCourse(selectedTW)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-tennis-green/10 text-tennis-green rounded-lg hover:bg-tennis-green/20 transition-colors">
+              <Plus size={13} /> Ajouter une activité
+            </button>
           </div>
-        ) : (
-          <div className="card text-center py-16 text-gray-400">
-            <BookOpen size={36} className="mx-auto mb-3 opacity-20" />
-            <p className="text-sm">Sélectionnez une semaine type pour gérer ses activités.</p>
-          </div>
-        )}
-      </div>
+          <WeekTimeGrid
+            templateWeek={selectedTW}
+            startDay={TEMPLATE_WEEK_START}
+            users={users}
+            onEditCourse={(course) => openEditCourse(selectedTW, course)}
+            onAddCourse={(dayOfWeek, startTime) => openAddCourse(selectedTW, dayOfWeek, startTime)}
+          />
+        </div>
+      ) : (
+        <div className="card text-center py-16 text-gray-400">
+          <BookOpen size={36} className="mx-auto mb-3 opacity-20" />
+          <p className="text-sm">Créez une semaine type pour commencer.</p>
+        </div>
+      )}
 
       {/* TW form modal */}
       {twModal && (
