@@ -361,6 +361,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   onRefresh: () => Promise<void>;
   onEditTemplateWeek: (twId: string) => void;
 }) {
+  const { activityTypes } = useApp();
   const [viewMode, setViewMode] = useState<ViewMode>('year');
   const [weekIdx, setWeekIdx]   = useState(0);
   const [dayDate, setDayDate]   = useState<Date>(() => {
@@ -923,12 +924,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               </div>
             </div>
             <datalist id="course-type-list">
-              <option value="Collectif adulte" />
-              <option value="Collectif enfant" />
-              <option value="Activité particulière" />
-              <option value="Mini tennis" />
-              <option value="Stage" />
-              <option value="Compétition" />
+              {activityTypes.map(at => <option key={at.id} value={at.name} />)}
             </datalist>
             <div className="flex justify-end gap-3 pt-2">
               <button type="button" onClick={() => setCalCourseModal(null)} className="btn-secondary">Annuler</button>
@@ -954,6 +950,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   selectedTWId: string | null;
   onSelectedTWChange: (id: string | null) => void;
 }) {
+  const { activityTypes } = useApp();
   const [twModal, setTWModal]       = useState<{ editing: TemplateWeek | null } | null>(null);
   const [courseModal, setCourseModal] = useState<{ tw: TemplateWeek; editing: TemplateCourse | null } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'tw' | 'course'; id: string; twId?: string } | null>(null);
@@ -1319,12 +1316,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
                   onChange={e => setCourseForm(f => ({ ...f, courseType: e.target.value }))}
                   placeholder="Ex: Collectif adulte" />
                 <datalist id="course-type-list-tw">
-                  <option value="Collectif adulte" />
-                  <option value="Collectif enfant" />
-                  <option value="Activité particulière" />
-                  <option value="Mini tennis" />
-                  <option value="Stage" />
-                  <option value="Compétition" />
+                  {activityTypes.map(at => <option key={at.id} value={at.name} />)}
                 </datalist>
               </div>
               <div>
