@@ -17,6 +17,7 @@ import {
   Download,
   ExternalLink,
   FlaskConical,
+  GitMerge,
 } from 'lucide-react';
 import { api, getToken } from '../../api/client';
 import {
@@ -1525,6 +1526,173 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   );
 }
 
+// ─── Merge Rules Modal ────────────────────────────────────────────────────────
+
+interface MergeRulesModalProps {
+  rules: AccountingRule[];
+  categories: string[];
+  onClose: () => void;
+  onMerged: (updated: number, cleared: number) => void;
+}
+
+function MergeRulesModal({ rules, categories, onClose, onMerged }: MergeRulesModalProps) {
+  const differentCategories = [...new Set(rules.map(r => r.category))];
+  const [label, setLabel]       = useState<string>(`Fusion : ${rules.map(r => r.label).join(', ')}`);
+  const [category, setCategory] = useState<string>(differentCategories[0] || '');
+  const [catInput, setCatInput] = useState(differentCategories[0] || '');
+  const [catSuggs, setCatSuggs] = useState<string[]>([]);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  // Toutes les conditions des règles existantes, regroupées par groupe, avec OR entre groupes
+  const mergedGroups = useMemo(() => {
+    const out: { id: string; groupOperator: 'AND' | 'OR'; conditions: RuleCondition[] }[] = [];
+    for (const rule of rules) {
+      if (rule.groups && rule.groups.length > 0) {
+        for (const g of rule.groups) {
+          out.push({ id: crypto.randomUUID(), groupOperator: g.groupOperator, conditions: g.conditions });
+        }
+      } else if (rule.conditions && rule.conditions.length > 0) {
+        out.push({ id: crypto.randomUUID(), groupOperator: rule.conditionOperator || 'AND', conditions: rule.conditions });
+      }
+    }
+    return out;
+  }, [rules]);
+
+  const handleCatInput = (v: string) => {
+    setCatInput(v);
+    setCategory(v);
+    if (v.length >= 1) {
+      setCatSuggs(categories.filter(c => c.toLowerCase().includes(v.toLowerCase())).slice(0, 8));
+    } else {
+      setCatSuggs([]);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!label.trim()) { setError('Le libellé est requis'); return; }
+    if (!category.trim()) { setError('La catégorie est requise'); return; }
+    setSaving(true); setError(null);
+    try {
+      const payload = {
+        label: label.trim(),
+        rootOperator: 'OR',
+        conditionOperator: 'OR',
+        category: category.trim(),
+        priority: Math.max(...rules.map(r => r.priority ?? 0)),
+        groups: mergedGroups,
+      };
+      await api.post('/accounting/rules', payload);
+      // Supprimer les règles sources
+      await api.delete('/accounting/rules/bulk', { ids: rules.map(r => r.id) });
+      // Ré-appliquer toutes les règles
+      const applyRes = await api.post<{ updated: number; cleared: number }>('/accounting/rules/apply-all', {});
+      onMerged(applyRes.updated ?? 0, applyRes.cleared ?? 0);
+    } catch (e: unknown) {
+      setError((e as { message?: string }).message || 'Erreur');
+      setSaving(false);
+    }
+  };
+
+  const fmtCond = (c: RuleCondition) => `${FIELD_LABELS[c.field]} ${OPERATOR_LABELS[c.operator]} « ${c.value} »`;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <GitMerge size={18} className="text-indigo-500" />
+            <h2 className="font-semibold text-gray-800">Fusionner {rules.length} règles</h2>
+          </div>
+          <button className="text-gray-400 hover:text-gray-600" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {differentCategories.length > 1 && (
+            <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+              ⚠️ Les règles sélectionnées ont des catégories différentes : <strong>{differentCategories.join(', ')}</strong>. Choisissez la catégorie de la règle fusionnée.
+            </div>
+          )}
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          <div>
+            <label className="label">Libellé de la nouvelle règle *</label>
+            <input
+              className="input text-sm w-full"
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div className="relative">
+            <label className="label">Catégorie *</label>
+            <input
+              className="input text-sm w-full"
+              value={catInput}
+              onChange={e => handleCatInput(e.target.value)}
+              placeholder="Ex : Licences, Matériel…"
+            />
+            {catSuggs.length > 0 && (
+              <ul className="absolute z-10 bg-white border border-gray-200 rounded-lg shadow-lg w-full mt-0.5 max-h-40 overflow-auto">
+                {catSuggs.map(s => (
+                  <li
+                    key={s}
+                    className="px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50"
+                    onMouseDown={() => { setCategory(s); setCatInput(s); setCatSuggs([]); }}
+                  >
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Aperçu des groupes fusionnés */}
+          <div>
+            <p className="label mb-1">Aperçu des conditions fusionnées</p>
+            <div className="space-y-1.5">
+              {mergedGroups.map((g, i) => (
+                <div key={g.id}>
+                  {i > 0 && (
+                    <div className="flex items-center gap-2 my-1">
+                      <div className="flex-1 border-t border-indigo-100" />
+                      <span className="text-xs font-semibold text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full">OU</span>
+                      <div className="flex-1 border-t border-indigo-100" />
+                    </div>
+                  )}
+                  <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 text-xs text-gray-600 space-y-0.5">
+                    {g.conditions.map((c, ci) => (
+                      <div key={ci}>
+                        {ci > 0 && <span className="text-gray-400 mr-1">{g.groupOperator === 'AND' ? 'ET' : 'OU'}</span>}
+                        {fmtCond(c)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button className="btn-secondary text-sm" onClick={onClose} disabled={saving}>Annuler</button>
+          <button
+            className="btn-primary text-sm flex items-center gap-1.5"
+            onClick={handleConfirm}
+            disabled={saving}
+          >
+            <GitMerge size={14} />
+            {saving ? 'Fusion en cours…' : 'Fusionner'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Rules Tab ────────────────────────────────────────────────────────────────
 
 interface RulesTabProps {
@@ -1575,8 +1743,9 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
   const [catInput, setCatInput] = useState('');
   const [catSuggestions, setCatSuggestions] = useState<string[]>([]);
 
-  // Multi-select for bulk delete
+  // Multi-select for bulk delete / merge
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showMergeModal, setShowMergeModal] = useState(false);
   const allSelected = rules.length > 0 && selectedIds.size === rules.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
 
@@ -1775,7 +1944,24 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
       }),
     }));
 
+  const selectedRules = rules.filter(r => selectedIds.has(r.id));
+
   return (
+    <>
+    {showMergeModal && selectedRules.length >= 2 && (
+      <MergeRulesModal
+        rules={selectedRules}
+        categories={categories}
+        onClose={() => setShowMergeModal(false)}
+        onMerged={(updated, cleared) => {
+          setShowMergeModal(false);
+          setSelectedIds(new Set());
+          load();
+          setSaveMsg(`Règles fusionnées. ${updated} opération(s) mise(s) à jour${cleared > 0 ? `, ${cleared} désaffectée(s)` : ''}.`);
+          setTimeout(() => setSaveMsg(null), 5000);
+        }}
+      />
+    )}
     <div className="flex gap-4 flex-col lg:flex-row">
       {/* List */}
       <div className="flex-1">
@@ -1788,13 +1974,24 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
           <div className="flex items-center gap-3">
             <h2 className="text-base font-semibold text-gray-700">Règles de catégorisation</h2>
             {selectedIds.size > 0 && (
-              <button
-                className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded-lg px-2.5 py-1 transition-colors"
-                onClick={handleDeleteSelected}
-              >
-                <Trash2 size={13} />
-                Supprimer la sélection ({selectedIds.size})
-              </button>
+              <>
+                {selectedIds.size >= 2 && (
+                  <button
+                    className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 rounded-lg px-2.5 py-1 transition-colors"
+                    onClick={() => setShowMergeModal(true)}
+                  >
+                    <GitMerge size={13} />
+                    Fusionner ({selectedIds.size})
+                  </button>
+                )}
+                <button
+                  className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded-lg px-2.5 py-1 transition-colors"
+                  onClick={handleDeleteSelected}
+                >
+                  <Trash2 size={13} />
+                  Supprimer ({selectedIds.size})
+                </button>
+              </>
             )}
           </div>
           <button className="btn-primary flex items-center gap-1.5 text-sm" onClick={openNew}>
@@ -2094,6 +2291,7 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -2676,7 +2874,7 @@ function ImportsList({ imports, onDelete }: ImportsListProps) {
 
 // ─── Period Detail View ───────────────────────────────────────────────────────
 
-type PeriodSortMode = 'alpha' | 'direction';
+type PeriodSortMode = 'category' | 'direction' | 'thirdParty';
 
 interface CategoryGroup {
   category: string;
@@ -2693,7 +2891,7 @@ interface PeriodDetailViewProps {
 function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
   const [operations, setOperations] = useState<BankOperation[]>([]);
   const [loading, setLoading]       = useState(true);
-  const [sortMode, setSortMode]     = useState<PeriodSortMode>('alpha');
+  const [sortMode, setSortMode]     = useState<PeriodSortMode>('category');
   const [expanded, setExpanded]     = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -2705,11 +2903,17 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
   }, [period.id]);
 
   const groups = useMemo<CategoryGroup[]>(() => {
+    // Clé de regroupement selon le mode
+    const getKey = (op: BankOperation): string => {
+      if (sortMode === 'thirdParty') return op.thirdParty || op.rawLabel || '(Tiers inconnu)';
+      return op.category || '(Sans catégorie)';
+    };
+
     const map = new Map<string, BankOperation[]>();
     for (const op of operations) {
-      const cat = op.category || '(Sans catégorie)';
-      if (!map.has(cat)) map.set(cat, []);
-      map.get(cat)!.push(op);
+      const key = getKey(op);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(op);
     }
     const result: CategoryGroup[] = Array.from(map.entries()).map(([category, ops]) => {
       const sorted = [...ops].sort((a, b) => a.operationDate.localeCompare(b.operationDate));
@@ -2718,8 +2922,11 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
       return { category, ops: sorted, totalCredit, totalDebit };
     });
 
-    if (sortMode === 'alpha') {
-      result.sort((a, b) => a.category.localeCompare(b.category, 'fr', { sensitivity: 'base' }));
+    const alphaCmp = (a: CategoryGroup, b: CategoryGroup) =>
+      a.category.localeCompare(b.category, 'fr', { sensitivity: 'base' });
+
+    if (sortMode === 'category' || sortMode === 'thirdParty') {
+      result.sort(alphaCmp);
     } else {
       // Tri par sens : crédits nets d'abord, puis mixtes, puis débits nets
       const dirOrder = (g: CategoryGroup) =>
@@ -2727,7 +2934,7 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
         g.totalCredit === 0 && g.totalDebit > 0 ? 2 : 1;
       result.sort((a, b) => {
         const d = dirOrder(a) - dirOrder(b);
-        return d !== 0 ? d : a.category.localeCompare(b.category, 'fr', { sensitivity: 'base' });
+        return d !== 0 ? d : alphaCmp(a, b);
       });
     }
     return result;
@@ -2781,7 +2988,7 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
 
         {/* Tri */}
         <div className="ml-auto flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-          {([['alpha', 'Alphabétique'], ['direction', 'Par sens']] as const).map(([mode, label]) => (
+          {([['category', 'Catégories'], ['direction', 'Par sens'], ['thirdParty', 'Par tiers']] as [PeriodSortMode, string][]).map(([mode, label]) => (
             <button
               key={mode}
               className={`px-3 py-1.5 text-xs rounded-md transition-colors font-medium ${
@@ -2799,7 +3006,11 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
 
       {/* Résumé global */}
       {!loading && operations.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-4 gap-3 mb-4">
+          <div className="card py-3 px-4">
+            <p className="text-xs text-gray-400 mb-0.5">Opérations</p>
+            <p className="text-lg font-bold text-gray-700">{operations.length}</p>
+          </div>
           <div className="card py-3 px-4">
             <p className="text-xs text-gray-400 mb-0.5">Total crédits</p>
             <p className="text-lg font-bold text-green-600">+{fmtCurrency(totalCredit)}</p>
@@ -2827,7 +3038,7 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
             <thead>
               <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
                 <th className="px-3 py-2.5 w-6"></th>
-                <th className="px-3 py-2.5">Catégorie</th>
+                <th className="px-3 py-2.5">{sortMode === 'thirdParty' ? 'Tiers' : 'Catégorie'}</th>
                 <th className="px-3 py-2.5 text-center">Opérations</th>
                 <th className="px-3 py-2.5 text-right text-green-700">Crédits</th>
                 <th className="px-3 py-2.5 text-right text-red-500">Débits</th>
