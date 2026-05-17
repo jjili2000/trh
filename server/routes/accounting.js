@@ -652,6 +652,51 @@ router.delete('/operations', async (req, res) => {
   }
 });
 
+// GET /accounting/imports/:id/file  — ouvrir ou télécharger le fichier source
+// Doit être AVANT GET /imports pour éviter qu'Express matche "imports/:id" sur "imports"
+router.get('/imports/:id/file', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { download } = req.query;
+
+    const [rows] = await pool.execute(
+      'SELECT * FROM bank_imports WHERE id = ? AND userId = ?',
+      [id, req.user.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Import non trouvé' });
+
+    const imp = rows[0];
+    if (!imp.storedFileName) {
+      return res.status(404).json({ error: 'Fichier source non disponible pour cet import' });
+    }
+
+    const filePath = path.join(UPLOADS_DIR, imp.storedFileName);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Fichier introuvable sur le serveur' });
+    }
+
+    const ext = (imp.fileName || '').split('.').pop().toLowerCase();
+    const mimeMap = {
+      csv:  'text/csv',
+      txt:  'text/plain',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      xls:  'application/vnd.ms-excel',
+    };
+    const contentType = mimeMap[ext] || 'application/octet-stream';
+
+    const disposition = download === '1'
+      ? `attachment; filename="${encodeURIComponent(imp.fileName)}"`
+      : `inline; filename="${encodeURIComponent(imp.fileName)}"`;
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', disposition);
+    res.send(fs.readFileSync(filePath));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // GET /accounting/imports
 router.get('/imports', async (req, res) => {
   try {

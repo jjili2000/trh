@@ -13,8 +13,10 @@ import {
   Bookmark,
   ChevronUp,
   ChevronsUpDown,
+  Download,
+  ExternalLink,
 } from 'lucide-react';
-import { api } from '../../api/client';
+import { api, getToken } from '../../api/client';
 import {
   AccountingPeriod,
   BankImport,
@@ -1486,6 +1488,7 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
 
 interface ImportTabProps {
   periods: AccountingPeriod[];
+  imports: BankImport[];
   onImportDone: () => void;
   onGoToOperations: () => void;
 }
@@ -1514,7 +1517,7 @@ interface ImportSummary {
   invalid: number;
 }
 
-function ImportTab({ periods, onImportDone, onGoToOperations }: ImportTabProps) {
+function ImportTab({ periods, imports, onImportDone, onGoToOperations }: ImportTabProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [importLabel, setImportLabel] = useState('');
   // Period selection
@@ -1658,6 +1661,28 @@ function ImportTab({ periods, onImportDone, onGoToOperations }: ImportTabProps) 
   const headerOptions = (preview?.headers || []).map(h => (
     <option key={h} value={h}>{h}</option>
   ));
+
+  const fetchFile = async (importId: string, forDownload: boolean, fileName: string) => {
+    try {
+      const token = getToken();
+      const url = `/api/accounting/imports/${importId}/file${forDownload ? '?download=1' : ''}`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) { alert('Fichier source non disponible'); return; }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      if (forDownload) {
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = fileName;
+        a.click();
+      } else {
+        window.open(objectUrl, '_blank');
+      }
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 15000);
+    } catch {
+      alert('Impossible de récupérer le fichier');
+    }
+  };
 
   return (
     <div className="max-w-3xl">
@@ -1912,6 +1937,65 @@ function ImportTab({ periods, onImportDone, onGoToOperations }: ImportTabProps) 
                 Voir les opérations
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Historique des imports */}
+      {imports.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
+            Historique des imports
+          </h3>
+          <div className="card p-0 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-2.5">Date</th>
+                  <th className="px-4 py-2.5">Libellé</th>
+                  <th className="px-4 py-2.5">Fichier source</th>
+                  <th className="px-4 py-2.5 text-right">Opérations</th>
+                </tr>
+              </thead>
+              <tbody>
+                {imports.map(imp => (
+                  <tr key={imp.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">
+                      {fmtDate(imp.importedAt)}
+                    </td>
+                    <td className="px-4 py-2.5 font-medium text-gray-800">
+                      {imp.label}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {imp.storedFileName ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="text-indigo-600 hover:text-indigo-800 hover:underline text-sm flex items-center gap-1 truncate max-w-[220px]"
+                            onClick={() => fetchFile(imp.id, false, imp.fileName)}
+                            title="Ouvrir le fichier"
+                          >
+                            <ExternalLink size={12} className="flex-shrink-0" />
+                            <span className="truncate">{imp.fileName}</span>
+                          </button>
+                          <button
+                            className="text-gray-400 hover:text-gray-700 flex-shrink-0 transition-colors"
+                            onClick={() => fetchFile(imp.id, true, imp.fileName)}
+                            title="Télécharger le fichier"
+                          >
+                            <Download size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs italic">{imp.fileName} (non conservé)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-700">
+                      {imp.operationCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -2214,6 +2298,7 @@ export default function AccountingPage() {
           <ImportsList imports={imports} onDelete={handleDeleteImport} />
           <ImportTab
             periods={periods}
+            imports={imports}
             onImportDone={handleImportDone}
             onGoToOperations={() => setTab('operations')}
           />
