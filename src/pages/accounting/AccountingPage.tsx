@@ -424,6 +424,8 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [savingName, setSavingName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
+  const [savedFilterOpen, setSavedFilterOpen] = useState(false);
+  const savedFilterRef = useRef<HTMLDivElement>(null);
 
   // Filters
   const [filterPeriod, setFilterPeriod] = useState('');
@@ -489,7 +491,28 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     setFilterMethod(sf.filters.paymentMethod || '');
     setFilterCategory(sf.filters.category || '');
     setFilterSearch(sf.filters.search || '');
+    setSavedFilterOpen(false);
   };
+
+  const handleClearFilters = () => {
+    setFilterPeriod('');
+    setFilterImport('');
+    setFilterDirection('');
+    setFilterMethod('');
+    setFilterCategory('');
+    setFilterSearch('');
+  };
+
+  useEffect(() => {
+    if (!savedFilterOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (savedFilterRef.current && !savedFilterRef.current.contains(e.target as Node)) {
+        setSavedFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [savedFilterOpen]);
 
   const handleDeleteSavedFilter = async (id: string) => {
     try {
@@ -696,33 +719,58 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
             Tout supprimer
           </button>
         </div>
-        {/* Filtres enregistrés */}
+        {/* Filtres enregistrés + actions */}
         {(savedFilters.length > 0 || hasActiveFilter()) && (
           <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+
+            {/* Combobox filtres enregistrés */}
             {savedFilters.length > 0 && (
-              <>
-                <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">Filtres enregistrés :</span>
-                {savedFilters.map(sf => (
-                  <div key={sf.id} className="flex items-center gap-0.5 bg-indigo-50 border border-indigo-200 rounded-full pl-3 pr-1 py-0.5">
-                    <button
-                      className="text-xs text-indigo-700 font-medium hover:text-indigo-900"
-                      onClick={() => handleApplySavedFilter(sf)}
-                      title="Appliquer ce filtre"
-                    >
-                      {sf.label}
-                    </button>
-                    <button
-                      className="text-indigo-300 hover:text-red-500 ml-1 p-0.5 rounded-full"
-                      onClick={() => handleDeleteSavedFilter(sf.id)}
-                      title="Supprimer ce filtre"
-                    >
-                      <X size={11} />
-                    </button>
+              <div className="relative" ref={savedFilterRef}>
+                <button
+                  className="input text-sm py-1.5 flex items-center gap-2 w-52"
+                  onClick={() => setSavedFilterOpen(o => !o)}
+                >
+                  <Bookmark size={13} className="text-indigo-400 flex-shrink-0" />
+                  <span className="flex-1 text-left text-gray-500 truncate">Filtres enregistrés</span>
+                  <ChevronDown size={13} className={`flex-shrink-0 text-gray-400 transition-transform ${savedFilterOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {savedFilterOpen && (
+                  <div className="absolute z-50 top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                    {savedFilters.map(sf => (
+                      <div key={sf.id} className="flex items-center gap-1 px-2 py-1.5 hover:bg-gray-50 group">
+                        <button
+                          className="flex-1 text-left text-sm text-gray-700 hover:text-indigo-700 truncate py-0.5"
+                          onClick={() => handleApplySavedFilter(sf)}
+                          title="Appliquer ce filtre"
+                        >
+                          {sf.label}
+                        </button>
+                        <button
+                          className="text-gray-300 hover:text-red-500 p-0.5 flex-shrink-0 transition-colors"
+                          onClick={e => { e.stopPropagation(); handleDeleteSavedFilter(sf.id); }}
+                          title="Supprimer ce filtre enregistré"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </>
+                )}
+              </div>
             )}
 
+            {/* Effacer les filtres */}
+            {hasActiveFilter() && (
+              <button
+                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition-colors"
+                onClick={handleClearFilters}
+              >
+                <X size={12} />
+                Effacer les filtres
+              </button>
+            )}
+
+            {/* Enregistrer le filtre courant */}
             {hasActiveFilter() && (
               showSaveInput ? (
                 <div className="flex items-center gap-1.5 ml-auto">
