@@ -1,8 +1,14 @@
 const express = require('express');
 const crypto = require('crypto');
+const fs   = require('fs');
+const path = require('path');
 const pool = require('../db');
 
 const router = express.Router();
+
+// Répertoire de stockage des fichiers bancaires importés
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'accounting');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -363,9 +369,18 @@ router.post('/import/preview', async (req, res) => {
 // Accepts: { rawRows: string[][], filename, label, mapping }
 router.post('/import/confirm', async (req, res) => {
   try {
-    const { rawRows, filename, label, mapping } = req.body;
+    const { rawRows, fileData, filename, label, mapping, periodId } = req.body;
     if (!rawRows || !label || !mapping) {
       return res.status(400).json({ error: 'rawRows, libellé et mapping requis' });
+    }
+
+    // Vérifier que la période appartient à l'utilisateur si fournie
+    if (periodId) {
+      const [pRows] = await pool.execute(
+        'SELECT id FROM accounting_periods WHERE id = ? AND userId = ?',
+        [periodId, req.user.id]
+      );
+      if (pRows.length === 0) return res.status(400).json({ error: 'Période introuvable' });
     }
 
     const { rows } = rawRowsToMapped(rawRows);
@@ -455,11 +470,24 @@ router.post('/import/confirm', async (req, res) => {
     const toInsert = operations.filter(op => !existingHashes.has(op.operationHash));
     const skipped  = operations.length - toInsert.length;
 
+    // Sauvegarder le fichier source sur disque (piste d'audit)
+    let storedFileName = null;
+    if (fileData && toInsert.length > 0) {
+      try {
+        const base64 = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+        const buf = Buffer.from(base64, 'base64');
+        storedFileName = `${importId}_${(filename || 'import').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, storedFileName), buf);
+      } catch (e) {
+        console.warn('[import/confirm] impossible de sauvegarder le fichier :', e.message);
+      }
+    }
+
     // Insert import record (only if at least one new operation)
     if (toInsert.length > 0) {
       await pool.execute(
-        `INSERT INTO bank_imports (id, userId, label, fileName, importedAt, operationCount) VALUES (?, ?, ?, ?, NOW(), ?)`,
-        [importId, req.user.id, label, filename || '', toInsert.length]
+        `INSERT INTO bank_imports (id, userId, periodId, label, fileName, storedFileName, importedAt, operationCount) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)`,
+        [importId, req.user.id, periodId || null, label, filename || '', storedFileName, toInsert.length]
       );
     }
 
@@ -494,15 +522,18 @@ router.post('/import/confirm', async (req, res) => {
 // GET /accounting/operations
 router.get('/operations', async (req, res) => {
   try {
-    const { importId, direction, paymentMethod, category, search, dateFrom, dateTo } = req.query;
+    const { importId, periodId, direction, paymentMethod, category, search, dateFrom, dateTo } = req.query;
 
-    let sql = `SELECT bo.*, ar.label as ruleName FROM bank_operations bo
+    let sql = `SELECT bo.*, ar.label as ruleName, ap.label as periodLabel, ap.id as periodId
+               FROM bank_operations bo
                JOIN bank_imports bi ON bi.id = bo.importId
                LEFT JOIN accounting_rules ar ON ar.id = bo.ruleId
+               LEFT JOIN accounting_periods ap ON ap.id = bi.periodId
                WHERE bi.userId = ?`;
     const params = [req.user.id];
 
-    if (importId) { sql += ' AND bo.importId = ?'; params.push(importId); }
+    if (importId)  { sql += ' AND bo.importId = ?'; params.push(importId); }
+    if (periodId)  { sql += ' AND bi.periodId = ?'; params.push(periodId); }
     if (direction) { sql += ' AND bo.direction = ?'; params.push(direction); }
     if (paymentMethod) { sql += ' AND bo.paymentMethod = ?'; params.push(paymentMethod); }
     if (category === '__none__') {
@@ -516,7 +547,7 @@ router.get('/operations', async (req, res) => {
       params.push(like, like, like);
     }
     if (dateFrom) { sql += ' AND bo.operationDate >= ?'; params.push(dateFrom); }
-    if (dateTo) { sql += ' AND bo.operationDate <= ?'; params.push(dateTo); }
+    if (dateTo)   { sql += ' AND bo.operationDate <= ?'; params.push(dateTo); }
 
     sql += ' ORDER BY bo.operationDate DESC, bo.createdAt DESC';
 
@@ -556,6 +587,12 @@ router.put('/operations/:id', async (req, res) => {
 // DELETE /accounting/operations  — delete ALL operations (and their imports) for this user
 router.delete('/operations', async (req, res) => {
   try {
+    const [imports] = await pool.execute('SELECT storedFileName FROM bank_imports WHERE userId = ?', [req.user.id]);
+    for (const imp of imports) {
+      if (imp.storedFileName) {
+        try { fs.unlinkSync(path.join(UPLOADS_DIR, imp.storedFileName)); } catch (_) {}
+      }
+    }
     await pool.execute('DELETE FROM bank_imports WHERE userId = ?', [req.user.id]);
     res.json({ success: true });
   } catch (err) {
@@ -588,7 +625,103 @@ router.delete('/imports/:id', async (req, res) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Import non trouvé' });
 
+    // Supprimer le fichier stocké
+    if (rows[0].storedFileName) {
+      try { fs.unlinkSync(path.join(UPLOADS_DIR, rows[0].storedFileName)); } catch (_) {}
+    }
     await pool.execute('DELETE FROM bank_imports WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// ─── Accounting Periods ───────────────────────────────────────────────────────
+
+// GET /accounting/periods
+router.get('/periods', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT ap.*,
+              COUNT(bi.id) AS importCount
+       FROM accounting_periods ap
+       LEFT JOIN bank_imports bi ON bi.periodId = ap.id
+       WHERE ap.userId = ?
+       GROUP BY ap.id
+       ORDER BY ap.startDate DESC`,
+      [req.user.id]
+    );
+    res.json(rows.map(mapPeriod));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /accounting/periods
+router.post('/periods', async (req, res) => {
+  try {
+    const { label, startDate, endDate } = req.body;
+    if (!label || !startDate || !endDate) {
+      return res.status(400).json({ error: 'Libellé, date début et date fin requis' });
+    }
+    if (startDate >= endDate) {
+      return res.status(400).json({ error: 'La date de fin doit être postérieure à la date de début' });
+    }
+    const id = crypto.randomUUID();
+    await pool.execute(
+      `INSERT INTO accounting_periods (id, userId, label, startDate, endDate, createdAt) VALUES (?, ?, ?, ?, ?, NOW())`,
+      [id, req.user.id, label, startDate, endDate]
+    );
+    const [rows] = await pool.execute('SELECT *, 0 AS importCount FROM accounting_periods WHERE id = ?', [id]);
+    res.status(201).json(mapPeriod(rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// PUT /accounting/periods/:id
+router.put('/periods/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { label, startDate, endDate } = req.body;
+    const [rows] = await pool.execute('SELECT * FROM accounting_periods WHERE id = ? AND userId = ?', [id, req.user.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Période non trouvée' });
+    if (!label || !startDate || !endDate) {
+      return res.status(400).json({ error: 'Libellé, date début et date fin requis' });
+    }
+    if (startDate >= endDate) {
+      return res.status(400).json({ error: 'La date de fin doit être postérieure à la date de début' });
+    }
+    await pool.execute(
+      `UPDATE accounting_periods SET label = ?, startDate = ?, endDate = ? WHERE id = ?`,
+      [label, startDate, endDate, id]
+    );
+    const [updated] = await pool.execute(
+      `SELECT ap.*, COUNT(bi.id) AS importCount FROM accounting_periods ap LEFT JOIN bank_imports bi ON bi.periodId = ap.id WHERE ap.id = ? GROUP BY ap.id`,
+      [id]
+    );
+    res.json(mapPeriod(updated[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// DELETE /accounting/periods/:id — only if no imports linked
+router.delete('/periods/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await pool.execute('SELECT * FROM accounting_periods WHERE id = ? AND userId = ?', [id, req.user.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Période non trouvée' });
+
+    const [imports] = await pool.execute('SELECT COUNT(*) as cnt FROM bank_imports WHERE periodId = ?', [id]);
+    if (imports[0].cnt > 0) {
+      return res.status(400).json({ error: 'Impossible de supprimer une période ayant des imports rattachés' });
+    }
+    await pool.execute('DELETE FROM accounting_periods WHERE id = ?', [id]);
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -802,12 +935,26 @@ router.get('/categories', async (req, res) => {
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
 
-function mapImport(row) {
+function mapPeriod(row) {
   return {
     id: row.id,
     userId: row.userId,
     label: row.label,
+    startDate: row.startDate instanceof Date ? row.startDate.toISOString().slice(0, 10) : String(row.startDate).slice(0, 10),
+    endDate:   row.endDate   instanceof Date ? row.endDate.toISOString().slice(0, 10)   : String(row.endDate).slice(0, 10),
+    importCount: Number(row.importCount ?? 0),
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+  };
+}
+
+function mapImport(row) {
+  return {
+    id: row.id,
+    userId: row.userId,
+    periodId: row.periodId || null,
+    label: row.label,
     fileName: row.fileName,
+    storedFileName: row.storedFileName || null,
     importedAt: row.importedAt instanceof Date ? row.importedAt.toISOString() : row.importedAt,
     operationCount: row.operationCount,
   };
@@ -817,6 +964,8 @@ function mapOperation(row) {
   return {
     id: row.id,
     importId: row.importId,
+    periodId: row.periodId || null,
+    periodLabel: row.periodLabel || null,
     operationDate: row.operationDate instanceof Date ? row.operationDate.toISOString().slice(0, 10) : String(row.operationDate).slice(0, 10),
     direction: row.direction,
     paymentMethod: row.paymentMethod,

@@ -9,9 +9,11 @@ import {
   RefreshCw,
   ChevronDown,
   Wand2,
+  Calendar,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import {
+  AccountingPeriod,
   BankImport,
   BankOperation,
   AccountingRule,
@@ -394,12 +396,13 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
 
 interface OperationsTabProps {
   imports: BankImport[];
+  periods: AccountingPeriod[];
   categories: string[];
   onCategoriesChange: () => void;
   onDeleteAll: () => void;
 }
 
-function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }: OperationsTabProps) {
+function OperationsTab({ imports, periods, categories, onCategoriesChange, onDeleteAll }: OperationsTabProps) {
   const [operations, setOperations] = useState<BankOperation[]>([]);
   const [loading, setLoading] = useState(false);
   const [applyingRules, setApplyingRules] = useState(false);
@@ -408,6 +411,7 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
   const [ruleModalOp, setRuleModalOp] = useState<BankOperation | null>(null);
 
   // Filters
+  const [filterPeriod, setFilterPeriod] = useState('');
   const [filterImport, setFilterImport] = useState('');
   const [filterDirection, setFilterDirection] = useState('');
   const [filterMethod, setFilterMethod] = useState('');
@@ -419,11 +423,12 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (filterImport) params.set('importId', filterImport);
+      if (filterPeriod)    params.set('periodId', filterPeriod);
+      if (filterImport)    params.set('importId', filterImport);
       if (filterDirection) params.set('direction', filterDirection);
-      if (filterMethod) params.set('paymentMethod', filterMethod);
-      if (filterCategory) params.set('category', filterCategory);
-      if (filterSearch) params.set('search', filterSearch);
+      if (filterMethod)    params.set('paymentMethod', filterMethod);
+      if (filterCategory)  params.set('category', filterCategory);
+      if (filterSearch)    params.set('search', filterSearch);
       const data = await api.get<BankOperation[]>(`/accounting/operations?${params.toString()}`);
       setOperations(data);
     } catch {
@@ -431,7 +436,7 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
     } finally {
       setLoading(false);
     }
-  }, [filterImport, filterDirection, filterMethod, filterCategory, filterSearch]);
+  }, [filterPeriod, filterImport, filterDirection, filterMethod, filterCategory, filterSearch]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -503,6 +508,17 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
             <option value="">Tous les imports</option>
             {imports.map(imp => (
               <option key={imp.id} value={imp.id}>{imp.label} ({imp.operationCount} ops)</option>
+            ))}
+          </select>
+
+          <select
+            className="input text-sm py-1.5 w-auto"
+            value={filterPeriod}
+            onChange={e => { setFilterPeriod(e.target.value); setFilterImport(''); }}
+          >
+            <option value="">Toutes les périodes</option>
+            {periods.map(p => (
+              <option key={p.id} value={p.id}>{p.label}</option>
             ))}
           </select>
 
@@ -611,8 +627,13 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
               <tbody>
                 {displayedOps.map(op => (
                   <tr key={op.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">
-                      {fmtDate(op.operationDate)}
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      <p className="text-sm text-gray-700">{fmtDate(op.operationDate)}</p>
+                      {op.periodLabel && (
+                        <p className="text-xs text-indigo-600 mt-0.5 flex items-center gap-0.5">
+                          <Calendar size={10} />{op.periodLabel}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-2">
                       <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded whitespace-nowrap">
@@ -1140,6 +1161,7 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
 // ─── Import Tab ───────────────────────────────────────────────────────────────
 
 interface ImportTabProps {
+  periods: AccountingPeriod[];
   onImportDone: () => void;
   onGoToOperations: () => void;
 }
@@ -1168,13 +1190,21 @@ interface ImportSummary {
   invalid: number;
 }
 
-function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
+function ImportTab({ periods, onImportDone, onGoToOperations }: ImportTabProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [importLabel, setImportLabel] = useState('');
+  // Period selection
+  const [periodMode, setPeriodMode] = useState<'existing' | 'new'>('existing');
+  const [selectedPeriodId, setSelectedPeriodId] = useState('');
+  const [newPeriodLabel, setNewPeriodLabel] = useState('');
+  const [newPeriodStart, setNewPeriodStart] = useState('');
+  const [newPeriodEnd, setNewPeriodEnd] = useState('');
+  const [resolvedPeriodId, setResolvedPeriodId] = useState<string | null>(null);
   const [parsedRows, setParsedRows] = useState<string[][]>([]);
   const [fileName, setFileName] = useState('');
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping>({ date: '', label: '' });
+  const [fileData, setFileData] = useState('');
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingConfirm, setLoadingConfirm] = useState(false);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
@@ -1188,11 +1218,12 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
     setError(null);
     const reader = new FileReader();
     reader.onload = async (ev) => {
-      const fileData = ev.target?.result as string;
+      const data = ev.target?.result as string;
+      setFileData(data);
       try {
         const { rawRows } = await api.post<{ rawRows: string[][] }>(
           '/accounting/import/parse-file',
-          { fileData, fileName: file.name }
+          { fileData: data, fileName: file.name }
         );
         setParsedRows(rawRows);
       } catch (err: unknown) {
@@ -1206,9 +1237,23 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
   const handlePreview = async () => {
     if (parsedRows.length === 0) { setError('Veuillez sélectionner un fichier'); return; }
     if (!importLabel.trim()) { setError('Veuillez entrer un libellé pour cet import'); return; }
+    if (periodMode === 'existing' && !selectedPeriodId) { setError('Veuillez sélectionner une période comptable'); return; }
+    if (periodMode === 'new' && (!newPeriodLabel.trim() || !newPeriodStart || !newPeriodEnd)) {
+      setError('Veuillez renseigner le libellé, la date de début et la date de fin de la nouvelle période'); return;
+    }
     setError(null);
     setLoadingPreview(true);
     try {
+      // Créer la période si nécessaire
+      let pid = selectedPeriodId;
+      if (periodMode === 'new') {
+        const created = await api.post<AccountingPeriod>('/accounting/periods', {
+          label: newPeriodLabel.trim(), startDate: newPeriodStart, endDate: newPeriodEnd,
+        });
+        pid = created.id;
+      }
+      setResolvedPeriodId(pid);
+
       const data = await api.post<PreviewData>('/accounting/import/preview', {
         rawRows: parsedRows,
         filename: fileName,
@@ -1250,9 +1295,11 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
 
       const result = await api.post<{ importId: string | null; total: number; parsed: number; imported: number; skipped: number; invalid: number }>('/accounting/import/confirm', {
         rawRows: parsedRows,
+        fileData,
         filename: fileName,
         label: importLabel,
         mapping: cleanMapping,
+        periodId: resolvedPeriodId,
       });
       setSummary({ total: result.total, parsed: result.parsed, imported: result.imported, skipped: result.skipped, invalid: result.invalid });
       setStep(3);
@@ -1270,10 +1317,17 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
     setImportLabel('');
     setParsedRows([]);
     setFileName('');
+    setFileData('');
     setPreview(null);
     setMapping({ date: '', label: '' });
     setSummary(null);
     setError(null);
+    setPeriodMode('existing');
+    setSelectedPeriodId('');
+    setNewPeriodLabel('');
+    setNewPeriodStart('');
+    setNewPeriodEnd('');
+    setResolvedPeriodId(null);
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -1313,6 +1367,37 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
       {step === 1 && (
         <div className="card space-y-4">
           <h2 className="font-semibold text-gray-800">Importer un relevé bancaire</h2>
+
+          {/* Période comptable */}
+          <div>
+            <label className="label">Période comptable *</label>
+            <div className="flex gap-3 mb-2">
+              <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="periodMode" value="existing" checked={periodMode === 'existing'} onChange={() => setPeriodMode('existing')} />
+                Période existante
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="periodMode" value="new" checked={periodMode === 'new'} onChange={() => setPeriodMode('new')} />
+                Nouvelle période
+              </label>
+            </div>
+            {periodMode === 'existing' && (
+              <select className="input text-sm" value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)}>
+                <option value="">— Sélectionner une période —</option>
+                {periods.map(p => (
+                  <option key={p.id} value={p.id}>{p.label} ({p.startDate} → {p.endDate})</option>
+                ))}
+              </select>
+            )}
+            {periodMode === 'new' && (
+              <div className="grid grid-cols-3 gap-2">
+                <input className="input text-sm col-span-3 md:col-span-1" placeholder="Libellé de la période" value={newPeriodLabel} onChange={e => setNewPeriodLabel(e.target.value)} />
+                <input type="date" className="input text-sm" value={newPeriodStart} onChange={e => setNewPeriodStart(e.target.value)} />
+                <input type="date" className="input text-sm" value={newPeriodEnd} onChange={e => setNewPeriodEnd(e.target.value)} />
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="label">Libellé du compte *</label>
             <input
@@ -1568,63 +1653,203 @@ function ImportsList({ imports, onDelete }: ImportsListProps) {
   );
 }
 
+// ─── Periods Tab ──────────────────────────────────────────────────────────────
+
+interface PeriodsTabProps {
+  periods: AccountingPeriod[];
+  onPeriodsChange: () => void;
+  onGoToImport: () => void;
+  onGoToRules: () => void;
+}
+
+function PeriodsTab({ periods, onPeriodsChange, onGoToImport, onGoToRules }: PeriodsTabProps) {
+  const [editing, setEditing] = useState<AccountingPeriod | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ label: '', startDate: '', endDate: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const openNew = () => { setForm({ label: '', startDate: '', endDate: '' }); setEditing(null); setCreating(true); setError(null); };
+  const openEdit = (p: AccountingPeriod) => { setForm({ label: p.label, startDate: p.startDate, endDate: p.endDate }); setEditing(p); setCreating(true); setError(null); };
+  const closeForm = () => { setCreating(false); setEditing(null); setError(null); };
+
+  const handleSave = async () => {
+    if (!form.label.trim() || !form.startDate || !form.endDate) { setError('Tous les champs sont requis'); return; }
+    if (form.startDate >= form.endDate) { setError('La date de fin doit être postérieure à la date de début'); return; }
+    setSaving(true); setError(null);
+    try {
+      if (editing) {
+        await api.put(`/accounting/periods/${editing.id}`, form);
+      } else {
+        await api.post('/accounting/periods', form);
+      }
+      await onPeriodsChange();
+      closeForm();
+    } catch (e: unknown) {
+      setError((e as { message?: string }).message || 'Erreur');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (p: AccountingPeriod) => {
+    if (p.importCount > 0) return;
+    if (!confirm(`Supprimer la période "${p.label}" ?`)) return;
+    try {
+      await api.delete(`/accounting/periods/${p.id}`);
+      onPeriodsChange();
+    } catch (e: unknown) {
+      alert((e as { message?: string }).message || 'Erreur');
+    }
+  };
+
+  const fmtD = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR');
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-semibold text-gray-700">Périodes comptables</h2>
+        <div className="flex gap-2">
+          <button className="btn-secondary flex items-center gap-1.5 text-sm" onClick={onGoToRules}>
+            Règles de catégorisation
+          </button>
+          <button className="btn-secondary flex items-center gap-1.5 text-sm" onClick={onGoToImport}>
+            <Upload size={14} /> Importer un relevé
+          </button>
+          <button className="btn-primary flex items-center gap-1.5 text-sm" onClick={openNew}>
+            <Plus size={14} /> Nouvelle période
+          </button>
+        </div>
+      </div>
+
+      {/* Form */}
+      {creating && (
+        <div className="card mb-4">
+          <h3 className="font-semibold text-gray-800 mb-4">{editing ? 'Modifier la période' : 'Nouvelle période'}</h3>
+          {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div>
+              <label className="label">Libellé *</label>
+              <input className="input text-sm" value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="Ex : Exercice 2025-2026" autoFocus />
+            </div>
+            <div>
+              <label className="label">Date de début *</label>
+              <input type="date" className="input text-sm" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
+            </div>
+            <div>
+              <label className="label">Date de fin *</label>
+              <input type="date" className="input text-sm" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-secondary text-sm" onClick={closeForm}>Annuler</button>
+            <button className="btn-primary text-sm" onClick={handleSave} disabled={saving}>
+              {saving ? 'Enregistrement…' : editing ? 'Mettre à jour' : 'Créer'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Periods list */}
+      {periods.length === 0 ? (
+        <div className="card p-10 text-center text-gray-400 text-sm">
+          <Calendar size={32} className="mx-auto mb-3 opacity-30" />
+          Aucune période comptable. Créez votre première période pour organiser vos imports.
+        </div>
+      ) : (
+        <div className="card p-0 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
+                <th className="px-4 py-2.5">Période</th>
+                <th className="px-4 py-2.5">Du</th>
+                <th className="px-4 py-2.5">Au</th>
+                <th className="px-4 py-2.5 text-center">Imports</th>
+                <th className="px-4 py-2.5 w-20"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {periods.map(p => (
+                <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <td className="px-4 py-3 font-medium text-gray-800">{p.label}</td>
+                  <td className="px-4 py-3 text-gray-600">{fmtD(p.startDate)}</td>
+                  <td className="px-4 py-3 text-gray-600">{fmtD(p.endDate)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{p.importCount}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2 justify-end">
+                      <button className="text-gray-400 hover:text-tennis-green" onClick={() => openEdit(p)} title="Modifier"><Pencil size={14} /></button>
+                      <button
+                        className={`${p.importCount > 0 ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500'}`}
+                        onClick={() => handleDelete(p)}
+                        title={p.importCount > 0 ? 'Impossible de supprimer : imports rattachés' : 'Supprimer'}
+                        disabled={p.importCount > 0}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-type Tab = 'operations' | 'rules' | 'import';
+type Tab = 'periods' | 'operations' | 'rules' | 'import';
 
 export default function AccountingPage() {
-  const [tab, setTab] = useState<Tab>('operations');
+  const [tab, setTab] = useState<Tab>('periods');
   const [imports, setImports] = useState<BankImport[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
 
   const loadImports = useCallback(async () => {
-    try {
-      const data = await api.get<BankImport[]>('/accounting/imports');
-      setImports(data);
-    } catch {
-      // silent
-    }
+    try { setImports(await api.get<BankImport[]>('/accounting/imports')); } catch { /* silent */ }
   }, []);
 
   const loadCategories = useCallback(async () => {
-    try {
-      const data = await api.get<string[]>('/accounting/categories');
-      setCategories(data);
-    } catch {
-      // silent
-    }
+    try { setCategories(await api.get<string[]>('/accounting/categories')); } catch { /* silent */ }
+  }, []);
+
+  const loadPeriods = useCallback(async () => {
+    try { setPeriods(await api.get<AccountingPeriod[]>('/accounting/periods')); } catch { /* silent */ }
   }, []);
 
   useEffect(() => {
     loadImports();
     loadCategories();
-  }, [loadImports, loadCategories]);
+    loadPeriods();
+  }, [loadImports, loadCategories, loadPeriods]);
 
   const handleDeleteImport = async (id: string) => {
     if (!confirm('Supprimer cet import et toutes ses opérations ?')) return;
     try {
       await api.delete(`/accounting/imports/${id}`);
       setImports(prev => prev.filter(i => i.id !== id));
-      await loadCategories();
-    } catch {
-      // silent
-    }
+      await Promise.all([loadCategories(), loadPeriods()]);
+    } catch { /* silent */ }
   };
 
   const handleImportDone = async () => {
-    await loadImports();
-    await loadCategories();
+    await Promise.all([loadImports(), loadCategories(), loadPeriods()]);
   };
 
   const handleDeleteAllOps = async () => {
-    await loadImports();
-    await loadCategories();
+    await Promise.all([loadImports(), loadCategories()]);
   };
 
   const tabs: { key: Tab; label: string }[] = [
+    { key: 'periods',    label: 'Périodes' },
     { key: 'operations', label: 'Opérations' },
-    { key: 'rules', label: 'Règles' },
-    { key: 'import', label: 'Importer' },
+    { key: 'rules',      label: 'Règles' },
+    { key: 'import',     label: 'Importer' },
   ];
 
   return (
@@ -1651,10 +1876,20 @@ export default function AccountingPage() {
         ))}
       </div>
 
+      {tab === 'periods' && (
+        <PeriodsTab
+          periods={periods}
+          onPeriodsChange={loadPeriods}
+          onGoToImport={() => setTab('import')}
+          onGoToRules={() => setTab('rules')}
+        />
+      )}
+
       {tab === 'import' && (
         <>
           <ImportsList imports={imports} onDelete={handleDeleteImport} />
           <ImportTab
+            periods={periods}
             onImportDone={handleImportDone}
             onGoToOperations={() => setTab('operations')}
           />
@@ -1664,6 +1899,7 @@ export default function AccountingPage() {
       {tab === 'operations' && (
         <OperationsTab
           imports={imports}
+          periods={periods}
           categories={categories}
           onCategoriesChange={loadCategories}
           onDeleteAll={handleDeleteAllOps}

@@ -218,11 +218,23 @@ export interface AppNotification {
 
 // ─── Accounting ───────────────────────────────────────────────────────────────
 
-export interface BankImport {
+export interface AccountingPeriod {
   id: string;
   userId: string;
   label: string;
+  startDate: string;
+  endDate: string;
+  importCount: number;
+  createdAt: string;
+}
+
+export interface BankImport {
+  id: string;
+  userId: string;
+  periodId: string | null;
+  label: string;
   fileName: string;
+  storedFileName: string | null;
   importedAt: string;
   operationCount: number;
 }
@@ -234,6 +246,8 @@ export type CategorySource = 'manual' | 'rule' | 'none';
 export interface BankOperation {
   id: string;
   importId: string;
+  periodId: string | null;
+  periodLabel: string | null;
   operationDate: string;
   direction: OperationDirection;
   paymentMethod: PaymentMethod;
