@@ -598,9 +598,14 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
             Tout supprimer
           </button>
         </div>
-        {applyMsg && (
-          <p className="mt-2 text-sm text-tennis-green font-medium">{applyMsg}</p>
-        )}
+        <div className="flex items-center justify-between mt-2">
+          <span className="text-sm font-medium text-gray-600">
+            {displayedOps.length} / {totalOps} opération(s)
+          </span>
+          {applyMsg && (
+            <p className="text-sm text-tennis-green font-medium">{applyMsg}</p>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -738,11 +743,6 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
           </div>
         )}
       </div>
-      <p className="text-xs text-gray-400 mt-2 text-right">
-        {displayedOps.length !== totalOps
-          ? `${displayedOps.length} / ${totalOps} opération(s)`
-          : `${totalOps} opération(s)`}
-      </p>
 
       {ruleModalOp && (
         <CreateRuleFromOpModal
