@@ -3007,11 +3007,42 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
     const w = window.open('', '_blank');
     if (!w) return;
 
-    const groupRows = groups.map(g => {
+    const soldeSign = solde >= 0 ? '+' : '−';
+    const periodTitle = period.label.replace(/</g, '&lt;');
+    const periodSub = `Du ${fmtD(period.startDate)} au ${fmtD(period.endDate)} &nbsp;·&nbsp; ${operations.length} opération(s)`;
+    const cardsHtml = `
+  <div class="card"><div class="card-label">Crédits</div><div class="card-val credit">+${fmtAmt(totalCredit)}&nbsp;€</div></div>
+  <div class="card"><div class="card-label">Débits</div><div class="card-val debit">−${fmtAmt(totalDebit)}&nbsp;€</div></div>
+  <div class="card"><div class="card-label">Solde</div><div class="card-val ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}&nbsp;€</div></div>`;
+    const tableFooter = `
+  <tfoot>
+    <tr>
+      <td>Total</td>
+      <td class="text-center">${operations.length}</td>
+      <td class="text-right credit">+${fmtAmt(totalCredit)}</td>
+      <td class="text-right debit">−${fmtAmt(totalDebit)}</td>
+      <td class="text-right ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}</td>
+    </tr>
+  </tfoot>`;
+
+    // ── Chapitre 1 : résumé par catégorie (sans le détail des opérations) ──────
+    const summaryRows = groups.map(g => {
+      const s = g.totalCredit - g.totalDebit;
+      return `
+        <tr class="group-row">
+          <td><strong>${g.category.replace(/</g, '&lt;')}</strong></td>
+          <td class="text-center">${g.ops.length}</td>
+          <td class="text-right credit">${g.totalCredit > 0 ? '+' + fmtAmt(g.totalCredit) : '—'}</td>
+          <td class="text-right debit">${g.totalDebit  > 0 ? '−' + fmtAmt(g.totalDebit)  : '—'}</td>
+          <td class="text-right ${s >= 0 ? 'credit' : 'debit'}">${s >= 0 ? '+' : '−'}${fmtAmt(Math.abs(s))}</td>
+        </tr>`;
+    }).join('');
+
+    // ── Chapitre 2 : détail complet (catégorie + opérations) ──────────────────
+    const detailRows = groups.map(g => {
       const s = g.totalCredit - g.totalDebit;
       const opsHtml = g.ops.map(op => `
         <tr class="op-row">
-          <td></td>
           <td class="pl-8 text-muted">${fmtD(op.operationDate)}&nbsp;— ${(op.thirdParty || op.rawLabel || '—').replace(/</g, '&lt;')}</td>
           <td class="text-center text-muted">${PAYMENT_METHOD_LABELS[op.paymentMethod]}</td>
           <td class="text-right ${op.direction === 'credit' ? 'credit' : ''}">${op.direction === 'credit' ? '+' + fmtAmt(op.amount) : ''}</td>
@@ -3020,7 +3051,6 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
         </tr>`).join('');
       return `
         <tr class="group-row">
-          <td></td>
           <td><strong>${g.category.replace(/</g, '&lt;')}</strong></td>
           <td class="text-center">${g.ops.length}</td>
           <td class="text-right credit">${g.totalCredit > 0 ? '+' + fmtAmt(g.totalCredit) : '—'}</td>
@@ -3030,18 +3060,19 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
         ${opsHtml}`;
     }).join('');
 
-    const soldeSign = solde >= 0 ? '+' : '−';
-
     w.document.write(`<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>${period.label}</title>
+<title>${periodTitle}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; padding: 20px; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; }
+  .chapter { padding: 20px; }
   h1 { font-size: 15px; margin-bottom: 2px; }
-  .sub { font-size: 10px; color: #666; margin-bottom: 16px; }
+  h2 { font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 10px;
+       padding-bottom: 5px; border-bottom: 2px solid #e5e7eb; }
+  .sub { font-size: 10px; color: #666; margin-bottom: 14px; }
   .cards { display: flex; gap: 12px; margin-bottom: 16px; }
   .card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 12px; flex: 1; }
   .card-label { font-size: 9px; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
@@ -3049,8 +3080,8 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
   table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
   th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: #6b7280;
        padding: 5px 8px; border-bottom: 2px solid #e5e7eb; background: #f9fafb; }
-  .group-row td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; background: #fff; }
-  .op-row td { padding: 3px 8px; border-bottom: 1px solid #f3f4f6; background: #fafafa; color: #374151; }
+  .group-row td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; background: #fff; font-weight: 600; }
+  .op-row td { padding: 3px 8px; border-bottom: 1px solid #f3f4f6; background: #fafafa; font-weight: normal; }
   tfoot td { padding: 7px 8px; border-top: 2px solid #d1d5db; background: #f3f4f6; font-weight: 700; font-size: 11px; }
   .text-right { text-align: right; }
   .text-center { text-align: center; }
@@ -3060,41 +3091,54 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
   .debit  { color: #dc2626; }
   @media print {
     @page { margin: 15mm; size: A4; }
-    body { padding: 0; }
+    .chapter { padding: 0; }
+    .page-break { page-break-before: always; }
   }
 </style>
 </head>
 <body>
-<h1>${period.label.replace(/</g, '&lt;')}</h1>
-<p class="sub">Du ${fmtD(period.startDate)} au ${fmtD(period.endDate)} &nbsp;·&nbsp; ${operations.length} opération(s)</p>
-<div class="cards">
-  <div class="card"><div class="card-label">Crédits</div><div class="card-val credit">+${fmtAmt(totalCredit)}&nbsp;€</div></div>
-  <div class="card"><div class="card-label">Débits</div><div class="card-val debit">−${fmtAmt(totalDebit)}&nbsp;€</div></div>
-  <div class="card"><div class="card-label">Solde</div><div class="card-val ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}&nbsp;€</div></div>
+
+<!-- ═══ Chapitre 1 : Résumé par catégorie ═══ -->
+<div class="chapter">
+  <h1>${periodTitle}</h1>
+  <p class="sub">${periodSub}</p>
+  <div class="cards">${cardsHtml}</div>
+  <h2>Résumé par ${groupLabel.toLowerCase()}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>${groupLabel}</th>
+        <th class="text-center">Opérations</th>
+        <th class="text-right" style="color:#16a34a">Crédits (€)</th>
+        <th class="text-right" style="color:#dc2626">Débits (€)</th>
+        <th class="text-right">Solde (€)</th>
+      </tr>
+    </thead>
+    <tbody>${summaryRows}</tbody>
+    ${tableFooter}
+  </table>
 </div>
-<table>
-  <thead>
-    <tr>
-      <th style="width:20px"></th>
-      <th>${groupLabel}</th>
-      <th class="text-center">Opérations</th>
-      <th class="text-right" style="color:#16a34a">Crédits (€)</th>
-      <th class="text-right" style="color:#dc2626">Débits (€)</th>
-      <th class="text-right">Solde (€)</th>
-    </tr>
-  </thead>
-  <tbody>${groupRows}</tbody>
-  <tfoot>
-    <tr>
-      <td></td>
-      <td>Total</td>
-      <td class="text-center">${operations.length}</td>
-      <td class="text-right credit">+${fmtAmt(totalCredit)}</td>
-      <td class="text-right debit">−${fmtAmt(totalDebit)}</td>
-      <td class="text-right ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}</td>
-    </tr>
-  </tfoot>
-</table>
+
+<!-- ═══ Chapitre 2 : Détail des opérations ═══ -->
+<div class="chapter page-break">
+  <h1>${periodTitle}</h1>
+  <p class="sub">${periodSub}</p>
+  <h2>Détail des opérations par ${groupLabel.toLowerCase()}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>${groupLabel}</th>
+        <th class="text-center">Opérations</th>
+        <th class="text-right" style="color:#16a34a">Crédits (€)</th>
+        <th class="text-right" style="color:#dc2626">Débits (€)</th>
+        <th class="text-right">Solde (€)</th>
+      </tr>
+    </thead>
+    <tbody>${detailRows}</tbody>
+    ${tableFooter}
+  </table>
+</div>
+
 <script>window.onload = () => { window.print(); }<\/script>
 </body></html>`);
     w.document.close();
