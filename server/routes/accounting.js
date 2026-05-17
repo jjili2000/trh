@@ -295,20 +295,19 @@ router.post('/import/parse-file', async (req, res) => {
     let rawRows;
 
     if (ext === 'xlsx' || ext === 'xls') {
-      // Parsing Excel avec exceljs
-      const ExcelJS = require('exceljs');
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(buffer);
-      const ws = workbook.worksheets[0];
-      rawRows = [];
-      ws.eachRow(row => {
-        rawRows.push(row.values.slice(1).map(v => {
+      // Parsing Excel avec SheetJS (supporte .xls BIFF et .xlsx)
+      const XLSX = require('xlsx');
+      const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+      const sheetName = workbook.SheetNames[0];
+      const ws = workbook.Sheets[sheetName];
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      rawRows = aoa.map(row =>
+        row.map(v => {
           if (v == null) return '';
           if (v instanceof Date) return v.toISOString().slice(0, 10);
-          if (typeof v === 'object' && v.text) return String(v.text);
           return String(v);
-        }));
-      });
+        })
+      ).filter(row => row.some(c => c !== ''));
     } else {
       // Parsing CSV / TXT
       const text = buffer.toString('utf8').replace(/^﻿/, ''); // strip BOM
