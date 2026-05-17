@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Pencil,
   Trash2,
@@ -18,6 +19,8 @@ import {
   ExternalLink,
   FlaskConical,
   GitMerge,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 import { api, getToken } from '../../api/client';
 import {
@@ -2949,6 +2952,153 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
     setExpanded(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n; });
 
   const fmtD = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR');
+  const fmtAmt = (n: number) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const groupLabel = sortMode === 'thirdParty' ? 'Tiers' : 'Catégorie';
+
+  // ── Export XLSX ──────────────────────────────────────────────────────────────
+  const handleExportXlsx = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Feuille 1 : Résumé par catégorie/tiers
+    const summaryRows: (string | number)[][] = [
+      [`Période : ${period.label}`],
+      [`Du ${fmtD(period.startDate)} au ${fmtD(period.endDate)}`],
+      [],
+      [groupLabel, 'Nb opérations', 'Crédits (€)', 'Débits (€)', 'Solde (€)'],
+      ...groups.map(g => [
+        g.category,
+        g.ops.length,
+        g.totalCredit,
+        g.totalDebit,
+        g.totalCredit - g.totalDebit,
+      ]),
+      [],
+      ['TOTAL', operations.length, totalCredit, totalDebit, solde],
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+    // Largeurs de colonnes
+    ws1['!cols'] = [{ wch: 36 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Résumé');
+
+    // Feuille 2 : Détail des opérations (triées par date)
+    const detailRows: (string | number)[][] = [
+      ['Date', 'Tiers', 'Mode de paiement', 'Catégorie', 'Crédit (€)', 'Débit (€)'],
+      ...[...operations]
+        .sort((a, b) => a.operationDate.localeCompare(b.operationDate))
+        .map(op => [
+          op.operationDate,
+          op.thirdParty || op.rawLabel || '',
+          PAYMENT_METHOD_LABELS[op.paymentMethod],
+          op.category || '',
+          op.direction === 'credit' ? op.amount : '',
+          op.direction === 'debit'  ? op.amount : '',
+        ]),
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(detailRows);
+    ws2['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 18 }, { wch: 24 }, { wch: 14 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Opérations');
+
+    const safeName = period.label.replace(/[/\\?*[\]]/g, '_');
+    XLSX.writeFile(wb, `${safeName}.xlsx`);
+  };
+
+  // ── Export PDF (impression) ──────────────────────────────────────────────────
+  const handleExportPdf = () => {
+    const w = window.open('', '_blank');
+    if (!w) return;
+
+    const groupRows = groups.map(g => {
+      const s = g.totalCredit - g.totalDebit;
+      const opsHtml = g.ops.map(op => `
+        <tr class="op-row">
+          <td></td>
+          <td class="pl-8 text-muted">${fmtD(op.operationDate)}&nbsp;— ${(op.thirdParty || op.rawLabel || '—').replace(/</g, '&lt;')}</td>
+          <td class="text-center text-muted">${PAYMENT_METHOD_LABELS[op.paymentMethod]}</td>
+          <td class="text-right ${op.direction === 'credit' ? 'credit' : ''}">${op.direction === 'credit' ? '+' + fmtAmt(op.amount) : ''}</td>
+          <td class="text-right ${op.direction === 'debit'  ? 'debit'  : ''}">${op.direction === 'debit'  ? '−' + fmtAmt(op.amount) : ''}</td>
+          <td></td>
+        </tr>`).join('');
+      return `
+        <tr class="group-row">
+          <td></td>
+          <td><strong>${g.category.replace(/</g, '&lt;')}</strong></td>
+          <td class="text-center">${g.ops.length}</td>
+          <td class="text-right credit">${g.totalCredit > 0 ? '+' + fmtAmt(g.totalCredit) : '—'}</td>
+          <td class="text-right debit">${g.totalDebit  > 0 ? '−' + fmtAmt(g.totalDebit)  : '—'}</td>
+          <td class="text-right ${s >= 0 ? 'credit' : 'debit'}">${s >= 0 ? '+' : '−'}${fmtAmt(Math.abs(s))}</td>
+        </tr>
+        ${opsHtml}`;
+    }).join('');
+
+    const soldeSign = solde >= 0 ? '+' : '−';
+
+    w.document.write(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>${period.label}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; padding: 20px; }
+  h1 { font-size: 15px; margin-bottom: 2px; }
+  .sub { font-size: 10px; color: #666; margin-bottom: 16px; }
+  .cards { display: flex; gap: 12px; margin-bottom: 16px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 12px; flex: 1; }
+  .card-label { font-size: 9px; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
+  .card-val { font-size: 14px; font-weight: 700; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: #6b7280;
+       padding: 5px 8px; border-bottom: 2px solid #e5e7eb; background: #f9fafb; }
+  .group-row td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; background: #fff; }
+  .op-row td { padding: 3px 8px; border-bottom: 1px solid #f3f4f6; background: #fafafa; color: #374151; }
+  tfoot td { padding: 7px 8px; border-top: 2px solid #d1d5db; background: #f3f4f6; font-weight: 700; font-size: 11px; }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .text-muted { color: #6b7280; }
+  .pl-8 { padding-left: 24px; }
+  .credit { color: #16a34a; }
+  .debit  { color: #dc2626; }
+  @media print {
+    @page { margin: 15mm; size: A4; }
+    body { padding: 0; }
+  }
+</style>
+</head>
+<body>
+<h1>${period.label.replace(/</g, '&lt;')}</h1>
+<p class="sub">Du ${fmtD(period.startDate)} au ${fmtD(period.endDate)} &nbsp;·&nbsp; ${operations.length} opération(s)</p>
+<div class="cards">
+  <div class="card"><div class="card-label">Crédits</div><div class="card-val credit">+${fmtAmt(totalCredit)}&nbsp;€</div></div>
+  <div class="card"><div class="card-label">Débits</div><div class="card-val debit">−${fmtAmt(totalDebit)}&nbsp;€</div></div>
+  <div class="card"><div class="card-label">Solde</div><div class="card-val ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}&nbsp;€</div></div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th style="width:20px"></th>
+      <th>${groupLabel}</th>
+      <th class="text-center">Opérations</th>
+      <th class="text-right" style="color:#16a34a">Crédits (€)</th>
+      <th class="text-right" style="color:#dc2626">Débits (€)</th>
+      <th class="text-right">Solde (€)</th>
+    </tr>
+  </thead>
+  <tbody>${groupRows}</tbody>
+  <tfoot>
+    <tr>
+      <td></td>
+      <td>Total</td>
+      <td class="text-center">${operations.length}</td>
+      <td class="text-right credit">+${fmtAmt(totalCredit)}</td>
+      <td class="text-right debit">−${fmtAmt(totalDebit)}</td>
+      <td class="text-right ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}</td>
+    </tr>
+  </tfoot>
+</table>
+<script>window.onload = () => { window.print(); }<\/script>
+</body></html>`);
+    w.document.close();
+  };
 
   // Pour l'affichage en mode "par sens", insérer des séparateurs de section
   type Row = { type: 'group'; g: CategoryGroup } | { type: 'header'; label: string };
@@ -2987,8 +3137,28 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
           <p className="text-xs text-gray-400">{fmtD(period.startDate)} – {fmtD(period.endDate)}</p>
         </div>
 
+        {/* Boutons export */}
+        {!loading && operations.length > 0 && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-green-400 hover:text-green-700 transition-colors"
+              onClick={handleExportXlsx}
+              title="Exporter en Excel (.xlsx)"
+            >
+              <FileSpreadsheet size={13} /> Excel
+            </button>
+            <button
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-red-400 hover:text-red-600 transition-colors"
+              onClick={handleExportPdf}
+              title="Imprimer / exporter en PDF"
+            >
+              <FileText size={13} /> PDF
+            </button>
+          </div>
+        )}
+
         {/* Tri */}
-        <div className="ml-auto flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+        <div className={`${!loading && operations.length > 0 ? '' : 'ml-auto'} flex items-center gap-1 bg-gray-100 rounded-lg p-0.5`}>
           {([['category', 'Catégories'], ['direction', 'Par sens'], ['thirdParty', 'Par tiers']] as [PeriodSortMode, string][]).map(([mode, label]) => (
             <button
               key={mode}
