@@ -801,18 +801,35 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [savingName, setSavingName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [savedFilterOpen, setSavedFilterOpen] = useState(false);
-  const [appliedSavedFilterId, setAppliedSavedFilterId] = useState<string | null>(null);
   const savedFilterRef = useRef<HTMLDivElement>(null);
 
-  // Filters
-  const [filterPeriod, setFilterPeriod] = useState('');
-  const [filterImport, setFilterImport] = useState('');
-  const [filterDirection, setFilterDirection] = useState('');
-  const [filterMethod, setFilterMethod] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterSearch, setFilterSearch] = useState('');
-  const [filterAmountMin, setFilterAmountMin] = useState('');
-  const [filterAmountMax, setFilterAmountMax] = useState('');
+  // Persistence des filtres dans localStorage
+  const LS_FILTER_KEY = 'accounting_ops_filters';
+  const _ls = (() => {
+    try { return JSON.parse(localStorage.getItem(LS_FILTER_KEY) || 'null'); } catch { return null; }
+  })();
+
+  // Filters — initialisés depuis localStorage si disponible
+  const [filterPeriod,    setFilterPeriod]    = useState<string>(_ls?.filterPeriod    || '');
+  const [filterImport,    setFilterImport]    = useState<string>(_ls?.filterImport    || '');
+  const [filterDirection, setFilterDirection] = useState<string>(_ls?.filterDirection || '');
+  const [filterMethod,    setFilterMethod]    = useState<string>(_ls?.filterMethod    || '');
+  const [filterCategory,  setFilterCategory]  = useState<string>(_ls?.filterCategory  || '');
+  const [filterSearch,    setFilterSearch]    = useState<string>(_ls?.filterSearch    || '');
+  const [filterAmountMin, setFilterAmountMin] = useState<string>(_ls?.filterAmountMin || '');
+  const [filterAmountMax, setFilterAmountMax] = useState<string>(_ls?.filterAmountMax || '');
+  const [appliedSavedFilterId, setAppliedSavedFilterId] = useState<string | null>(_ls?.appliedSavedFilterId || null);
+
+  // Persister les filtres dans localStorage à chaque changement
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_FILTER_KEY, JSON.stringify({
+        filterPeriod, filterImport, filterDirection, filterMethod,
+        filterCategory, filterSearch, filterAmountMin, filterAmountMax,
+        appliedSavedFilterId,
+      }));
+    } catch { /* silent */ }
+  }, [filterPeriod, filterImport, filterDirection, filterMethod, filterCategory, filterSearch, filterAmountMin, filterAmountMax, appliedSavedFilterId]);
 
   const load = useCallback(async () => {
     setLoading(true);
