@@ -53,7 +53,8 @@ router.get('/calendar-suggestions', async (req, res) => {
          DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) AS actual_date,
          tc.label,
          tc.start_time,
-         tc.end_time
+         tc.end_time,
+         tc.course_type
        FROM season_week_assignments swa
        JOIN template_courses tc ON tc.template_week_id = swa.template_week_id
        JOIN seasons s ON s.id = swa.season_id
@@ -91,6 +92,7 @@ router.get('/calendar-suggestions', async (req, res) => {
         label: row.label,
         startTime: row.start_time,
         endTime: row.end_time,
+        courseType: row.course_type || null,
       });
     }
 
@@ -111,11 +113,16 @@ router.get('/calendar-suggestions', async (req, res) => {
       });
       const dayLabel = label.charAt(0).toUpperCase() + label.slice(1);
 
+      // courseType dominant du jour : le premier non-null (les cours d'une même journée
+      // ont généralement le même type ; sinon on laisse l'utilisateur choisir)
+      const dominantCourseType = (entry.courses.find(c => c.courseType)?.courseType) || null;
+
       result.push({
         date: dateStr,
         dayLabel,
-        courses: entry.courses.map(c => ({ label: c.label, startTime: c.startTime, endTime: c.endTime })),
+        courses: entry.courses.map(c => ({ label: c.label, startTime: c.startTime, endTime: c.endTime, courseType: c.courseType || null })),
         totalHours,
+        courseType: dominantCourseType,
       });
     }
 

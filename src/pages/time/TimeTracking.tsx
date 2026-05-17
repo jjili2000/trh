@@ -674,14 +674,15 @@ export default function TimeTracking() {
 interface CalendarSuggestion {
   date: string;
   dayLabel: string;
-  courses: { label: string; startTime: string; endTime: string }[];
+  courses: { label: string; startTime: string; endTime: string; courseType?: string | null }[];
   totalHours: number;
+  courseType?: string | null;
 }
 
 interface CalendarRow {
   date: string;
   dayLabel: string;
-  courses: { label: string; startTime: string; endTime: string }[];
+  courses: { label: string; startTime: string; endTime: string; courseType?: string | null }[];
   hours: string;
   activityTypeId: string;
   included: boolean;
@@ -708,14 +709,20 @@ function CalendarEntryModal({
     const load = async () => {
       try {
         const suggestions = await api.get<CalendarSuggestion[]>('/time-entries/calendar-suggestions');
-        setRows(suggestions.map(s => ({
-          date: s.date,
-          dayLabel: s.dayLabel,
-          courses: s.courses,
-          hours: String(s.totalHours),
-          activityTypeId: '',
-          included: true,
-        })));
+        setRows(suggestions.map(s => {
+          // Cherche le type d'activité par correspondance de nom (insensible à la casse)
+          const matched = s.courseType
+            ? activityTypes.find(at => at.name.trim().toLowerCase() === s.courseType!.trim().toLowerCase())
+            : null;
+          return {
+            date: s.date,
+            dayLabel: s.dayLabel,
+            courses: s.courses,
+            hours: String(s.totalHours),
+            activityTypeId: matched?.id ?? '',
+            included: true,
+          };
+        }));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erreur lors du chargement des suggestions');
       } finally {
@@ -723,7 +730,7 @@ function CalendarEntryModal({
       }
     };
     load();
-  }, []);
+  }, [activityTypes]);
 
   const includedRows = rows.filter(r => r.included);
   const totalIncludedHours = includedRows.reduce((sum, r) => sum + (parseFloat(r.hours) || 0), 0);
