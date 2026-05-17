@@ -694,12 +694,23 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
             ))}
           </select>
 
-          <input
-            className="input text-sm py-1.5 flex-1 min-w-[140px]"
-            placeholder="Rechercher…"
-            value={filterSearch}
-            onChange={e => setFilterSearch(e.target.value)}
-          />
+          <div className="relative flex-1 min-w-[140px]">
+            <input
+              className="input text-sm py-1.5 w-full pr-7"
+              placeholder="Tiers / libellé"
+              value={filterSearch}
+              onChange={e => setFilterSearch(e.target.value)}
+            />
+            {filterSearch && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors"
+                onClick={() => setFilterSearch('')}
+                tabIndex={-1}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
 
           <button
             className="btn-secondary flex items-center gap-1.5 text-sm"
