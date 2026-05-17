@@ -925,7 +925,7 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
                   </th>
                   {([
                     { col: 'date',          label: 'Date',          cls: '' },
-                    { col: null,            label: 'Compte',        cls: '' },
+                    { col: null,            label: 'Import',        cls: '' },
                     { col: 'direction',     label: 'Sens',          cls: '' },
                     { col: 'paymentMethod', label: 'Mode',          cls: '' },
                     { col: 'amount',        label: 'Montant',       cls: 'text-right' },
