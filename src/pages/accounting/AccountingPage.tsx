@@ -555,9 +555,10 @@ interface TestRuleModalProps {
   op: BankOperation;
   onClose: () => void;
   onApply: (category: string) => void;
+  onEditRule: (rule: AccountingRule) => void;
 }
 
-function TestRuleModal({ op, onClose, onApply }: TestRuleModalProps) {
+function TestRuleModal({ op, onClose, onApply, onEditRule }: TestRuleModalProps) {
   const [rules, setRules]               = useState<AccountingRule[]>([]);
   const [selectedRuleId, setSelectedRuleId] = useState('');
   const [applying, setApplying]         = useState(false);
@@ -644,15 +645,26 @@ function TestRuleModal({ op, onClose, onApply }: TestRuleModalProps) {
             {rules.length === 0 ? (
               <p className="text-sm text-gray-400">Chargement…</p>
             ) : (
-              <select
-                className="input text-sm"
-                value={selectedRuleId}
-                onChange={e => setSelectedRuleId(e.target.value)}
-              >
-                {rules.map(r => (
-                  <option key={r.id} value={r.id}>{r.label} → {r.category}</option>
-                ))}
-              </select>
+              <div className="flex gap-2 items-center">
+                <select
+                  className="input text-sm flex-1"
+                  value={selectedRuleId}
+                  onChange={e => setSelectedRuleId(e.target.value)}
+                >
+                  {rules.map(r => (
+                    <option key={r.id} value={r.id}>{r.label} → {r.category}</option>
+                  ))}
+                </select>
+                {selectedRule && (
+                  <button
+                    className="flex-shrink-0 p-2 rounded-lg border border-gray-200 text-gray-400 hover:text-blue-500 hover:border-blue-300 transition-colors"
+                    title="Modifier cette règle"
+                    onClick={() => onEditRule(selectedRule)}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -766,9 +778,10 @@ interface OperationsTabProps {
   categories: string[];
   onCategoriesChange: () => void;
   onDeleteAll: () => void;
+  onGoToEditRule: (rule: AccountingRule) => void;
 }
 
-function OperationsTab({ imports, periods, categories, onCategoriesChange, onDeleteAll }: OperationsTabProps) {
+function OperationsTab({ imports, periods, categories, onCategoriesChange, onDeleteAll, onGoToEditRule }: OperationsTabProps) {
   const [operations, setOperations] = useState<BankOperation[]>([]);
   const [loading, setLoading] = useState(false);
   const [applyingRules, setApplyingRules] = useState(false);
@@ -1467,6 +1480,10 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
             await handleSaveCategory(testRuleOp.id, category);
             setTestRuleOp(null);
           }}
+          onEditRule={rule => {
+            setTestRuleOp(null);
+            onGoToEditRule(rule);
+          }}
         />
       )}
     </div>
@@ -1478,6 +1495,8 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
 interface RulesTabProps {
   categories: string[];
   onCategoriesChange: () => void;
+  openEditRule?: AccountingRule | null;
+  onEditRuleHandled?: () => void;
 }
 
 const emptyCondition = (): RuleCondition => ({ field: 'rawLabel', operator: 'contains', value: '' });
@@ -1510,7 +1529,7 @@ const emptyRuleForm = (): RuleFormState => ({
   groups: [emptyGroup()],
 });
 
-function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
+function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHandled }: RulesTabProps) {
   const [rules, setRules] = useState<AccountingRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingRule, setEditingRule] = useState<AccountingRule | null>(null);
@@ -1566,6 +1585,15 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Ouverture automatique de l'éditeur si demandé depuis une autre vue
+  useEffect(() => {
+    if (openEditRule) {
+      openEdit(openEditRule);
+      onEditRuleHandled?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openEditRule]);
 
   useEffect(() => {
     if (catInput.trim()) {
@@ -2749,6 +2777,7 @@ type Tab = 'periods' | 'operations' | 'rules' | 'import';
 
 export default function AccountingPage() {
   const [tab, setTab] = useState<Tab>('periods');
+  const [pendingEditRule, setPendingEditRule] = useState<AccountingRule | null>(null);
   const [imports, setImports] = useState<BankImport[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
@@ -2847,6 +2876,10 @@ export default function AccountingPage() {
           categories={categories}
           onCategoriesChange={loadCategories}
           onDeleteAll={handleDeleteAllOps}
+          onGoToEditRule={rule => {
+            setPendingEditRule(rule);
+            setTab('rules');
+          }}
         />
       )}
 
@@ -2854,6 +2887,8 @@ export default function AccountingPage() {
         <RulesTab
           categories={categories}
           onCategoriesChange={loadCategories}
+          openEditRule={pendingEditRule}
+          onEditRuleHandled={() => setPendingEditRule(null)}
         />
       )}
     </div>
