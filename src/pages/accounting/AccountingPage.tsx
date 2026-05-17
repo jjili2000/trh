@@ -15,6 +15,7 @@ import {
   ChevronsUpDown,
   Download,
   ExternalLink,
+  FlaskConical,
 } from 'lucide-react';
 import { api, getToken } from '../../api/client';
 import {
@@ -100,6 +101,45 @@ function fmtCurrency(n: number) {
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+// Réplique côté client de la logique testCondition du serveur
+function testConditionClient(op: BankOperation, cond: RuleCondition): boolean {
+  const fieldVal = op[cond.field as keyof BankOperation];
+  if (cond.field === 'amount') {
+    const numVal  = parseFloat(String(fieldVal ?? ''));
+    const numCond = parseFloat(cond.value);
+    if (isNaN(numVal) || isNaN(numCond)) return false;
+    switch (cond.operator) {
+      case 'equals':             return numVal === numCond;
+      case 'greaterThan':        return numVal >   numCond;
+      case 'lessThan':           return numVal <   numCond;
+      case 'greaterThanOrEqual': return numVal >=  numCond;
+      case 'lessThanOrEqual':    return numVal <=  numCond;
+      default: return false;
+    }
+  }
+  if (fieldVal === null || fieldVal === undefined) return cond.operator === 'notContains';
+  const a = String(fieldVal).toLowerCase();
+  const b = cond.value.toLowerCase();
+  switch (cond.operator) {
+    case 'contains':    return a.includes(b);
+    case 'equals':      return a === b;
+    case 'startsWith':  return a.startsWith(b);
+    case 'endsWith':    return a.endsWith(b);
+    case 'notContains': return !a.includes(b);
+    default: return false;
+  }
+}
+
+// Valeur lisible du champ d'une opération (pour affichage dans le test)
+function getFieldDisplay(op: BankOperation, field: string): string {
+  const val = op[field as keyof BankOperation];
+  if (val === null || val === undefined || val === '') return '(vide)';
+  if (field === 'direction')     return val === 'credit' ? 'Crédit' : 'Débit';
+  if (field === 'paymentMethod') return PAYMENT_METHOD_LABELS[val as PaymentMethod] ?? String(val);
+  if (field === 'amount')        return fmtCurrency(Number(val));
+  return String(val);
 }
 
 // ─── Category Popover ─────────────────────────────────────────────────────────
@@ -460,6 +500,183 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
   );
 }
 
+// ─── Test Rule Modal ──────────────────────────────────────────────────────────
+
+interface TestRuleModalProps {
+  op: BankOperation;
+  onClose: () => void;
+  onApply: (category: string) => void;
+}
+
+function TestRuleModal({ op, onClose, onApply }: TestRuleModalProps) {
+  const [rules, setRules]               = useState<AccountingRule[]>([]);
+  const [selectedRuleId, setSelectedRuleId] = useState('');
+  const [applying, setApplying]         = useState(false);
+
+  useEffect(() => {
+    api.get<AccountingRule[]>('/accounting/rules').then(data => {
+      setRules(data);
+      if (data.length > 0) setSelectedRuleId(data[0].id);
+    }).catch(() => {});
+  }, []);
+
+  const selectedRule = rules.find(r => r.id === selectedRuleId);
+
+  const condResults = (selectedRule?.conditions ?? []).map(cond => ({
+    cond,
+    passed: testConditionClient(op, cond),
+    actual: getFieldDisplay(op, cond.field),
+  }));
+
+  const ruleMatches = selectedRule && condResults.length > 0
+    ? (selectedRule.conditionOperator === 'OR'
+        ? condResults.some(r => r.passed)
+        : condResults.every(r => r.passed))
+    : false;
+
+  const handleApply = async () => {
+    if (!selectedRule || !ruleMatches) return;
+    setApplying(true);
+    try { await onApply(selectedRule.category); }
+    finally { setApplying(false); }
+  };
+
+  // Libellé lisible d'une valeur de condition (enum → label)
+  const condValueLabel = (cond: RuleCondition): string => {
+    const enumVals = ENUM_FIELD_VALUES[cond.field as RuleField];
+    if (enumVals) return enumVals.find(v => v.value === cond.value)?.label ?? cond.value;
+    if (cond.field === 'amount') return `${cond.value} €`;
+    return cond.value;
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+
+        {/* En-tête */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <FlaskConical size={17} className="text-indigo-500" />
+            <h2 className="font-semibold text-gray-800">Tester une règle</h2>
+          </div>
+          <button className="text-gray-400 hover:text-gray-600" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        {/* Résumé opération */}
+        <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm space-y-0.5 min-w-0">
+              <p className="text-gray-400 text-xs">{fmtDate(op.operationDate)}</p>
+              {op.thirdParty && <p className="font-medium text-gray-800 truncate">{op.thirdParty}</p>}
+              {op.rawLabel  && <p className="text-xs text-gray-400 truncate" title={op.rawLabel}>{op.rawLabel}</p>}
+            </div>
+            <span className={`text-sm font-bold whitespace-nowrap px-2.5 py-1 rounded-full flex-shrink-0 ${
+              op.direction === 'credit' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'
+            }`}>
+              {op.direction === 'credit' ? '+' : '−'}{fmtCurrency(op.amount)}
+            </span>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+          {/* Sélecteur de règle */}
+          <div>
+            <label className="label">Règle à tester</label>
+            {rules.length === 0 ? (
+              <p className="text-sm text-gray-400">Chargement…</p>
+            ) : (
+              <select
+                className="input text-sm"
+                value={selectedRuleId}
+                onChange={e => setSelectedRuleId(e.target.value)}
+              >
+                {rules.map(r => (
+                  <option key={r.id} value={r.id}>{r.label} → {r.category}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Résultats des conditions */}
+          {selectedRule && condResults.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="label mb-0">Conditions</label>
+                <span className="text-xs text-gray-400">
+                  {selectedRule.conditionOperator === 'AND' ? 'Toutes requises (ET)' : 'Au moins une (OU)'}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {condResults.map((r, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex items-start gap-3 rounded-lg px-3 py-2.5 text-sm border ${
+                      r.passed
+                        ? 'bg-green-50 border-green-200'
+                        : 'bg-red-50 border-red-200'
+                    }`}
+                  >
+                    <span className={`flex-shrink-0 mt-0.5 ${r.passed ? 'text-green-600' : 'text-red-500'}`}>
+                      {r.passed ? <Check size={15} /> : <X size={15} />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className={`font-medium ${r.passed ? 'text-green-800' : 'text-red-700'}`}>
+                        {FIELD_LABELS[r.cond.field as RuleField] ?? r.cond.field}
+                        {' '}<span className="font-normal opacity-75">{OPERATOR_LABELS[r.cond.operator]}</span>
+                        {' '}<span className="font-semibold">«&nbsp;{condValueLabel(r.cond)}&nbsp;»</span>
+                      </p>
+                      <p className="text-xs mt-0.5 opacity-70">
+                        Valeur réelle&nbsp;: <span className="font-medium">{r.actual}</span>
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Résultat global */}
+          {selectedRule && condResults.length > 0 && (
+            <div className={`flex items-center gap-3 rounded-lg px-4 py-3 border ${
+              ruleMatches
+                ? 'bg-green-100 border-green-300 text-green-800'
+                : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              {ruleMatches
+                ? <Check size={18} className="flex-shrink-0" />
+                : <X size={18} className="flex-shrink-0" />}
+              <p className="font-semibold text-sm">
+                {ruleMatches
+                  ? `La règle s'applique → catégorie « ${selectedRule.category} »`
+                  : 'La règle ne s\'applique pas à cette opération'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 px-5 py-4 border-t border-gray-100 flex-shrink-0">
+          <button className="btn-secondary flex-1" onClick={onClose}>Fermer</button>
+          {ruleMatches && (
+            <button
+              className="btn-primary flex-1 flex items-center justify-center gap-2"
+              onClick={handleApply}
+              disabled={applying}
+            >
+              <Check size={15} />
+              {applying ? 'Application…' : 'Appliquer la catégorie'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Operations Tab ───────────────────────────────────────────────────────────
 
 interface OperationsTabProps {
@@ -476,7 +693,8 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [applyingRules, setApplyingRules] = useState(false);
   const [applyMsg, setApplyMsg] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
-  const [ruleModalOp, setRuleModalOp] = useState<BankOperation | null>(null);
+  const [ruleModalOp, setRuleModalOp]   = useState<BankOperation | null>(null);
+  const [testRuleOp,  setTestRuleOp]    = useState<BankOperation | null>(null);
 
   // Multi-selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1126,13 +1344,22 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
                       </div>
                     </td>
                     <td className="px-2 py-2">
-                      <button
-                        className="text-gray-300 hover:text-tennis-green transition-colors"
-                        title="Créer une règle depuis cette opération"
-                        onClick={() => setRuleModalOp(op)}
-                      >
-                        <Wand2 size={14} />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          className="text-gray-300 hover:text-tennis-green transition-colors"
+                          title="Créer une règle depuis cette opération"
+                          onClick={() => setRuleModalOp(op)}
+                        >
+                          <Wand2 size={14} />
+                        </button>
+                        <button
+                          className="text-gray-300 hover:text-indigo-500 transition-colors"
+                          title="Tester une règle sur cette opération"
+                          onClick={() => setTestRuleOp(op)}
+                        >
+                          <FlaskConical size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1148,6 +1375,17 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
           categories={categories}
           onClose={() => setRuleModalOp(null)}
           onCreated={() => { load(); onCategoriesChange(); }}
+        />
+      )}
+
+      {testRuleOp && (
+        <TestRuleModal
+          op={testRuleOp}
+          onClose={() => setTestRuleOp(null)}
+          onApply={async (category) => {
+            await handleSaveCategory(testRuleOp.id, category);
+            setTestRuleOp(null);
+          }}
         />
       )}
     </div>
