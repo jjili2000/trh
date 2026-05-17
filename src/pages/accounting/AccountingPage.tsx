@@ -412,6 +412,12 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [ruleModalOp, setRuleModalOp] = useState<BankOperation | null>(null);
 
+  // Multi-selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [bulkPeriodId, setBulkPeriodId] = useState('');
+  const [applyingBulk, setApplyingBulk] = useState(false);
+
   // Saved filters
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const [savingName, setSavingName] = useState('');
@@ -488,6 +494,40 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
       await api.delete(`/accounting/saved-filters/${id}`);
       setSavedFilters(prev => prev.filter(f => f.id !== id));
     } catch { /* silent */ }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === displayedOps.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(displayedOps.map(op => op.id)));
+    }
+  };
+
+  const handleBulkApply = async (type: 'category' | 'period') => {
+    if (selectedIds.size === 0) return;
+    setApplyingBulk(true);
+    try {
+      const payload: Record<string, unknown> = { ids: Array.from(selectedIds) };
+      if (type === 'category') { payload.category = bulkCategory || null; payload.categorySource = 'manual'; }
+      if (type === 'period')   { payload.periodId = bulkPeriodId || null; }
+      await api.put('/accounting/operations/bulk', payload);
+      await load();
+      onCategoriesChange();
+      setSelectedIds(new Set());
+      if (type === 'category') setBulkCategory('');
+      if (type === 'period')   setBulkPeriodId('');
+    } catch { /* silent */ } finally {
+      setApplyingBulk(false);
+    }
   };
 
   const handleApplyRules = async () => {
@@ -698,6 +738,35 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
         </div>
       </div>
 
+      {/* Barre d'actions groupées */}
+      {selectedIds.size > 0 && (
+        <div className="card mb-3 bg-indigo-50 border-indigo-200 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-indigo-700">{selectedIds.size} opération(s) sélectionnée(s)</span>
+          <div className="flex items-center gap-1.5">
+            <select className="input text-sm py-1 w-44" value={bulkCategory} onChange={e => setBulkCategory(e.target.value)}>
+              <option value="">— Catégorie —</option>
+              <option value="">Aucune (effacer)</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button className="btn-primary text-xs py-1 px-3" onClick={() => handleBulkApply('category')} disabled={applyingBulk}>
+              Appliquer
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <select className="input text-sm py-1 w-44" value={bulkPeriodId} onChange={e => setBulkPeriodId(e.target.value)}>
+              <option value="">— Période —</option>
+              {periods.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+            <button className="btn-primary text-xs py-1 px-3" onClick={() => handleBulkApply('period')} disabled={applyingBulk || !bulkPeriodId}>
+              Appliquer
+            </button>
+          </div>
+          <button className="ml-auto text-xs text-indigo-500 hover:text-indigo-800" onClick={() => setSelectedIds(new Set())}>
+            Désélectionner tout
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="card p-0 overflow-hidden">
         {loading ? (
@@ -709,6 +778,14 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
             <table className="w-full">
               <thead>
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
+                  <th className="pl-4 pr-2 py-2.5 w-8">
+                    <input
+                      type="checkbox"
+                      checked={displayedOps.length > 0 && selectedIds.size === displayedOps.length}
+                      onChange={toggleSelectAll}
+                      className="rounded"
+                    />
+                  </th>
                   <th className="px-4 py-2.5">Date</th>
                   <th className="px-4 py-2.5">Compte</th>
                   <th className="px-4 py-2.5">Sens</th>
@@ -721,7 +798,10 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
               </thead>
               <tbody>
                 {displayedOps.map(op => (
-                  <tr key={op.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                  <tr key={op.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${selectedIds.has(op.id) ? 'bg-indigo-50/40' : ''}`}>
+                    <td className="pl-4 pr-2 py-2">
+                      <input type="checkbox" checked={selectedIds.has(op.id)} onChange={() => toggleSelect(op.id)} className="rounded" />
+                    </td>
                     <td className="px-4 py-2 whitespace-nowrap">
                       <p className="text-sm text-gray-700">{fmtDate(op.operationDate)}</p>
                       {op.periodLabel && (

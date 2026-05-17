@@ -524,16 +524,21 @@ router.get('/operations', async (req, res) => {
   try {
     const { importId, periodId, direction, paymentMethod, category, search, dateFrom, dateTo } = req.query;
 
-    let sql = `SELECT bo.*, ar.label as ruleName, ap.label as periodLabel, ap.id as periodId
+    // bo.periodId (affectation manuelle) prime sur bi.periodId (période de l'import)
+    let sql = `SELECT bo.*, ar.label as ruleName,
+                      ap.label as periodLabel,
+                      COALESCE(bo.periodId, bi.periodId) as resolvedPeriodId
                FROM bank_operations bo
                JOIN bank_imports bi ON bi.id = bo.importId
                LEFT JOIN accounting_rules ar ON ar.id = bo.ruleId
-               LEFT JOIN accounting_periods ap ON ap.id = bi.periodId
+               LEFT JOIN accounting_periods ap ON ap.id = COALESCE(bo.periodId, bi.periodId)
                WHERE bi.userId = ?`;
     const params = [req.user.id];
 
     if (importId)  { sql += ' AND bo.importId = ?'; params.push(importId); }
-    if (periodId)  { sql += ' AND bi.periodId = ?'; params.push(periodId); }
+    if (periodId)  {
+      sql += ' AND COALESCE(bo.periodId, bi.periodId) = ?'; params.push(periodId);
+    }
     if (direction) { sql += ' AND bo.direction = ?'; params.push(direction); }
     if (paymentMethod) { sql += ' AND bo.paymentMethod = ?'; params.push(paymentMethod); }
     if (category === '__none__') {
@@ -578,6 +583,49 @@ router.put('/operations/:id', async (req, res) => {
     );
     const [updated] = await pool.execute('SELECT * FROM bank_operations WHERE id = ?', [id]);
     res.json(mapOperation(updated[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// PUT /accounting/operations/bulk — catégorie et/ou période sur plusieurs opérations
+router.put('/operations/bulk', async (req, res) => {
+  try {
+    const { ids, category, categorySource, periodId } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids requis' });
+    }
+
+    // Vérifier que toutes les opérations appartiennent à l'utilisateur
+    const placeholders = ids.map(() => '?').join(', ');
+    const [owned] = await pool.execute(
+      `SELECT bo.id FROM bank_operations bo
+       JOIN bank_imports bi ON bi.id = bo.importId
+       WHERE bo.id IN (${placeholders}) AND bi.userId = ?`,
+      [...ids, req.user.id]
+    );
+    if (owned.length !== ids.length) {
+      return res.status(403).json({ error: 'Accès refusé sur certaines opérations' });
+    }
+
+    const updates = [];
+    const values = [];
+    if (category !== undefined) {
+      updates.push('category = ?', 'categorySource = ?');
+      values.push(category || null, categorySource || 'manual');
+    }
+    if (periodId !== undefined) {
+      updates.push('periodId = ?');
+      values.push(periodId || null);
+    }
+    if (updates.length === 0) return res.status(400).json({ error: 'Rien à mettre à jour' });
+
+    await pool.execute(
+      `UPDATE bank_operations SET ${updates.join(', ')} WHERE id IN (${placeholders})`,
+      [...values, ...ids]
+    );
+    res.json({ updated: ids.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -1017,7 +1065,7 @@ function mapOperation(row) {
   return {
     id: row.id,
     importId: row.importId,
-    periodId: row.periodId || null,
+    periodId: row.resolvedPeriodId || null,
     periodLabel: row.periodLabel || null,
     operationDate: row.operationDate instanceof Date ? row.operationDate.toISOString().slice(0, 10) : String(row.operationDate).slice(0, 10),
     direction: row.direction,
