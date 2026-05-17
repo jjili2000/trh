@@ -641,11 +641,13 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
       setApplyMsg(`${result.updated} opération(s) mise(s) à jour`);
       await load();
       onCategoriesChange();
-    } catch {
-      setApplyMsg('Erreur lors de l\'application des règles');
+    } catch (err: unknown) {
+      const msg = (err as { message?: string }).message || 'Erreur inconnue';
+      setApplyMsg(`Erreur : ${msg}`);
+      console.error('[apply-rules]', err);
     } finally {
       setApplyingRules(false);
-      setTimeout(() => setApplyMsg(null), 4000);
+      setTimeout(() => setApplyMsg(null), 8000);
     }
   };
 

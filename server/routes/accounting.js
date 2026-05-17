@@ -1006,25 +1006,38 @@ router.post('/rules/apply-all', async (req, res) => {
       [req.user.id]
     );
 
-    let updated = 0;
+    // Regrouper les opérations matchées par (ruleId, category) pour UPDATE groupé
+    // évite N requêtes individuelles → 1 requête par règle
+    const matchesByRule = {}; // ruleId → { category, ids[] }
     let updatedByRule = 0;
+
     for (const op of ops) {
       const opObj = mapOperation(op);
       const matchedRule = applyRulesToOp(opObj, rulesWithConds);
       if (matchedRule) {
-        await pool.execute(
-          `UPDATE bank_operations SET category = ?, categorySource = 'rule', ruleId = ? WHERE id = ?`,
-          [matchedRule.category, matchedRule.id, op.id]
-        );
-        updated++;
+        if (!matchesByRule[matchedRule.id]) {
+          matchesByRule[matchedRule.id] = { category: matchedRule.category, ids: [] };
+        }
+        matchesByRule[matchedRule.id].ids.push(op.id);
         if (targetRuleId && matchedRule.id === targetRuleId) updatedByRule++;
       }
     }
 
+    // Exécuter un UPDATE par règle (IN clause)
+    let updated = 0;
+    for (const [ruleId, { category, ids }] of Object.entries(matchesByRule)) {
+      const placeholders = ids.map(() => '?').join(', ');
+      await pool.execute(
+        `UPDATE bank_operations SET category = ?, categorySource = 'rule', ruleId = ? WHERE id IN (${placeholders})`,
+        [category, ruleId, ...ids]
+      );
+      updated += ids.length;
+    }
+
     res.json({ updated, updatedByRule: targetRuleId ? updatedByRule : updated });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    console.error('[apply-all]', err);
+    res.status(500).json({ error: err.message || 'Erreur serveur' });
   }
 });
 
