@@ -447,6 +447,7 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
       setApplyMsg('Erreur lors de l\'application des règles');
     } finally {
       setApplyingRules(false);
+      setTimeout(() => setApplyMsg(null), 4000);
     }
   };
 
