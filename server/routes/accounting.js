@@ -436,24 +436,55 @@ router.post('/import/confirm', async (req, res) => {
       });
     }
 
-    // Insert import record
-    await pool.execute(
-      `INSERT INTO bank_imports (id, userId, label, fileName, importedAt, operationCount) VALUES (?, ?, ?, ?, NOW(), ?)`,
-      [importId, req.user.id, label, filename || '', operations.length]
-    );
-
-    // Insert operations in batches
+    // Compute a dedup hash per operation (userId + date + direction + amount + rawLabel)
     for (const op of operations) {
+      const hashInput = [req.user.id, op.operationDate, op.direction, op.amount.toFixed(2), op.rawLabel || ''].join('|');
+      op.operationHash = crypto.createHash('sha256').update(hashInput).digest('hex');
+    }
+
+    // Load all existing hashes for this user to detect duplicates in memory
+    const [existingHashRows] = await pool.execute(
+      `SELECT bo.operationHash FROM bank_operations bo
+       JOIN bank_imports bi ON bi.id = bo.importId
+       WHERE bi.userId = ? AND bo.operationHash IS NOT NULL`,
+      [req.user.id]
+    );
+    const existingHashes = new Set(existingHashRows.map(r => r.operationHash));
+
+    // Partition into new vs duplicate
+    const toInsert = operations.filter(op => !existingHashes.has(op.operationHash));
+    const skipped  = operations.length - toInsert.length;
+
+    // Insert import record (only if at least one new operation)
+    if (toInsert.length > 0) {
       await pool.execute(
-        `INSERT INTO bank_operations (id, importId, operationDate, direction, paymentMethod, amount, rawLabel, thirdParty, blockMDT, blockLIB, blockMOTIF, blockRNF, category, categorySource, ruleId, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [op.id, op.importId, op.operationDate, op.direction, op.paymentMethod, op.amount,
-         op.rawLabel, op.thirdParty, op.blockMDT, op.blockLIB, op.blockMOTIF, op.blockRNF,
-         op.category, op.categorySource, op.ruleId, op.createdAt]
+        `INSERT INTO bank_imports (id, userId, label, fileName, importedAt, operationCount) VALUES (?, ?, ?, ?, NOW(), ?)`,
+        [importId, req.user.id, label, filename || '', toInsert.length]
       );
     }
 
-    res.status(201).json({ importId, count: operations.length });
+    // Insert non-duplicate operations
+    for (const op of toInsert) {
+      await pool.execute(
+        `INSERT INTO bank_operations (id, importId, operationDate, direction, paymentMethod, amount, rawLabel, thirdParty, blockMDT, blockLIB, blockMOTIF, blockRNF, category, categorySource, ruleId, operationHash, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [op.id, op.importId, op.operationDate, op.direction, op.paymentMethod, op.amount,
+         op.rawLabel, op.thirdParty, op.blockMDT, op.blockLIB, op.blockMOTIF, op.blockRNF,
+         op.category, op.categorySource, op.ruleId, op.operationHash, op.createdAt]
+      );
+    }
+
+    const totalRows   = rawRows.length;
+    const invalidRows = totalRows - operations.length; // rows skipped at parse time (no date/amount)
+
+    res.status(201).json({
+      importId: toInsert.length > 0 ? importId : null,
+      total:    totalRows,
+      parsed:   operations.length,
+      imported: toInsert.length,
+      skipped,
+      invalid:  invalidRows,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur lors de l\'import' });

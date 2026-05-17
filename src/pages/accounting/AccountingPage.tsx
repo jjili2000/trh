@@ -1160,6 +1160,14 @@ interface PreviewData {
   totalRows: number;
 }
 
+interface ImportSummary {
+  total: number;
+  parsed: number;
+  imported: number;
+  skipped: number;
+  invalid: number;
+}
+
 function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [importLabel, setImportLabel] = useState('');
@@ -1169,7 +1177,7 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
   const [mapping, setMapping] = useState<ColumnMapping>({ date: '', label: '' });
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingConfirm, setLoadingConfirm] = useState(false);
-  const [importedCount, setImportedCount] = useState(0);
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -1240,15 +1248,15 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
       if (mapping.credit) cleanMapping.credit = mapping.credit;
       if (mapping.amount) cleanMapping.amount = mapping.amount;
 
-      const result = await api.post<{ importId: string; count: number }>('/accounting/import/confirm', {
+      const result = await api.post<{ importId: string | null; total: number; parsed: number; imported: number; skipped: number; invalid: number }>('/accounting/import/confirm', {
         rawRows: parsedRows,
         filename: fileName,
         label: importLabel,
         mapping: cleanMapping,
       });
-      setImportedCount(result.count);
+      setSummary({ total: result.total, parsed: result.parsed, imported: result.imported, skipped: result.skipped, invalid: result.invalid });
       setStep(3);
-      onImportDone();
+      if (result.imported > 0) onImportDone();
     } catch (err: unknown) {
       const e = err as { message?: string };
       setError(e.message || 'Erreur lors de l\'import');
@@ -1264,6 +1272,7 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
     setFileName('');
     setPreview(null);
     setMapping({ date: '', label: '' });
+    setSummary(null);
     setError(null);
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -1431,22 +1440,69 @@ function ImportTab({ onImportDone, onGoToOperations }: ImportTabProps) {
       )}
 
       {/* Step 3 */}
-      {step === 3 && (
-        <div className="card text-center py-10">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Check size={32} className="text-green-600" />
+      {step === 3 && summary && (
+        <div className="card">
+          <div className="flex items-center gap-3 mb-5">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${summary.imported > 0 ? 'bg-green-100' : 'bg-yellow-100'}`}>
+              <Check size={24} className={summary.imported > 0 ? 'text-green-600' : 'text-yellow-600'} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">
+                {summary.imported > 0 ? 'Import terminé' : 'Aucune nouvelle opération'}
+              </h2>
+              <p className="text-sm text-gray-500">
+                {summary.imported > 0
+                  ? `${summary.imported} opération(s) ajoutée(s) en base.`
+                  : 'Toutes les opérations de ce fichier sont déjà présentes.'}
+              </p>
+            </div>
           </div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">Import réussi !</h2>
-          <p className="text-gray-500 mb-6">
-            <span className="font-semibold text-gray-700">{importedCount}</span> opération(s) importée(s) avec succès.
-          </p>
-          <div className="flex gap-3 justify-center">
+
+          {/* Summary table */}
+          <div className="rounded-lg border border-gray-100 overflow-hidden mb-5">
+            <table className="w-full text-sm">
+              <tbody>
+                <tr className="border-b border-gray-100">
+                  <td className="px-4 py-2.5 text-gray-500">Lignes dans le fichier</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-gray-800">{summary.total}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="px-4 py-2.5 text-gray-500">Lignes valides (date + montant)</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-gray-800">{summary.parsed}</td>
+                </tr>
+                {summary.invalid > 0 && (
+                  <tr className="border-b border-gray-100 bg-orange-50">
+                    <td className="px-4 py-2.5 text-orange-600">Lignes ignorées (données invalides)</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-orange-600">{summary.invalid}</td>
+                  </tr>
+                )}
+                {summary.skipped > 0 && (
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <td className="px-4 py-2.5 text-gray-500">Doublons ignorés (déjà importés)</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-gray-500">{summary.skipped}</td>
+                  </tr>
+                )}
+                <tr className={summary.imported > 0 ? 'bg-green-50' : 'bg-yellow-50'}>
+                  <td className={`px-4 py-2.5 font-medium ${summary.imported > 0 ? 'text-green-700' : 'text-yellow-700'}`}>
+                    Opérations importées
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-bold text-lg ${summary.imported > 0 ? 'text-green-700' : 'text-yellow-700'}`}>
+                    {summary.imported}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex gap-3">
             <button className="btn-secondary" onClick={reset}>
               Nouvel import
             </button>
-            <button className="btn-primary" onClick={onGoToOperations}>
-              Voir les opérations
-            </button>
+            {summary.imported > 0 && (
+              <button className="btn-primary" onClick={onGoToOperations}>
+                Voir les opérations
+              </button>
+            )}
           </div>
         </div>
       )}
