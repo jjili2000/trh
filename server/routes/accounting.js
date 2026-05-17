@@ -670,7 +670,18 @@ router.put('/operations/:id', async (req, res) => {
       `UPDATE bank_operations SET category = ?, categorySource = ? WHERE id = ?`,
       [category || null, categorySource || 'manual', id]
     );
-    const [updated] = await pool.execute('SELECT * FROM bank_operations WHERE id = ?', [id]);
+    // Récupérer avec les jointures pour avoir resolvedPeriodId, periodLabel et ruleName
+    const [updated] = await pool.execute(
+      `SELECT bo.*, ar.label as ruleName,
+              ap.label as periodLabel,
+              COALESCE(bo.periodId, bi.periodId) as resolvedPeriodId
+       FROM bank_operations bo
+       JOIN bank_imports bi ON bi.id = bo.importId
+       LEFT JOIN accounting_rules ar ON ar.id = bo.ruleId
+       LEFT JOIN accounting_periods ap ON ap.id = COALESCE(bo.periodId, bi.periodId)
+       WHERE bo.id = ?`,
+      [id]
+    );
     res.json(mapOperation(updated[0]));
   } catch (err) {
     console.error(err);
