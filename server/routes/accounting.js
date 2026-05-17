@@ -163,21 +163,29 @@ function extractBlocks(label) {
   const rnfMatch = label.match(/\/RNF\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
   if (rnfMatch && rnfMatch[1].trim()) result.rnf = rnfMatch[1].trim();
 
+  // /ORIG — émetteur (variante /FRM pour virements reçus)
+  if (!result.lib) {
+    const origMatch = label.match(/\/ORIG\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
+    if (origMatch) result.lib = origMatch[1].trim();
+  }
+
   return result;
 }
 
 function extractThirdParty(label, method, direction) {
   if (!label) return null;
 
-  // Virement crédit: /FRM value until /EID or next /TAG
+  // Virement crédit: /FRM (standard) ou /ORIG (variante certaines banques)
   if (method === 'transfer' && direction === 'credit') {
-    const m = label.match(/\/FRM\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
+    const m = label.match(/\/FRM\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i)
+           || label.match(/\/ORIG\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
     return m ? m[1].trim() : null;
   }
 
-  // Virement débit: /BEN value until /REFDO or next /TAG
+  // Virement débit: /BEN (standard) ou /DEST (variante)
   if (method === 'transfer' && direction === 'debit') {
-    const m = label.match(/\/BEN\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
+    const m = label.match(/\/BEN\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i)
+           || label.match(/\/DEST\s+(.+?)(?=\s+\/[A-Z]{2,}|$)/i);
     return m ? m[1].trim() : null;
   }
 
