@@ -417,7 +417,6 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [filterMethod, setFilterMethod] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterSearch, setFilterSearch] = useState('');
-  const [filterUncategorized, setFilterUncategorized] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -487,7 +486,7 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     return 'bg-gray-100 text-gray-500';
   };
 
-  const displayedOps = filterUncategorized ? operations.filter(op => !op.category) : operations;
+  const displayedOps = operations;
 
   // Lookup map importId → label pour affichage dans la table
   const importLabelMap = new Map(imports.map(imp => [imp.id, imp.label]));
@@ -561,24 +560,6 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
             value={filterSearch}
             onChange={e => setFilterSearch(e.target.value)}
           />
-
-          {/* Switch: sans catégorie uniquement */}
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={filterUncategorized}
-              onClick={() => setFilterUncategorized(v => !v)}
-              className={`relative w-9 h-5 rounded-full transition-colors focus:outline-none ${
-                filterUncategorized ? 'bg-tennis-green' : 'bg-gray-200'
-              }`}
-            >
-              <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                filterUncategorized ? 'translate-x-4' : 'translate-x-0.5'
-              }`} />
-            </button>
-            Sans catégorie
-          </label>
 
           <button
             className="btn-secondary flex items-center gap-1.5 text-sm"
