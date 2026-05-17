@@ -1211,14 +1211,28 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
               </div>
             )}
 
-            {/* Effacer les filtres */}
+            {/* Ré-appliquer le filtre enregistré */}
+            {appliedSavedFilterId && (
+              <button
+                className="flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-400 rounded-lg px-2.5 py-1.5 transition-colors"
+                onClick={() => {
+                  const sf = savedFilters.find(f => f.id === appliedSavedFilterId);
+                  if (sf) handleApplySavedFilter(sf);
+                }}
+              >
+                <RefreshCw size={12} />
+                Ré-appliquer le filtre
+              </button>
+            )}
+
+            {/* Effacer le filtre */}
             {hasActiveFilter() && (
               <button
                 className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition-colors"
                 onClick={handleClearFilters}
               >
                 <X size={12} />
-                Effacer les filtres
+                Effacer le filtre
               </button>
             )}
 
