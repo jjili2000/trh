@@ -427,6 +427,7 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [savingName, setSavingName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [savedFilterOpen, setSavedFilterOpen] = useState(false);
+  const [appliedSavedFilterId, setAppliedSavedFilterId] = useState<string | null>(null);
   const savedFilterRef = useRef<HTMLDivElement>(null);
 
   // Filters
@@ -501,6 +502,7 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     setFilterSearch(sf.filters.search || '');
     setFilterAmountMin(sf.filters.amountMin || '');
     setFilterAmountMax(sf.filters.amountMax || '');
+    setAppliedSavedFilterId(sf.id);
     setSavedFilterOpen(false);
   };
 
@@ -513,6 +515,7 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     setFilterSearch('');
     setFilterAmountMin('');
     setFilterAmountMax('');
+    setAppliedSavedFilterId(null);
   };
 
   useEffect(() => {
@@ -530,6 +533,7 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     try {
       await api.delete(`/accounting/saved-filters/${id}`);
       setSavedFilters(prev => prev.filter(f => f.id !== id));
+      if (appliedSavedFilterId === id) setAppliedSavedFilterId(null);
     } catch { /* silent */ }
   };
 
@@ -795,8 +799,12 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
                   className="input text-sm py-1.5 flex items-center gap-2 w-52"
                   onClick={() => setSavedFilterOpen(o => !o)}
                 >
-                  <Bookmark size={13} className="text-indigo-400 flex-shrink-0" />
-                  <span className="flex-1 text-left text-gray-500 truncate">Filtres enregistrés</span>
+                  <Bookmark size={13} className={`flex-shrink-0 ${appliedSavedFilterId ? 'text-indigo-600' : 'text-indigo-400'}`} />
+                  <span className={`flex-1 text-left truncate ${appliedSavedFilterId ? 'text-indigo-700 font-medium' : 'text-gray-500'}`}>
+                    {appliedSavedFilterId
+                      ? (savedFilters.find(f => f.id === appliedSavedFilterId)?.label ?? 'Filtres enregistrés')
+                      : 'Filtres enregistrés'}
+                  </span>
                   <ChevronDown size={13} className={`flex-shrink-0 text-gray-400 transition-transform ${savedFilterOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {savedFilterOpen && (
