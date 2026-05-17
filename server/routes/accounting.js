@@ -564,32 +564,8 @@ router.get('/operations', async (req, res) => {
   }
 });
 
-// PUT /accounting/operations/:id
-router.put('/operations/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { category, categorySource } = req.body;
-
-    // Verify ownership
-    const [rows] = await pool.execute(
-      `SELECT bo.* FROM bank_operations bo JOIN bank_imports bi ON bi.id = bo.importId WHERE bo.id = ? AND bi.userId = ?`,
-      [id, req.user.id]
-    );
-    if (rows.length === 0) return res.status(404).json({ error: 'Opération non trouvée' });
-
-    await pool.execute(
-      `UPDATE bank_operations SET category = ?, categorySource = ? WHERE id = ?`,
-      [category || null, categorySource || 'manual', id]
-    );
-    const [updated] = await pool.execute('SELECT * FROM bank_operations WHERE id = ?', [id]);
-    res.json(mapOperation(updated[0]));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
 // PUT /accounting/operations/bulk — catégorie et/ou période sur plusieurs opérations
+// DOIT être avant PUT /operations/:id sinon Express intercepte "bulk" comme un id
 router.put('/operations/bulk', async (req, res) => {
   try {
     const { ids, category, categorySource, periodId } = req.body;
@@ -626,6 +602,31 @@ router.put('/operations/bulk', async (req, res) => {
       [...values, ...ids]
     );
     res.json({ updated: ids.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// PUT /accounting/operations/:id
+router.put('/operations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category, categorySource } = req.body;
+
+    // Verify ownership
+    const [rows] = await pool.execute(
+      `SELECT bo.* FROM bank_operations bo JOIN bank_imports bi ON bi.id = bo.importId WHERE bo.id = ? AND bi.userId = ?`,
+      [id, req.user.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Opération non trouvée' });
+
+    await pool.execute(
+      `UPDATE bank_operations SET category = ?, categorySource = ? WHERE id = ?`,
+      [category || null, categorySource || 'manual', id]
+    );
+    const [updated] = await pool.execute('SELECT * FROM bank_operations WHERE id = ?', [id]);
+    res.json(mapOperation(updated[0]));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
