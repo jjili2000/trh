@@ -274,6 +274,20 @@ export interface RuleCondition {
   value: string;
 }
 
+export interface SavedFilter {
+  id: string;
+  label: string;
+  filters: {
+    periodId?: string;
+    importId?: string;
+    direction?: string;
+    paymentMethod?: string;
+    category?: string;
+    search?: string;
+  };
+  createdAt: string;
+}
+
 export interface AccountingRule {
   id: string;
   userId: string;

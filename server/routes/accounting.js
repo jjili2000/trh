@@ -916,6 +916,59 @@ router.post('/rules/apply-all', async (req, res) => {
   }
 });
 
+// ─── Saved Filters ────────────────────────────────────────────────────────────
+
+// GET /accounting/saved-filters
+router.get('/saved-filters', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT * FROM accounting_saved_filters WHERE userId = ? ORDER BY createdAt ASC',
+      [req.user.id]
+    );
+    res.json(rows.map(r => ({
+      id: r.id,
+      label: r.label,
+      filters: typeof r.filters === 'string' ? JSON.parse(r.filters) : r.filters,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /accounting/saved-filters
+router.post('/saved-filters', async (req, res) => {
+  try {
+    const { label, filters } = req.body;
+    if (!label || !filters) return res.status(400).json({ error: 'Libellé et filtres requis' });
+    const id = crypto.randomUUID();
+    await pool.execute(
+      'INSERT INTO accounting_saved_filters (id, userId, label, filters, createdAt) VALUES (?, ?, ?, ?, NOW())',
+      [id, req.user.id, label, JSON.stringify(filters)]
+    );
+    res.status(201).json({ id, label, filters, createdAt: new Date().toISOString() });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// DELETE /accounting/saved-filters/:id
+router.delete('/saved-filters/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.execute(
+      'DELETE FROM accounting_saved_filters WHERE id = ? AND userId = ?',
+      [id, req.user.id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // GET /accounting/categories
 router.get('/categories', async (req, res) => {
   try {

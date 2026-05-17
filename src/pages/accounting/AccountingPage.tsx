@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Wand2,
   Calendar,
+  Bookmark,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import {
@@ -21,6 +22,7 @@ import {
   RuleField,
   RuleOperator,
   PaymentMethod,
+  SavedFilter,
 } from '../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -410,6 +412,11 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [ruleModalOp, setRuleModalOp] = useState<BankOperation | null>(null);
 
+  // Saved filters
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
+  const [savingName, setSavingName] = useState('');
+  const [showSaveInput, setShowSaveInput] = useState(false);
+
   // Filters
   const [filterPeriod, setFilterPeriod] = useState('');
   const [filterImport, setFilterImport] = useState('');
@@ -438,6 +445,50 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   }, [filterPeriod, filterImport, filterDirection, filterMethod, filterCategory, filterSearch]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    api.get<SavedFilter[]>('/accounting/saved-filters').then(setSavedFilters).catch(() => {});
+  }, []);
+
+  const currentFilters = () => ({
+    periodId: filterPeriod || undefined,
+    importId: filterImport || undefined,
+    direction: filterDirection || undefined,
+    paymentMethod: filterMethod || undefined,
+    category: filterCategory || undefined,
+    search: filterSearch || undefined,
+  });
+
+  const hasActiveFilter = () => !!(filterPeriod || filterImport || filterDirection || filterMethod || filterCategory || filterSearch);
+
+  const handleSaveFilter = async () => {
+    if (!savingName.trim()) return;
+    try {
+      const created = await api.post<SavedFilter>('/accounting/saved-filters', {
+        label: savingName.trim(),
+        filters: currentFilters(),
+      });
+      setSavedFilters(prev => [...prev, created]);
+      setSavingName('');
+      setShowSaveInput(false);
+    } catch { /* silent */ }
+  };
+
+  const handleApplySavedFilter = (sf: SavedFilter) => {
+    setFilterPeriod(sf.filters.periodId || '');
+    setFilterImport(sf.filters.importId || '');
+    setFilterDirection(sf.filters.direction || '');
+    setFilterMethod(sf.filters.paymentMethod || '');
+    setFilterCategory(sf.filters.category || '');
+    setFilterSearch(sf.filters.search || '');
+  };
+
+  const handleDeleteSavedFilter = async (id: string) => {
+    try {
+      await api.delete(`/accounting/saved-filters/${id}`);
+      setSavedFilters(prev => prev.filter(f => f.id !== id));
+    } catch { /* silent */ }
+  };
 
   const handleApplyRules = async () => {
     setApplyingRules(true);
@@ -579,6 +630,64 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
             Tout supprimer
           </button>
         </div>
+        {/* Filtres enregistrés */}
+        {(savedFilters.length > 0 || hasActiveFilter()) && (
+          <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+            {savedFilters.length > 0 && (
+              <>
+                <span className="text-xs text-gray-400 font-medium uppercase tracking-wide">Filtres enregistrés :</span>
+                {savedFilters.map(sf => (
+                  <div key={sf.id} className="flex items-center gap-0.5 bg-indigo-50 border border-indigo-200 rounded-full pl-3 pr-1 py-0.5">
+                    <button
+                      className="text-xs text-indigo-700 font-medium hover:text-indigo-900"
+                      onClick={() => handleApplySavedFilter(sf)}
+                      title="Appliquer ce filtre"
+                    >
+                      {sf.label}
+                    </button>
+                    <button
+                      className="text-indigo-300 hover:text-red-500 ml-1 p-0.5 rounded-full"
+                      onClick={() => handleDeleteSavedFilter(sf.id)}
+                      title="Supprimer ce filtre"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {hasActiveFilter() && (
+              showSaveInput ? (
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <input
+                    className="input text-xs py-1 px-2 w-40"
+                    placeholder="Nom du filtre…"
+                    value={savingName}
+                    onChange={e => setSavingName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveFilter(); if (e.key === 'Escape') setShowSaveInput(false); }}
+                    autoFocus
+                  />
+                  <button className="btn-primary text-xs py-1 px-2" onClick={handleSaveFilter} disabled={!savingName.trim()}>
+                    Enregistrer
+                  </button>
+                  <button className="text-gray-400 hover:text-gray-600" onClick={() => { setShowSaveInput(false); setSavingName(''); }}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 ml-auto"
+                  onClick={() => setShowSaveInput(true)}
+                >
+                  <Bookmark size={12} />
+                  Enregistrer ce filtre
+                </button>
+              )
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between mt-2">
           <span className="text-sm font-medium text-gray-600">
             {displayedOps.length} / {totalOps} opération(s)
