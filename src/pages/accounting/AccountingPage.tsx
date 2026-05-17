@@ -197,6 +197,8 @@ function RuleTooltip({ ruleName, children }: { ruleName: string; children: React
 
 function initConditionsFromOp(op: BankOperation): RuleCondition[] {
   const conds: RuleCondition[] = [];
+  // Sens toujours inclus en premier
+  conds.push({ field: 'direction', operator: 'equals', value: op.direction });
   if (op.thirdParty)   conds.push({ field: 'thirdParty',  operator: 'contains', value: op.thirdParty });
   if (op.blockLIB)     conds.push({ field: 'blockLIB',    operator: 'contains', value: op.blockLIB });
   if (op.blockMOTIF)   conds.push({ field: 'blockMOTIF',  operator: 'contains', value: op.blockMOTIF });
@@ -205,11 +207,11 @@ function initConditionsFromOp(op: BankOperation): RuleCondition[] {
   if (op.paymentMethod && op.paymentMethod !== 'other') {
     conds.push({ field: 'paymentMethod', operator: 'equals', value: op.paymentMethod });
   }
-  // Fallback : libellé brut si aucune info structurée
-  if (conds.length === 0 && op.rawLabel) {
+  // Fallback : libellé brut si aucune info structurée (hors sens)
+  if (conds.length === 1 && op.rawLabel) {
     conds.push({ field: 'rawLabel', operator: 'contains', value: op.rawLabel.slice(0, 60).trim() });
   }
-  return conds.length > 0 ? conds : [emptyCondition()];
+  return conds;
 }
 
 interface CreateRuleFromOpModalProps {
