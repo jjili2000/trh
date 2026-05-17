@@ -1068,6 +1068,7 @@ router.post('/rules/apply-all', async (req, res) => {
     // Regrouper les opérations matchées par (ruleId, category) pour UPDATE groupé
     // évite N requêtes individuelles → 1 requête par règle
     const matchesByRule = {}; // ruleId → { category, ids[] }
+    const toClear = [];       // ids des opérations qui ne matchent plus aucune règle
     let updatedByRule = 0;
 
     for (const op of ops) {
@@ -1079,6 +1080,9 @@ router.post('/rules/apply-all', async (req, res) => {
         }
         matchesByRule[matchedRule.id].ids.push(op.id);
         if (targetRuleId && matchedRule.id === targetRuleId) updatedByRule++;
+      } else if (op.categorySource === 'rule') {
+        // Avait une catégorie assignée par règle, mais ne matche plus rien → réinitialiser
+        toClear.push(op.id);
       }
     }
 
@@ -1093,7 +1097,18 @@ router.post('/rules/apply-all', async (req, res) => {
       updated += ids.length;
     }
 
-    res.json({ updated, updatedByRule: targetRuleId ? updatedByRule : updated });
+    // Réinitialiser les opérations qui ne matchent plus aucune règle
+    let cleared = 0;
+    if (toClear.length > 0) {
+      const placeholders = toClear.map(() => '?').join(', ');
+      await pool.execute(
+        `UPDATE bank_operations SET category = NULL, categorySource = 'none', ruleId = NULL WHERE id IN (${placeholders})`,
+        toClear
+      );
+      cleared = toClear.length;
+    }
+
+    res.json({ updated, cleared, updatedByRule: targetRuleId ? updatedByRule : updated });
   } catch (err) {
     console.error('[apply-all]', err);
     res.status(500).json({ error: err.message || 'Erreur serveur' });

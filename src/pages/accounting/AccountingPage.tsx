@@ -949,8 +949,11 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     setApplyingRules(true);
     setApplyMsg(null);
     try {
-      const result = await api.post<{ updated: number }>('/accounting/rules/apply-all', {});
-      setApplyMsg(`${result.updated} opération(s) mise(s) à jour`);
+      const result = await api.post<{ updated: number; cleared: number }>('/accounting/rules/apply-all', {});
+      const parts = [];
+      if (result.updated > 0) parts.push(`${result.updated} catégorisée(s)`);
+      if (result.cleared > 0) parts.push(`${result.cleared} désaffectée(s)`);
+      setApplyMsg(parts.length > 0 ? parts.join(', ') : 'Aucune modification');
       await load();
       onCategoriesChange();
     } catch (err: unknown) {
@@ -1536,6 +1539,7 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
   const [showEditor, setShowEditor] = useState(false);
   const [form, setForm] = useState<RuleFormState>(emptyRuleForm());
   const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [catInput, setCatInput] = useState('');
   const [catSuggestions, setCatSuggestions] = useState<string[]>([]);
 
@@ -1671,6 +1675,15 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
       } else {
         await api.post('/accounting/rules', payload);
       }
+      // Re-appliquer toutes les règles et désaffecter les opérations qui ne matchent plus
+      const result = await api.post<{ updated: number; cleared: number }>('/accounting/rules/apply-all', {});
+      const parts = [];
+      if (result.updated > 0) parts.push(`${result.updated} opération(s) catégorisée(s)`);
+      if (result.cleared > 0) parts.push(`${result.cleared} désaffectée(s)`);
+      if (parts.length > 0) {
+        setSaveMsg(parts.join(', '));
+        setTimeout(() => setSaveMsg(null), 4000);
+      }
       await load();
       onCategoriesChange();
       closeEditor();
@@ -1734,6 +1747,11 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
     <div className="flex gap-4 flex-col lg:flex-row">
       {/* List */}
       <div className="flex-1">
+        {saveMsg && (
+          <div className="mb-3 px-3 py-2 rounded-lg bg-tennis-green/10 border border-tennis-green/30 text-tennis-green text-sm font-medium">
+            ✓ {saveMsg}
+          </div>
+        )}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h2 className="text-base font-semibold text-gray-700">Règles de catégorisation</h2>
