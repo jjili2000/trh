@@ -11,6 +11,8 @@ import {
   Wand2,
   Calendar,
   Bookmark,
+  ChevronUp,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import {
@@ -577,7 +579,31 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     return 'bg-gray-100 text-gray-500';
   };
 
-  const displayedOps = operations;
+  // Sorting
+  type SortCol = 'date' | 'direction' | 'paymentMethod' | 'amount' | 'thirdParty' | 'category';
+  const [sortCol, setSortCol] = useState<SortCol>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const handleSort = (col: SortCol) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  const sorted = [...operations].sort((a, b) => {
+    let va: string | number = '', vb: string | number = '';
+    if (sortCol === 'date')          { va = a.operationDate; vb = b.operationDate; }
+    if (sortCol === 'direction')     { va = a.direction;     vb = b.direction; }
+    if (sortCol === 'paymentMethod') { va = PAYMENT_METHOD_LABELS[a.paymentMethod] ?? a.paymentMethod; vb = PAYMENT_METHOD_LABELS[b.paymentMethod] ?? b.paymentMethod; }
+    if (sortCol === 'amount')        { va = a.amount;        vb = b.amount; }
+    if (sortCol === 'thirdParty')    { va = a.thirdParty ?? ''; vb = b.thirdParty ?? ''; }
+    if (sortCol === 'category')      { va = a.category ?? ''; vb = b.category ?? ''; }
+    const cmp = typeof va === 'number'
+      ? va - (vb as number)
+      : String(va).localeCompare(String(vb), 'fr', { sensitivity: 'base' });
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const displayedOps = sorted;
 
   // Lookup map importId → label pour affichage dans la table
   const importLabelMap = new Map(imports.map(imp => [imp.id, imp.label]));
@@ -786,13 +812,30 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
                       className="rounded"
                     />
                   </th>
-                  <th className="px-4 py-2.5">Date</th>
-                  <th className="px-4 py-2.5">Compte</th>
-                  <th className="px-4 py-2.5">Sens</th>
-                  <th className="px-4 py-2.5">Mode</th>
-                  <th className="px-4 py-2.5 text-right">Montant</th>
-                  <th className="px-4 py-2.5">Tiers / Libellé</th>
-                  <th className="px-4 py-2.5">Catégorie</th>
+                  {([
+                    { col: 'date',          label: 'Date',          cls: '' },
+                    { col: null,            label: 'Compte',        cls: '' },
+                    { col: 'direction',     label: 'Sens',          cls: '' },
+                    { col: 'paymentMethod', label: 'Mode',          cls: '' },
+                    { col: 'amount',        label: 'Montant',       cls: 'text-right' },
+                    { col: 'thirdParty',    label: 'Tiers / Libellé', cls: '' },
+                    { col: 'category',      label: 'Catégorie',     cls: '' },
+                  ] as { col: SortCol | null; label: string; cls: string }[]).map(({ col, label, cls }) => (
+                    <th
+                      key={label}
+                      className={`px-4 py-2.5 ${cls} ${col ? 'cursor-pointer select-none hover:text-gray-700' : ''}`}
+                      onClick={col ? () => handleSort(col) : undefined}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {label}
+                        {col && (
+                          sortCol === col
+                            ? sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                            : <ChevronsUpDown size={12} className="opacity-30" />
+                        )}
+                      </span>
+                    </th>
+                  ))}
                   <th className="px-2 py-2.5 w-8"></th>
                 </tr>
               </thead>
