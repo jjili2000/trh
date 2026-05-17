@@ -484,6 +484,12 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
 
   const displayedOps = filterUncategorized ? operations.filter(op => !op.category) : operations;
 
+  // Lookup map importId → label pour affichage dans la table
+  const importLabelMap = new Map(imports.map(imp => [imp.id, imp.label]));
+
+  // Total absolu toutes opérations confondues (hors filtres)
+  const totalOps = imports.reduce((s, imp) => s + imp.operationCount, 0);
+
   return (
     <div>
       {/* Filters */}
@@ -593,6 +599,7 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
               <thead>
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
                   <th className="px-4 py-2.5">Date</th>
+                  <th className="px-4 py-2.5">Compte</th>
                   <th className="px-4 py-2.5">Sens</th>
                   <th className="px-4 py-2.5">Mode</th>
                   <th className="px-4 py-2.5 text-right">Montant</th>
@@ -606,6 +613,11 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
                   <tr key={op.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">
                       {fmtDate(op.operationDate)}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded whitespace-nowrap">
+                        {importLabelMap.get(op.importId) ?? '—'}
+                      </span>
                     </td>
                     <td className="px-4 py-2">
                       {op.direction === 'credit' ? (
@@ -706,7 +718,9 @@ function OperationsTab({ imports, categories, onCategoriesChange, onDeleteAll }:
         )}
       </div>
       <p className="text-xs text-gray-400 mt-2 text-right">
-        {displayedOps.length}{filterUncategorized && operations.length !== displayedOps.length ? ` / ${operations.length}` : ''} opération(s)
+        {displayedOps.length !== totalOps
+          ? `${displayedOps.length} / ${totalOps} opération(s)`
+          : `${totalOps} opération(s)`}
       </p>
 
       {ruleModalOp && (
