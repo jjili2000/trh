@@ -55,9 +55,9 @@ const OPERATOR_LABELS: Record<RuleOperator, string> = {
   lessThanOrEqual: 'inférieur ou égal à',
 };
 
-const NUMERIC_FIELDS: RuleField[] = ['amount'];
-const TEXT_OPERATORS: RuleOperator[] = ['contains', 'equals', 'startsWith', 'endsWith', 'notContains'];
+const TEXT_OPERATORS:    RuleOperator[] = ['contains', 'equals', 'startsWith', 'endsWith', 'notContains'];
 const NUMERIC_OPERATORS: RuleOperator[] = ['equals', 'greaterThan', 'lessThan', 'greaterThanOrEqual', 'lessThanOrEqual'];
+const ENUM_OPERATORS:    RuleOperator[] = ['equals'];
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   card: 'Carte',
@@ -67,6 +67,30 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: 'Espèces',
   other: 'Autre',
 };
+
+// Champs à valeurs finies → combobox dans les conditions de règle
+const ENUM_FIELD_VALUES: Partial<Record<RuleField, { value: string; label: string }[]>> = {
+  direction: [
+    { value: 'credit', label: 'Crédit' },
+    { value: 'debit',  label: 'Débit'  },
+  ],
+  paymentMethod: (Object.entries(PAYMENT_METHOD_LABELS) as [PaymentMethod, string][])
+    .map(([value, label]) => ({ value, label })),
+};
+
+const NUMERIC_FIELDS: RuleField[] = ['amount'];
+
+function getFieldKind(field: RuleField): 'text' | 'numeric' | 'enum' {
+  if (NUMERIC_FIELDS.includes(field)) return 'numeric';
+  if (field in ENUM_FIELD_VALUES)     return 'enum';
+  return 'text';
+}
+
+function defaultOperatorForKind(kind: 'text' | 'numeric' | 'enum'): RuleOperator {
+  if (kind === 'numeric') return 'greaterThan';
+  if (kind === 'enum')    return 'equals';
+  return 'contains';
+}
 
 const ALL_FIELDS: RuleField[] = ['rawLabel', 'thirdParty', 'blockMDT', 'blockLIB', 'blockMOTIF', 'blockRNF', 'paymentMethod', 'direction', 'amount'];
 
@@ -348,8 +372,9 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
             </div>
             <div className="space-y-2">
               {conditions.map((cond, idx) => {
-                const isNumeric = NUMERIC_FIELDS.includes(cond.field as RuleField);
-                const availableOps = isNumeric ? NUMERIC_OPERATORS : TEXT_OPERATORS;
+                const kind = getFieldKind(cond.field as RuleField);
+                const availableOps = kind === 'numeric' ? NUMERIC_OPERATORS : kind === 'enum' ? ENUM_OPERATORS : TEXT_OPERATORS;
+                const enumValues = ENUM_FIELD_VALUES[cond.field as RuleField];
                 return (
                   <div key={idx} className="flex gap-1.5 items-center">
                     <select
@@ -357,9 +382,8 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
                       value={cond.field}
                       onChange={e => {
                         const f = e.target.value as RuleField;
-                        const newIsNumeric = NUMERIC_FIELDS.includes(f);
-                        const opOk = newIsNumeric ? NUMERIC_OPERATORS.includes(cond.operator) : TEXT_OPERATORS.includes(cond.operator);
-                        updateCond(idx, { field: f, ...(opOk ? {} : { operator: newIsNumeric ? 'greaterThan' : 'contains' }) });
+                        const newKind = getFieldKind(f);
+                        updateCond(idx, { field: f, operator: defaultOperatorForKind(newKind), value: '' });
                       }}
                     >
                       {ALL_FIELDS.map(f => <option key={f} value={f}>{FIELD_LABELS[f]}</option>)}
@@ -371,11 +395,18 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
                     >
                       {availableOps.map(o => <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>)}
                     </select>
-                    {isNumeric ? (
+                    {kind === 'enum' && enumValues ? (
+                      <select
+                        className="input text-xs py-1.5 flex-1 min-w-0"
+                        value={cond.value}
+                        onChange={e => updateCond(idx, { value: e.target.value })}
+                      >
+                        <option value="">— Sélectionner —</option>
+                        {enumValues.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                      </select>
+                    ) : kind === 'numeric' ? (
                       <input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="number" min="0" step="0.01"
                         className="input text-xs py-1.5 flex-1 min-w-0"
                         value={cond.value}
                         onChange={e => updateCond(idx, { value: e.target.value })}
@@ -1422,8 +1453,9 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
                 <label className="label">Conditions</label>
                 <div className="space-y-2">
                   {form.conditions.map((cond, idx) => {
-                    const isNumeric = NUMERIC_FIELDS.includes(cond.field as RuleField);
-                    const availableOps = isNumeric ? NUMERIC_OPERATORS : TEXT_OPERATORS;
+                    const kind = getFieldKind(cond.field as RuleField);
+                    const availableOps = kind === 'numeric' ? NUMERIC_OPERATORS : kind === 'enum' ? ENUM_OPERATORS : TEXT_OPERATORS;
+                    const enumValues = ENUM_FIELD_VALUES[cond.field as RuleField];
                     return (
                       <div key={idx} className="flex gap-1 items-center">
                         <select
@@ -1431,9 +1463,8 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
                           value={cond.field}
                           onChange={e => {
                             const f = e.target.value as RuleField;
-                            const newIsNumeric = NUMERIC_FIELDS.includes(f);
-                            const opOk = newIsNumeric ? NUMERIC_OPERATORS.includes(cond.operator) : TEXT_OPERATORS.includes(cond.operator);
-                            updateCondition(idx, { field: f, ...(opOk ? {} : { operator: newIsNumeric ? 'greaterThan' : 'contains' }) });
+                            const newKind = getFieldKind(f);
+                            updateCondition(idx, { field: f, operator: defaultOperatorForKind(newKind), value: '' });
                           }}
                         >
                           {ALL_FIELDS.map(f => (
@@ -1449,11 +1480,18 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
                             <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>
                           ))}
                         </select>
-                        {isNumeric ? (
+                        {kind === 'enum' && enumValues ? (
+                          <select
+                            className="input text-xs py-1 flex-1"
+                            value={cond.value}
+                            onChange={e => updateCondition(idx, { value: e.target.value })}
+                          >
+                            <option value="">— Sélectionner —</option>
+                            {enumValues.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                          </select>
+                        ) : kind === 'numeric' ? (
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="number" min="0" step="0.01"
                             className="input text-xs py-1 flex-1"
                             placeholder="Montant (€)"
                             value={cond.value}
