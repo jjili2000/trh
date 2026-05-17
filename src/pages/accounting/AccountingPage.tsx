@@ -40,6 +40,7 @@ const FIELD_LABELS: Record<RuleField, string> = {
   blockRNF: 'Bloc RNF',
   paymentMethod: 'Mode de paiement',
   direction: 'Sens',
+  amount: 'Montant',
 };
 
 const OPERATOR_LABELS: Record<RuleOperator, string> = {
@@ -48,7 +49,15 @@ const OPERATOR_LABELS: Record<RuleOperator, string> = {
   startsWith: 'commence par',
   endsWith: 'se termine par',
   notContains: 'ne contient pas',
+  greaterThan: 'supérieur à',
+  lessThan: 'inférieur à',
+  greaterThanOrEqual: 'supérieur ou égal à',
+  lessThanOrEqual: 'inférieur ou égal à',
 };
+
+const NUMERIC_FIELDS: RuleField[] = ['amount'];
+const TEXT_OPERATORS: RuleOperator[] = ['contains', 'equals', 'startsWith', 'endsWith', 'notContains'];
+const NUMERIC_OPERATORS: RuleOperator[] = ['equals', 'greaterThan', 'lessThan', 'greaterThanOrEqual', 'lessThanOrEqual'];
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   card: 'Carte',
@@ -59,8 +68,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   other: 'Autre',
 };
 
-const ALL_FIELDS: RuleField[] = ['rawLabel', 'thirdParty', 'blockMDT', 'blockLIB', 'blockMOTIF', 'blockRNF', 'paymentMethod', 'direction'];
-const ALL_OPERATORS: RuleOperator[] = ['contains', 'equals', 'startsWith', 'endsWith', 'notContains'];
+const ALL_FIELDS: RuleField[] = ['rawLabel', 'thirdParty', 'blockMDT', 'blockLIB', 'blockMOTIF', 'blockRNF', 'paymentMethod', 'direction', 'amount'];
 
 function fmtCurrency(n: number) {
   return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
@@ -339,38 +347,59 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
               </div>
             </div>
             <div className="space-y-2">
-              {conditions.map((cond, idx) => (
-                <div key={idx} className="flex gap-1.5 items-center">
-                  <select
-                    className="input text-xs py-1.5 flex-1 min-w-0"
-                    value={cond.field}
-                    onChange={e => updateCond(idx, { field: e.target.value as RuleField })}
-                  >
-                    {ALL_FIELDS.map(f => <option key={f} value={f}>{FIELD_LABELS[f]}</option>)}
-                  </select>
-                  <select
-                    className="input text-xs py-1.5 w-32 flex-shrink-0"
-                    value={cond.operator}
-                    onChange={e => updateCond(idx, { operator: e.target.value as RuleOperator })}
-                  >
-                    {ALL_OPERATORS.map(o => <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>)}
-                  </select>
-                  <input
-                    className="input text-xs py-1.5 flex-1 min-w-0"
-                    value={cond.value}
-                    onChange={e => updateCond(idx, { value: e.target.value })}
-                    placeholder="Valeur"
-                  />
-                  {conditions.length > 1 && (
-                    <button
-                      className="text-gray-300 hover:text-red-500 flex-shrink-0 transition-colors"
-                      onClick={() => removeCond(idx)}
+              {conditions.map((cond, idx) => {
+                const isNumeric = NUMERIC_FIELDS.includes(cond.field as RuleField);
+                const availableOps = isNumeric ? NUMERIC_OPERATORS : TEXT_OPERATORS;
+                return (
+                  <div key={idx} className="flex gap-1.5 items-center">
+                    <select
+                      className="input text-xs py-1.5 flex-1 min-w-0"
+                      value={cond.field}
+                      onChange={e => {
+                        const f = e.target.value as RuleField;
+                        const newIsNumeric = NUMERIC_FIELDS.includes(f);
+                        const opOk = newIsNumeric ? NUMERIC_OPERATORS.includes(cond.operator) : TEXT_OPERATORS.includes(cond.operator);
+                        updateCond(idx, { field: f, ...(opOk ? {} : { operator: newIsNumeric ? 'greaterThan' : 'contains' }) });
+                      }}
                     >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
+                      {ALL_FIELDS.map(f => <option key={f} value={f}>{FIELD_LABELS[f]}</option>)}
+                    </select>
+                    <select
+                      className="input text-xs py-1.5 w-36 flex-shrink-0"
+                      value={cond.operator}
+                      onChange={e => updateCond(idx, { operator: e.target.value as RuleOperator })}
+                    >
+                      {availableOps.map(o => <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>)}
+                    </select>
+                    {isNumeric ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="input text-xs py-1.5 flex-1 min-w-0"
+                        value={cond.value}
+                        onChange={e => updateCond(idx, { value: e.target.value })}
+                        placeholder="Montant (€)"
+                      />
+                    ) : (
+                      <input
+                        className="input text-xs py-1.5 flex-1 min-w-0"
+                        value={cond.value}
+                        onChange={e => updateCond(idx, { value: e.target.value })}
+                        placeholder="Valeur"
+                      />
+                    )}
+                    {conditions.length > 1 && (
+                      <button
+                        className="text-gray-300 hover:text-red-500 flex-shrink-0 transition-colors"
+                        onClick={() => removeCond(idx)}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <button
               className="mt-2 text-xs text-tennis-green hover:underline flex items-center gap-1"
@@ -1392,39 +1421,60 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
               <div>
                 <label className="label">Conditions</label>
                 <div className="space-y-2">
-                  {form.conditions.map((cond, idx) => (
-                    <div key={idx} className="flex gap-1 items-center">
-                      <select
-                        className="input text-xs py-1 flex-1"
-                        value={cond.field}
-                        onChange={e => updateCondition(idx, { field: e.target.value as RuleField })}
-                      >
-                        {ALL_FIELDS.map(f => (
-                          <option key={f} value={f}>{FIELD_LABELS[f]}</option>
-                        ))}
-                      </select>
-                      <select
-                        className="input text-xs py-1 flex-1"
-                        value={cond.operator}
-                        onChange={e => updateCondition(idx, { operator: e.target.value as RuleOperator })}
-                      >
-                        {ALL_OPERATORS.map(o => (
-                          <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>
-                        ))}
-                      </select>
-                      <input
-                        className="input text-xs py-1 flex-1"
-                        placeholder="Valeur"
-                        value={cond.value}
-                        onChange={e => updateCondition(idx, { value: e.target.value })}
-                      />
-                      {form.conditions.length > 1 && (
-                        <button className="text-gray-400 hover:text-red-500" onClick={() => removeCondition(idx)}>
-                          <X size={13} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                  {form.conditions.map((cond, idx) => {
+                    const isNumeric = NUMERIC_FIELDS.includes(cond.field as RuleField);
+                    const availableOps = isNumeric ? NUMERIC_OPERATORS : TEXT_OPERATORS;
+                    return (
+                      <div key={idx} className="flex gap-1 items-center">
+                        <select
+                          className="input text-xs py-1 flex-1"
+                          value={cond.field}
+                          onChange={e => {
+                            const f = e.target.value as RuleField;
+                            const newIsNumeric = NUMERIC_FIELDS.includes(f);
+                            const opOk = newIsNumeric ? NUMERIC_OPERATORS.includes(cond.operator) : TEXT_OPERATORS.includes(cond.operator);
+                            updateCondition(idx, { field: f, ...(opOk ? {} : { operator: newIsNumeric ? 'greaterThan' : 'contains' }) });
+                          }}
+                        >
+                          {ALL_FIELDS.map(f => (
+                            <option key={f} value={f}>{FIELD_LABELS[f]}</option>
+                          ))}
+                        </select>
+                        <select
+                          className="input text-xs py-1 flex-1"
+                          value={cond.operator}
+                          onChange={e => updateCondition(idx, { operator: e.target.value as RuleOperator })}
+                        >
+                          {availableOps.map(o => (
+                            <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>
+                          ))}
+                        </select>
+                        {isNumeric ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="input text-xs py-1 flex-1"
+                            placeholder="Montant (€)"
+                            value={cond.value}
+                            onChange={e => updateCondition(idx, { value: e.target.value })}
+                          />
+                        ) : (
+                          <input
+                            className="input text-xs py-1 flex-1"
+                            placeholder="Valeur"
+                            value={cond.value}
+                            onChange={e => updateCondition(idx, { value: e.target.value })}
+                          />
+                        )}
+                        {form.conditions.length > 1 && (
+                          <button className="text-gray-400 hover:text-red-500" onClick={() => removeCondition(idx)}>
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <button
                   className="mt-2 text-xs text-tennis-green hover:underline flex items-center gap-1"

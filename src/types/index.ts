@@ -264,8 +264,8 @@ export interface BankOperation {
   ruleName?: string | null;
 }
 
-export type RuleField = 'rawLabel' | 'thirdParty' | 'blockMDT' | 'blockLIB' | 'blockMOTIF' | 'blockRNF' | 'paymentMethod' | 'direction';
-export type RuleOperator = 'contains' | 'equals' | 'startsWith' | 'endsWith' | 'notContains';
+export type RuleField = 'rawLabel' | 'thirdParty' | 'blockMDT' | 'blockLIB' | 'blockMOTIF' | 'blockRNF' | 'paymentMethod' | 'direction' | 'amount';
+export type RuleOperator = 'contains' | 'equals' | 'startsWith' | 'endsWith' | 'notContains' | 'greaterThan' | 'lessThan' | 'greaterThanOrEqual' | 'lessThanOrEqual';
 
 export interface RuleCondition {
   id?: string;

@@ -209,16 +209,32 @@ function extractThirdParty(label, method, direction) {
 
 function testCondition(op, cond) {
   const fieldVal = op[cond.field];
+
+  // Comparaison numérique pour le champ montant
+  if (cond.field === 'amount') {
+    const numVal  = parseFloat(fieldVal);
+    const numCond = parseFloat(cond.value);
+    if (isNaN(numVal) || isNaN(numCond)) return false;
+    switch (cond.operator) {
+      case 'equals':              return numVal === numCond;
+      case 'greaterThan':         return numVal >   numCond;
+      case 'lessThan':            return numVal <   numCond;
+      case 'greaterThanOrEqual':  return numVal >=  numCond;
+      case 'lessThanOrEqual':     return numVal <=  numCond;
+      default: return false;
+    }
+  }
+
   if (fieldVal === null || fieldVal === undefined) {
     return cond.operator === 'notContains';
   }
   const a = String(fieldVal).toLowerCase();
   const b = String(cond.value).toLowerCase();
   switch (cond.operator) {
-    case 'contains': return a.includes(b);
-    case 'equals': return a === b;
-    case 'startsWith': return a.startsWith(b);
-    case 'endsWith': return a.endsWith(b);
+    case 'contains':    return a.includes(b);
+    case 'equals':      return a === b;
+    case 'startsWith':  return a.startsWith(b);
+    case 'endsWith':    return a.endsWith(b);
     case 'notContains': return !a.includes(b);
     default: return false;
   }
