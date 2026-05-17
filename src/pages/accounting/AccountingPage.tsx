@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Pencil,
   Trash2,
@@ -8,6 +8,7 @@ import {
   Upload,
   RefreshCw,
   ChevronDown,
+  ChevronLeft,
   Wand2,
   Calendar,
   Bookmark,
@@ -2673,6 +2674,256 @@ function ImportsList({ imports, onDelete }: ImportsListProps) {
   );
 }
 
+// ─── Period Detail View ───────────────────────────────────────────────────────
+
+type PeriodSortMode = 'alpha' | 'direction';
+
+interface CategoryGroup {
+  category: string;
+  ops: BankOperation[];
+  totalCredit: number;
+  totalDebit: number;
+}
+
+interface PeriodDetailViewProps {
+  period: AccountingPeriod;
+  onBack: () => void;
+}
+
+function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
+  const [operations, setOperations] = useState<BankOperation[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [sortMode, setSortMode]     = useState<PeriodSortMode>('alpha');
+  const [expanded, setExpanded]     = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<BankOperation[]>(`/accounting/operations?periodId=${period.id}`)
+      .then(data => setOperations(data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [period.id]);
+
+  const groups = useMemo<CategoryGroup[]>(() => {
+    const map = new Map<string, BankOperation[]>();
+    for (const op of operations) {
+      const cat = op.category || '(Sans catégorie)';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(op);
+    }
+    const result: CategoryGroup[] = Array.from(map.entries()).map(([category, ops]) => {
+      const sorted = [...ops].sort((a, b) => a.operationDate.localeCompare(b.operationDate));
+      const totalCredit = ops.filter(o => o.direction === 'credit').reduce((s, o) => s + o.amount, 0);
+      const totalDebit  = ops.filter(o => o.direction === 'debit' ).reduce((s, o) => s + o.amount, 0);
+      return { category, ops: sorted, totalCredit, totalDebit };
+    });
+
+    if (sortMode === 'alpha') {
+      result.sort((a, b) => a.category.localeCompare(b.category, 'fr', { sensitivity: 'base' }));
+    } else {
+      // Tri par sens : crédits nets d'abord, puis mixtes, puis débits nets
+      const dirOrder = (g: CategoryGroup) =>
+        g.totalCredit > 0 && g.totalDebit === 0 ? 0 :
+        g.totalCredit === 0 && g.totalDebit > 0 ? 2 : 1;
+      result.sort((a, b) => {
+        const d = dirOrder(a) - dirOrder(b);
+        return d !== 0 ? d : a.category.localeCompare(b.category, 'fr', { sensitivity: 'base' });
+      });
+    }
+    return result;
+  }, [operations, sortMode]);
+
+  const totalCredit = operations.filter(o => o.direction === 'credit').reduce((s, o) => s + o.amount, 0);
+  const totalDebit  = operations.filter(o => o.direction === 'debit' ).reduce((s, o) => s + o.amount, 0);
+  const solde = totalCredit - totalDebit;
+
+  const toggleCategory = (cat: string) =>
+    setExpanded(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n; });
+
+  const fmtD = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR');
+
+  // Pour l'affichage en mode "par sens", insérer des séparateurs de section
+  type Row = { type: 'group'; g: CategoryGroup } | { type: 'header'; label: string };
+  const rows = useMemo<Row[]>(() => {
+    if (sortMode !== 'direction') return groups.map(g => ({ type: 'group', g }));
+    const result: Row[] = [];
+    let lastSection = -1;
+    const dirOrder = (g: CategoryGroup) =>
+      g.totalCredit > 0 && g.totalDebit === 0 ? 0 :
+      g.totalCredit === 0 && g.totalDebit > 0 ? 2 : 1;
+    const sectionLabels = ['Crédits', 'Mixte', 'Débits'];
+    for (const g of groups) {
+      const sec = dirOrder(g);
+      if (sec !== lastSection) {
+        result.push({ type: 'header', label: sectionLabels[sec] });
+        lastSection = sec;
+      }
+      result.push({ type: 'group', g });
+    }
+    return result;
+  }, [groups, sortMode]);
+
+  return (
+    <div>
+      {/* En-tête */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          onClick={onBack}
+          title="Retour aux périodes"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">{period.label}</h2>
+          <p className="text-xs text-gray-400">{fmtD(period.startDate)} – {fmtD(period.endDate)}</p>
+        </div>
+
+        {/* Tri */}
+        <div className="ml-auto flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          {([['alpha', 'Alphabétique'], ['direction', 'Par sens']] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors font-medium ${
+                sortMode === mode
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+              onClick={() => setSortMode(mode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Résumé global */}
+      {!loading && operations.length > 0 && (
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="card py-3 px-4">
+            <p className="text-xs text-gray-400 mb-0.5">Total crédits</p>
+            <p className="text-lg font-bold text-green-600">+{fmtCurrency(totalCredit)}</p>
+          </div>
+          <div className="card py-3 px-4">
+            <p className="text-xs text-gray-400 mb-0.5">Total débits</p>
+            <p className="text-lg font-bold text-red-500">−{fmtCurrency(totalDebit)}</p>
+          </div>
+          <div className="card py-3 px-4">
+            <p className="text-xs text-gray-400 mb-0.5">Solde</p>
+            <p className={`text-lg font-bold ${solde >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+              {solde >= 0 ? '+' : '−'}{fmtCurrency(Math.abs(solde))}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="card p-10 text-center text-gray-400 text-sm">Chargement…</div>
+      ) : operations.length === 0 ? (
+        <div className="card p-10 text-center text-gray-400 text-sm">Aucune opération rattachée à cette période.</div>
+      ) : (
+        <div className="card p-0 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 bg-gray-50">
+                <th className="px-3 py-2.5 w-6"></th>
+                <th className="px-3 py-2.5">Catégorie</th>
+                <th className="px-3 py-2.5 text-center">Opérations</th>
+                <th className="px-3 py-2.5 text-right text-green-700">Crédits</th>
+                <th className="px-3 py-2.5 text-right text-red-500">Débits</th>
+                <th className="px-3 py-2.5 text-right">Solde</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => {
+                if (row.type === 'header') {
+                  return (
+                    <tr key={`hdr-${idx}`}>
+                      <td colSpan={6} className="px-3 py-1.5 bg-gray-50 border-y border-gray-100">
+                        <span className={`text-xs font-semibold uppercase tracking-wider ${
+                          row.label === 'Crédits' ? 'text-green-600' :
+                          row.label === 'Débits'  ? 'text-red-500' : 'text-gray-400'
+                        }`}>{row.label}</span>
+                      </td>
+                    </tr>
+                  );
+                }
+                const { g } = row;
+                const isOpen = expanded.has(g.category);
+                const soldeG = g.totalCredit - g.totalDebit;
+                return (
+                  <>
+                    <tr
+                      key={g.category}
+                      className="border-b border-gray-50 hover:bg-gray-50/60 cursor-pointer"
+                      onClick={() => toggleCategory(g.category)}
+                    >
+                      <td className="px-3 py-2.5 text-gray-400">
+                        <ChevronDown size={13} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                      </td>
+                      <td className="px-3 py-2.5 font-medium text-gray-800">
+                        {g.category === '(Sans catégorie)'
+                          ? <span className="italic text-gray-400">{g.category}</span>
+                          : g.category}
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-gray-500">{g.ops.length}</td>
+                      <td className="px-3 py-2.5 text-right text-green-600 font-medium">
+                        {g.totalCredit > 0 ? `+${fmtCurrency(g.totalCredit)}` : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-red-500 font-medium">
+                        {g.totalDebit > 0 ? `−${fmtCurrency(g.totalDebit)}` : '—'}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-semibold ${soldeG >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                        {soldeG >= 0 ? '+' : '−'}{fmtCurrency(Math.abs(soldeG))}
+                      </td>
+                    </tr>
+                    {isOpen && g.ops.map(op => (
+                      <tr key={op.id} className="border-b border-gray-50 bg-gray-50/40 text-xs">
+                        <td className="px-3 py-1.5"></td>
+                        <td className="px-3 py-1.5 text-gray-400 pl-6" colSpan={1}>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-gray-500">{fmtD(op.operationDate)}</span>
+                            <span className="text-gray-700 font-medium truncate max-w-xs" title={op.thirdParty || op.rawLabel || ''}>
+                              {op.thirdParty || op.rawLabel || '—'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-1.5 text-center text-gray-400">
+                          {PAYMENT_METHOD_LABELS[op.paymentMethod]}
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-green-600">
+                          {op.direction === 'credit' ? `+${fmtCurrency(op.amount)}` : ''}
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-red-500">
+                          {op.direction === 'debit' ? `−${fmtCurrency(op.amount)}` : ''}
+                        </td>
+                        <td></td>
+                      </tr>
+                    ))}
+                  </>
+                );
+              })}
+            </tbody>
+            {/* Ligne de total */}
+            <tfoot>
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
+                <td></td>
+                <td className="px-3 py-2.5 text-gray-700">Total — {operations.length} opération(s)</td>
+                <td></td>
+                <td className="px-3 py-2.5 text-right text-green-700">+{fmtCurrency(totalCredit)}</td>
+                <td className="px-3 py-2.5 text-right text-red-600">−{fmtCurrency(totalDebit)}</td>
+                <td className={`px-3 py-2.5 text-right ${solde >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                  {solde >= 0 ? '+' : '−'}{fmtCurrency(Math.abs(solde))}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Periods Tab ──────────────────────────────────────────────────────────────
 
 interface PeriodsTabProps {
@@ -2683,6 +2934,7 @@ interface PeriodsTabProps {
 }
 
 function PeriodsTab({ periods, onPeriodsChange, onGoToImport, onGoToRules }: PeriodsTabProps) {
+  const [selectedPeriod, setSelectedPeriod] = useState<AccountingPeriod | null>(null);
   const [editing, setEditing] = useState<AccountingPeriod | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ label: '', startDate: '', endDate: '' });
@@ -2724,6 +2976,10 @@ function PeriodsTab({ periods, onPeriodsChange, onGoToImport, onGoToRules }: Per
   };
 
   const fmtD = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR');
+
+  if (selectedPeriod) {
+    return <PeriodDetailView period={selectedPeriod} onBack={() => setSelectedPeriod(null)} />;
+  }
 
   return (
     <div>
@@ -2790,14 +3046,18 @@ function PeriodsTab({ periods, onPeriodsChange, onGoToImport, onGoToRules }: Per
             </thead>
             <tbody>
               {periods.map(p => (
-                <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                <tr
+                  key={p.id}
+                  className="border-b border-gray-50 hover:bg-gray-50/70 cursor-pointer"
+                  onClick={() => setSelectedPeriod(p)}
+                >
                   <td className="px-4 py-3 font-medium text-gray-800">{p.label}</td>
                   <td className="px-4 py-3 text-gray-600">{fmtD(p.startDate)}</td>
                   <td className="px-4 py-3 text-gray-600">{fmtD(p.endDate)}</td>
                   <td className="px-4 py-3 text-center">
                     <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{p.importCount}</span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-2 justify-end">
                       <button className="text-gray-400 hover:text-tennis-green" onClick={() => openEdit(p)} title="Modifier"><Pencil size={14} /></button>
                       <button
