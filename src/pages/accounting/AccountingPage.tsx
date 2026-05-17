@@ -567,8 +567,9 @@ function TestRuleModal({ op, onClose, onApply, onEditRule }: TestRuleModalProps)
 
   useEffect(() => {
     api.get<AccountingRule[]>('/accounting/rules').then(data => {
-      setRules(data);
-      if (data.length > 0) setSelectedRuleId(data[0].id);
+      const sorted = [...data].sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' }));
+      setRules(sorted);
+      if (sorted.length > 0) setSelectedRuleId(sorted[0].id);
     }).catch(() => {});
   }, []);
 
@@ -1781,7 +1782,7 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
     setLoading(true);
     try {
       const data = await api.get<AccountingRule[]>('/accounting/rules');
-      setRules(data);
+      setRules([...data].sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' })));
     } catch {
       // silent
     } finally {
