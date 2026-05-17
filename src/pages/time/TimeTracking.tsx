@@ -688,6 +688,9 @@ interface CalendarRow {
   included: boolean;
 }
 
+// HH:MM:SS (MySQL) → HH:MM
+const fmtTime = (t: string) => t ? t.slice(0, 5) : t;
+
 function CalendarEntryModal({
   activityTypes,
   currentUserId,
@@ -705,14 +708,19 @@ function CalendarEntryModal({
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Ref pour capturer la valeur courante d'activityTypes au moment où la Promise se résout
+  const activityTypesRef = useRef(activityTypes);
+  useEffect(() => { activityTypesRef.current = activityTypes; });
+
   useEffect(() => {
     const load = async () => {
       try {
         const suggestions = await api.get<CalendarSuggestion[]>('/time-entries/calendar-suggestions');
+        const ats = activityTypesRef.current;
         setRows(suggestions.map(s => {
-          // Cherche le type d'activité par correspondance de nom (insensible à la casse)
+          // Correspondance insensible à la casse entre courseType (nom) et activityTypes
           const matched = s.courseType
-            ? activityTypes.find(at => at.name.trim().toLowerCase() === s.courseType!.trim().toLowerCase())
+            ? ats.find(at => at.name.trim().toLowerCase() === s.courseType!.trim().toLowerCase())
             : null;
           return {
             date: s.date,
@@ -730,7 +738,8 @@ function CalendarEntryModal({
       }
     };
     load();
-  }, [activityTypes]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Exécuté une seule fois ; activityTypes est lu via ref
 
   const includedRows = rows.filter(r => r.included);
   const totalIncludedHours = includedRows.reduce((sum, r) => sum + (parseFloat(r.hours) || 0), 0);
@@ -819,7 +828,7 @@ function CalendarEntryModal({
                       <td className="py-3 pr-4">
                         <div className="space-y-0.5">
                           {row.courses.map((c, ci) => (
-                            <p key={ci} className="text-xs text-gray-500">{c.label} {c.startTime}–{c.endTime}</p>
+                            <p key={ci} className="text-xs text-gray-500">{c.label} {fmtTime(c.startTime)}–{fmtTime(c.endTime)}</p>
                           ))}
                         </div>
                       </td>
