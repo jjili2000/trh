@@ -42,6 +42,7 @@ const FIELD_LABELS: Record<RuleField, string> = {
   paymentMethod: 'Mode de paiement',
   direction: 'Sens',
   amount: 'Montant',
+  operationDate: 'Date',
 };
 
 const OPERATOR_LABELS: Record<RuleOperator, string> = {
@@ -54,11 +55,16 @@ const OPERATOR_LABELS: Record<RuleOperator, string> = {
   lessThan: 'inférieur à',
   greaterThanOrEqual: 'supérieur ou égal à',
   lessThanOrEqual: 'inférieur ou égal à',
+  before:      'avant le',
+  after:       'après le',
+  onOrBefore:  'avant ou le',
+  onOrAfter:   'après ou le',
 };
 
 const TEXT_OPERATORS:    RuleOperator[] = ['contains', 'equals', 'startsWith', 'endsWith', 'notContains'];
 const NUMERIC_OPERATORS: RuleOperator[] = ['equals', 'greaterThan', 'lessThan', 'greaterThanOrEqual', 'lessThanOrEqual'];
 const ENUM_OPERATORS:    RuleOperator[] = ['equals'];
+const DATE_OPERATORS:    RuleOperator[] = ['equals', 'before', 'after', 'onOrBefore', 'onOrAfter'];
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   card: 'Carte',
@@ -81,19 +87,21 @@ const ENUM_FIELD_VALUES: Partial<Record<RuleField, { value: string; label: strin
 
 const NUMERIC_FIELDS: RuleField[] = ['amount'];
 
-function getFieldKind(field: RuleField): 'text' | 'numeric' | 'enum' {
+function getFieldKind(field: RuleField): 'text' | 'numeric' | 'enum' | 'date' {
+  if (field === 'operationDate')      return 'date';
   if (NUMERIC_FIELDS.includes(field)) return 'numeric';
   if (field in ENUM_FIELD_VALUES)     return 'enum';
   return 'text';
 }
 
-function defaultOperatorForKind(kind: 'text' | 'numeric' | 'enum'): RuleOperator {
+function defaultOperatorForKind(kind: 'text' | 'numeric' | 'enum' | 'date'): RuleOperator {
   if (kind === 'numeric') return 'greaterThan';
   if (kind === 'enum')    return 'equals';
+  if (kind === 'date')    return 'equals';
   return 'contains';
 }
 
-const ALL_FIELDS: RuleField[] = ['rawLabel', 'thirdParty', 'blockMDT', 'blockLIB', 'blockMOTIF', 'blockRNF', 'paymentMethod', 'direction', 'amount'];
+const ALL_FIELDS: RuleField[] = ['rawLabel', 'thirdParty', 'blockMDT', 'blockLIB', 'blockMOTIF', 'blockRNF', 'paymentMethod', 'direction', 'amount', 'operationDate'];
 
 function fmtCurrency(n: number) {
   return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
@@ -119,6 +127,19 @@ function testConditionClient(op: BankOperation, cond: RuleCondition): boolean {
       default: return false;
     }
   }
+  if (cond.field === 'operationDate') {
+    const d  = String(fieldVal ?? '').slice(0, 10); // YYYY-MM-DD
+    const dc = cond.value.slice(0, 10);
+    if (!d || !dc) return false;
+    switch (cond.operator) {
+      case 'equals':     return d === dc;
+      case 'before':     return d <   dc;
+      case 'after':      return d >   dc;
+      case 'onOrBefore': return d <=  dc;
+      case 'onOrAfter':  return d >=  dc;
+      default: return false;
+    }
+  }
   if (fieldVal === null || fieldVal === undefined) return cond.operator === 'notContains';
   const a = String(fieldVal).toLowerCase();
   const b = cond.value.toLowerCase();
@@ -136,9 +157,10 @@ function testConditionClient(op: BankOperation, cond: RuleCondition): boolean {
 function getFieldDisplay(op: BankOperation, field: string): string {
   const val = op[field as keyof BankOperation];
   if (val === null || val === undefined || val === '') return '(vide)';
-  if (field === 'direction')     return val === 'credit' ? 'Crédit' : 'Débit';
-  if (field === 'paymentMethod') return PAYMENT_METHOD_LABELS[val as PaymentMethod] ?? String(val);
-  if (field === 'amount')        return fmtCurrency(Number(val));
+  if (field === 'direction')      return val === 'credit' ? 'Crédit' : 'Débit';
+  if (field === 'paymentMethod')  return PAYMENT_METHOD_LABELS[val as PaymentMethod] ?? String(val);
+  if (field === 'amount')         return fmtCurrency(Number(val));
+  if (field === 'operationDate')  return fmtDate(String(val));
   return String(val);
 }
 
@@ -415,7 +437,7 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
             <div className="space-y-2">
               {conditions.map((cond, idx) => {
                 const kind = getFieldKind(cond.field as RuleField);
-                const availableOps = kind === 'numeric' ? NUMERIC_OPERATORS : kind === 'enum' ? ENUM_OPERATORS : TEXT_OPERATORS;
+                const availableOps = kind === 'numeric' ? NUMERIC_OPERATORS : kind === 'enum' ? ENUM_OPERATORS : kind === 'date' ? DATE_OPERATORS : TEXT_OPERATORS;
                 const enumValues = ENUM_FIELD_VALUES[cond.field as RuleField];
                 return (
                   <div key={idx} className="flex gap-1.5 items-center">
@@ -446,6 +468,13 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
                         <option value="">— Sélectionner —</option>
                         {enumValues.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
                       </select>
+                    ) : kind === 'date' ? (
+                      <input
+                        type="date"
+                        className="input text-xs py-1.5 flex-1 min-w-0"
+                        value={cond.value}
+                        onChange={e => updateCond(idx, { value: e.target.value })}
+                      />
                     ) : kind === 'numeric' ? (
                       <input
                         type="number" min="0" step="0.01"
@@ -1696,7 +1725,7 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
                 <div className="space-y-2">
                   {form.conditions.map((cond, idx) => {
                     const kind = getFieldKind(cond.field as RuleField);
-                    const availableOps = kind === 'numeric' ? NUMERIC_OPERATORS : kind === 'enum' ? ENUM_OPERATORS : TEXT_OPERATORS;
+                    const availableOps = kind === 'numeric' ? NUMERIC_OPERATORS : kind === 'enum' ? ENUM_OPERATORS : kind === 'date' ? DATE_OPERATORS : TEXT_OPERATORS;
                     const enumValues = ENUM_FIELD_VALUES[cond.field as RuleField];
                     return (
                       <div key={idx} className="flex gap-1 items-center">
@@ -1731,6 +1760,13 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
                             <option value="">— Sélectionner —</option>
                             {enumValues.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
                           </select>
+                        ) : kind === 'date' ? (
+                          <input
+                            type="date"
+                            className="input text-xs py-1 flex-1"
+                            value={cond.value}
+                            onChange={e => updateCondition(idx, { value: e.target.value })}
+                          />
                         ) : kind === 'numeric' ? (
                           <input
                             type="number" min="0" step="0.01"

@@ -225,6 +225,21 @@ function testCondition(op, cond) {
     }
   }
 
+  // Comparaison de date (format YYYY-MM-DD — lexicographiquement comparable)
+  if (cond.field === 'operationDate') {
+    const d  = fieldVal ? String(fieldVal).slice(0, 10) : '';
+    const dc = cond.value ? String(cond.value).slice(0, 10) : '';
+    if (!d || !dc) return false;
+    switch (cond.operator) {
+      case 'equals':     return d === dc;
+      case 'before':     return d <   dc;
+      case 'after':      return d >   dc;
+      case 'onOrBefore': return d <=  dc;
+      case 'onOrAfter':  return d >=  dc;
+      default: return false;
+    }
+  }
+
   if (fieldVal === null || fieldVal === undefined) {
     return cond.operator === 'notContains';
   }
