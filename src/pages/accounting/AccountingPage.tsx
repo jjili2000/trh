@@ -203,15 +203,15 @@ function CreateRuleFromOpModal({ op, categories, onClose, onCreated }: CreateRul
     if (!label.trim() || !category.trim() || validConds.length === 0) return;
     setSaving(true);
     try {
-      await api.post('/accounting/rules', {
+      const newRule = await api.post<{ id: string }>('/accounting/rules', {
         label: label.trim(),
         conditionOperator: condOperator,
         category: category.trim(),
         priority: 0,
         conditions: validConds,
       });
-      const result = await api.post<{ updated: number }>('/accounting/rules/apply-all', {});
-      setApplyResult(`Règle créée — ${result.updated} opération(s) catégorisée(s)`);
+      const result = await api.post<{ updated: number; updatedByRule: number }>('/accounting/rules/apply-all', { ruleId: newRule.id });
+      setApplyResult(`Règle créée — ${result.updatedByRule} opération(s) catégorisée(s)`);
       onCreated();
       setTimeout(onClose, 1800);
     } catch {

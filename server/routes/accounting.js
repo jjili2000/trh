@@ -698,8 +698,11 @@ router.delete('/rules/:id', async (req, res) => {
 });
 
 // POST /accounting/rules/apply-all
+// Body optionnel : { ruleId } pour comptabiliser séparément les opérations matchées par cette règle
 router.post('/rules/apply-all', async (req, res) => {
   try {
+    const { ruleId: targetRuleId } = req.body || {};
+
     // Load all rules with conditions for this user, sorted by priority desc
     const [rules] = await pool.execute(
       `SELECT * FROM accounting_rules WHERE userId = ? ORDER BY priority DESC, createdAt DESC`,
@@ -728,6 +731,7 @@ router.post('/rules/apply-all', async (req, res) => {
     );
 
     let updated = 0;
+    let updatedByRule = 0;
     for (const op of ops) {
       const opObj = mapOperation(op);
       const matchedRule = applyRulesToOp(opObj, rulesWithConds);
@@ -737,10 +741,11 @@ router.post('/rules/apply-all', async (req, res) => {
           [matchedRule.category, matchedRule.id, op.id]
         );
         updated++;
+        if (targetRuleId && matchedRule.id === targetRuleId) updatedByRule++;
       }
     }
 
-    res.json({ updated });
+    res.json({ updated, updatedByRule: targetRuleId ? updatedByRule : updated });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
