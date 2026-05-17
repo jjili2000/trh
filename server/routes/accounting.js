@@ -257,13 +257,25 @@ function testCondition(op, cond) {
 
 function applyRulesToOp(op, rules) {
   for (const rule of rules) {
-    const conditions = rule.conditions || [];
-    if (conditions.length === 0) continue;
-    let match;
-    if (rule.conditionOperator === 'OR') {
-      match = conditions.some(c => testCondition(op, c));
+    let match = false;
+    if (rule.groups && rule.groups.length > 0) {
+      // Multi-group evaluation
+      const rootOp = rule.rootOperator || 'AND';
+      const groupResults = rule.groups.map(g => {
+        const conds = g.conditions || [];
+        if (conds.length === 0) return true;
+        return g.groupOperator === 'OR'
+          ? conds.some(c => testCondition(op, c))
+          : conds.every(c => testCondition(op, c));
+      });
+      match = rootOp === 'OR' ? groupResults.some(r => r) : groupResults.every(r => r);
     } else {
-      match = conditions.every(c => testCondition(op, c));
+      // Backward compat: flat conditions
+      const conditions = rule.conditions || [];
+      if (conditions.length === 0) continue;
+      match = rule.conditionOperator === 'OR'
+        ? conditions.some(c => testCondition(op, c))
+        : conditions.every(c => testCondition(op, c));
     }
     if (match) return rule;
   }
@@ -876,7 +888,7 @@ router.get('/rules', async (req, res) => {
       condsByRule[c.ruleId].push(mapCondition(c));
     }
 
-    res.json(rules.map(r => ({ ...mapRule(r), conditions: condsByRule[r.id] || [] })));
+    res.json(rules.map(r => buildRuleResponse(r, condsByRule)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -886,27 +898,38 @@ router.get('/rules', async (req, res) => {
 // POST /accounting/rules
 router.post('/rules', async (req, res) => {
   try {
-    const { label, conditionOperator, category, conditions, priority } = req.body;
+    const { label, conditionOperator, rootOperator, category, conditions, groups, priority } = req.body;
     if (!label || !category) return res.status(400).json({ error: 'Libellé et catégorie requis' });
+
+    // Resolve groups and flat conditions
+    let resolvedGroupsJson = null;
+    let flatConditions = [];
+    if (Array.isArray(groups) && groups.length > 0) {
+      resolvedGroupsJson = JSON.stringify(groups);
+      flatConditions = groups.flatMap(g => g.conditions || []);
+    } else if (Array.isArray(conditions)) {
+      // Legacy flat: wrap in a single group for consistency
+      flatConditions = conditions;
+      resolvedGroupsJson = JSON.stringify([{ id: 'default', groupOperator: conditionOperator || 'AND', conditions }]);
+    }
 
     const ruleId = crypto.randomUUID();
     await pool.execute(
-      `INSERT INTO accounting_rules (id, userId, label, conditionOperator, category, priority, createdAt) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-      [ruleId, req.user.id, label, conditionOperator || 'AND', category, priority || 0]
+      `INSERT INTO accounting_rules (id, userId, label, conditionOperator, rootOperator, category, priority, groupsJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [ruleId, req.user.id, label, conditionOperator || 'AND', rootOperator || 'AND', category, priority || 0, resolvedGroupsJson]
     );
 
-    if (Array.isArray(conditions)) {
-      for (const cond of conditions) {
-        await pool.execute(
-          `INSERT INTO accounting_rule_conditions (id, ruleId, field, operator, value) VALUES (?, ?, ?, ?, ?)`,
-          [crypto.randomUUID(), ruleId, cond.field, cond.operator, cond.value]
-        );
-      }
+    for (const cond of flatConditions) {
+      await pool.execute(
+        `INSERT INTO accounting_rule_conditions (id, ruleId, field, operator, value) VALUES (?, ?, ?, ?, ?)`,
+        [crypto.randomUUID(), ruleId, cond.field, cond.operator, cond.value]
+      );
     }
 
     const [ruleRows] = await pool.execute('SELECT * FROM accounting_rules WHERE id = ?', [ruleId]);
     const [condRows] = await pool.execute('SELECT * FROM accounting_rule_conditions WHERE ruleId = ?', [ruleId]);
-    res.status(201).json({ ...mapRule(ruleRows[0]), conditions: condRows.map(mapCondition) });
+    const condsByRule = { [ruleId]: condRows };
+    res.status(201).json(buildRuleResponse(ruleRows[0], condsByRule));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -923,26 +946,36 @@ router.put('/rules/:id', async (req, res) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Règle non trouvée' });
 
-    const { label, conditionOperator, category, conditions, priority } = req.body;
+    const { label, conditionOperator, rootOperator, category, conditions, groups, priority } = req.body;
+
+    let resolvedGroupsJson = null;
+    let flatConditions = [];
+    if (Array.isArray(groups) && groups.length > 0) {
+      resolvedGroupsJson = JSON.stringify(groups);
+      flatConditions = groups.flatMap(g => g.conditions || []);
+    } else if (Array.isArray(conditions)) {
+      flatConditions = conditions;
+      resolvedGroupsJson = JSON.stringify([{ id: 'default', groupOperator: conditionOperator || 'AND', conditions }]);
+    }
+
     await pool.execute(
-      `UPDATE accounting_rules SET label = ?, conditionOperator = ?, category = ?, priority = ? WHERE id = ?`,
-      [label, conditionOperator || 'AND', category, priority || 0, id]
+      `UPDATE accounting_rules SET label = ?, conditionOperator = ?, rootOperator = ?, category = ?, priority = ?, groupsJson = ? WHERE id = ?`,
+      [label, conditionOperator || 'AND', rootOperator || 'AND', category, priority || 0, resolvedGroupsJson, id]
     );
 
     // Replace conditions
     await pool.execute('DELETE FROM accounting_rule_conditions WHERE ruleId = ?', [id]);
-    if (Array.isArray(conditions)) {
-      for (const cond of conditions) {
-        await pool.execute(
-          `INSERT INTO accounting_rule_conditions (id, ruleId, field, operator, value) VALUES (?, ?, ?, ?, ?)`,
-          [crypto.randomUUID(), id, cond.field, cond.operator, cond.value]
-        );
-      }
+    for (const cond of flatConditions) {
+      await pool.execute(
+        `INSERT INTO accounting_rule_conditions (id, ruleId, field, operator, value) VALUES (?, ?, ?, ?, ?)`,
+        [crypto.randomUUID(), id, cond.field, cond.operator, cond.value]
+      );
     }
 
     const [ruleRows] = await pool.execute('SELECT * FROM accounting_rules WHERE id = ?', [id]);
     const [condRows] = await pool.execute('SELECT * FROM accounting_rule_conditions WHERE ruleId = ?', [id]);
-    res.json({ ...mapRule(ruleRows[0]), conditions: condRows.map(mapCondition) });
+    const condsByRule = { [id]: condRows };
+    res.json(buildRuleResponse(ruleRows[0], condsByRule));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -1009,9 +1042,20 @@ router.post('/rules/apply-all', async (req, res) => {
     const condsByRule = {};
     for (const c of allConds) {
       if (!condsByRule[c.ruleId]) condsByRule[c.ruleId] = [];
-      condsByRule[c.ruleId].push(c);
+      condsByRule[c.ruleId].push(mapCondition(c));
     }
-    const rulesWithConds = rules.map(r => ({ ...r, conditions: condsByRule[r.id] || [] }));
+    const rulesWithConds = rules.map(r => {
+      const mapped = mapRule(r);
+      const flatConditions = condsByRule[r.id] || [];
+      let groups = null;
+      if (r.groupsJson) {
+        try { groups = JSON.parse(r.groupsJson); } catch { groups = null; }
+      }
+      if (!groups || groups.length === 0) {
+        groups = [{ id: 'default', groupOperator: mapped.conditionOperator, conditions: flatConditions }];
+      }
+      return { ...mapped, groups, conditions: flatConditions };
+    });
 
     // Load all operations for this user that don't have a manual category
     const [ops] = await pool.execute(
@@ -1182,10 +1226,26 @@ function mapRule(row) {
     userId: row.userId,
     label: row.label,
     conditionOperator: row.conditionOperator,
+    rootOperator: row.rootOperator || 'AND',
     category: row.category,
     priority: row.priority,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
   };
+}
+
+// Builds the full API response for a rule row.
+// condsByRule is a map ruleId → [mapCondition(row), ...]
+function buildRuleResponse(row, condsByRule) {
+  const rule = mapRule(row);
+  const flatConditions = (condsByRule[row.id] || []).map(mapCondition);
+  let groups = null;
+  if (row.groupsJson) {
+    try { groups = JSON.parse(row.groupsJson); } catch { groups = null; }
+  }
+  if (!groups || groups.length === 0) {
+    groups = [{ id: 'default', groupOperator: rule.conditionOperator, conditions: flatConditions }];
+  }
+  return { ...rule, groups, conditions: flatConditions };
 }
 
 function mapCondition(row) {

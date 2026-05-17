@@ -290,15 +290,23 @@ export interface SavedFilter {
   createdAt: string;
 }
 
+export interface RuleGroup {
+  id: string;
+  groupOperator: 'AND' | 'OR';
+  conditions: RuleCondition[];
+}
+
 export interface AccountingRule {
   id: string;
   userId: string;
   label: string;
   conditionOperator: 'AND' | 'OR';
+  rootOperator: 'AND' | 'OR';
   category: string;
   priority: number;
   createdAt: string;
   conditions: RuleCondition[];
+  groups: RuleGroup[];
 }
 
 // ─── Payroll ──────────────────────────────────────────────────────────────────

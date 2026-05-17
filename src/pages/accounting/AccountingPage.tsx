@@ -164,6 +164,26 @@ function getFieldDisplay(op: BankOperation, field: string): string {
   return String(val);
 }
 
+// Description lisible d'une règle (supporte groupes et conditions plates)
+function formatRuleDescription(rule: AccountingRule): string {
+  const fmtCond = (c: RuleCondition) =>
+    `${FIELD_LABELS[c.field]} ${OPERATOR_LABELS[c.operator]} « ${c.value} »`;
+
+  if (rule.groups && rule.groups.length > 0) {
+    const groupStrs = rule.groups.map(g => {
+      const parts = g.conditions.map(fmtCond);
+      if (parts.length === 1) return parts[0];
+      const sep = g.groupOperator === 'AND' ? ' ET ' : ' OU ';
+      return `(${parts.join(sep)})`;
+    });
+    const rootSep = (rule.rootOperator || 'AND') === 'AND' ? ' ET ' : ' OU ';
+    return groupStrs.join(rootSep);
+  }
+  // Backward compat: flat conditions
+  const sep = rule.conditionOperator === 'AND' ? ' ET ' : ' OU ';
+  return rule.conditions.map(fmtCond).join(sep);
+}
+
 // ─── Category Popover ─────────────────────────────────────────────────────────
 
 interface CategoryPopoverProps {
@@ -551,16 +571,30 @@ function TestRuleModal({ op, onClose, onApply }: TestRuleModalProps) {
 
   const selectedRule = rules.find(r => r.id === selectedRuleId);
 
-  const condResults = (selectedRule?.conditions ?? []).map(cond => ({
-    cond,
-    passed: testConditionClient(op, cond),
-    actual: getFieldDisplay(op, cond.field),
-  }));
+  // Libellé lisible d'une valeur de condition (enum → label)
+  const condValueLabel = (cond: RuleCondition): string => {
+    const enumVals = ENUM_FIELD_VALUES[cond.field as RuleField];
+    if (enumVals) return enumVals.find(v => v.value === cond.value)?.label ?? cond.value;
+    if (cond.field === 'amount') return `${cond.value} €`;
+    return cond.value;
+  };
 
-  const ruleMatches = selectedRule && condResults.length > 0
-    ? (selectedRule.conditionOperator === 'OR'
-        ? condResults.some(r => r.passed)
-        : condResults.every(r => r.passed))
+  // Évaluation par groupes
+  const groupResults = (selectedRule?.groups ?? []).map(g => {
+    const condResults = g.conditions.map(cond => ({
+      cond,
+      passed: testConditionClient(op, cond),
+      actual: getFieldDisplay(op, cond.field),
+    }));
+    const groupPassed = g.groupOperator === 'OR'
+      ? condResults.some(r => r.passed)
+      : condResults.every(r => r.passed);
+    return { group: g, condResults, groupPassed };
+  });
+
+  const rootOp = selectedRule?.rootOperator ?? 'AND';
+  const ruleMatches = selectedRule && groupResults.length > 0
+    ? (rootOp === 'OR' ? groupResults.some(g => g.groupPassed) : groupResults.every(g => g.groupPassed))
     : false;
 
   const handleApply = async () => {
@@ -568,14 +602,6 @@ function TestRuleModal({ op, onClose, onApply }: TestRuleModalProps) {
     setApplying(true);
     try { await onApply(selectedRule.category); }
     finally { setApplying(false); }
-  };
-
-  // Libellé lisible d'une valeur de condition (enum → label)
-  const condValueLabel = (cond: RuleCondition): string => {
-    const enumVals = ENUM_FIELD_VALUES[cond.field as RuleField];
-    if (enumVals) return enumVals.find(v => v.value === cond.value)?.label ?? cond.value;
-    if (cond.field === 'amount') return `${cond.value} €`;
-    return cond.value;
   };
 
   return (
@@ -630,46 +656,72 @@ function TestRuleModal({ op, onClose, onApply }: TestRuleModalProps) {
             )}
           </div>
 
-          {/* Résultats des conditions */}
-          {selectedRule && condResults.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="label mb-0">Conditions</label>
-                <span className="text-xs text-gray-400">
-                  {selectedRule.conditionOperator === 'AND' ? 'Toutes requises (ET)' : 'Au moins une (OU)'}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {condResults.map((r, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex items-start gap-3 rounded-lg px-3 py-2.5 text-sm border ${
-                      r.passed
-                        ? 'bg-green-50 border-green-200'
-                        : 'bg-red-50 border-red-200'
-                    }`}
-                  >
-                    <span className={`flex-shrink-0 mt-0.5 ${r.passed ? 'text-green-600' : 'text-red-500'}`}>
-                      {r.passed ? <Check size={15} /> : <X size={15} />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className={`font-medium ${r.passed ? 'text-green-800' : 'text-red-700'}`}>
-                        {FIELD_LABELS[r.cond.field as RuleField] ?? r.cond.field}
-                        {' '}<span className="font-normal opacity-75">{OPERATOR_LABELS[r.cond.operator]}</span>
-                        {' '}<span className="font-semibold">«&nbsp;{condValueLabel(r.cond)}&nbsp;»</span>
-                      </p>
-                      <p className="text-xs mt-0.5 opacity-70">
-                        Valeur réelle&nbsp;: <span className="font-medium">{r.actual}</span>
-                      </p>
+          {/* Résultats par groupes */}
+          {selectedRule && groupResults.length > 0 && (
+            <div className="space-y-3">
+              {groupResults.map((gr, gIdx) => (
+                <div key={gIdx}>
+                  {/* Séparateur entre groupes */}
+                  {gIdx > 0 && (
+                    <div className="flex items-center gap-2 my-2">
+                      <div className="flex-1 h-px bg-gray-200" />
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${
+                        rootOp === 'AND'
+                          ? 'border-blue-200 bg-blue-50 text-blue-600'
+                          : 'border-amber-200 bg-amber-50 text-amber-600'
+                      }`}>
+                        {rootOp}
+                      </span>
+                      <div className="flex-1 h-px bg-gray-200" />
                     </div>
+                  )}
+
+                  {/* Groupe */}
+                  <div className={`rounded-lg border p-3 space-y-2 ${
+                    gr.groupPassed ? 'border-green-200 bg-green-50/30' : 'border-red-200 bg-red-50/30'
+                  }`}>
+                    {/* En-tête du groupe */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 font-medium">
+                        {groupResults.length > 1 ? `Groupe ${gIdx + 1} — ` : ''}
+                        {gr.group.groupOperator === 'AND' ? 'Toutes requises (ET)' : 'Au moins une (OU)'}
+                      </span>
+                      <span className={`text-xs font-semibold ${gr.groupPassed ? 'text-green-600' : 'text-red-500'}`}>
+                        {gr.groupPassed ? '✓ validé' : '✗ non validé'}
+                      </span>
+                    </div>
+
+                    {/* Conditions */}
+                    {gr.condResults.map((r, cIdx) => (
+                      <div
+                        key={cIdx}
+                        className={`flex items-start gap-3 rounded-lg px-3 py-2 text-sm border ${
+                          r.passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                        }`}
+                      >
+                        <span className={`flex-shrink-0 mt-0.5 ${r.passed ? 'text-green-600' : 'text-red-500'}`}>
+                          {r.passed ? <Check size={14} /> : <X size={14} />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className={`font-medium text-xs ${r.passed ? 'text-green-800' : 'text-red-700'}`}>
+                            {FIELD_LABELS[r.cond.field as RuleField] ?? r.cond.field}
+                            {' '}<span className="font-normal opacity-75">{OPERATOR_LABELS[r.cond.operator]}</span>
+                            {' '}<span className="font-semibold">«&nbsp;{condValueLabel(r.cond)}&nbsp;»</span>
+                          </p>
+                          <p className="text-xs mt-0.5 opacity-60">
+                            Valeur réelle&nbsp;: <span className="font-medium">{r.actual}</span>
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           )}
 
           {/* Résultat global */}
-          {selectedRule && condResults.length > 0 && (
+          {selectedRule && groupResults.length > 0 && (
             <div className={`flex items-center gap-3 rounded-lg px-4 py-3 border ${
               ruleMatches
                 ? 'bg-green-100 border-green-300 text-green-800'
@@ -1430,20 +1482,32 @@ interface RulesTabProps {
 
 const emptyCondition = (): RuleCondition => ({ field: 'rawLabel', operator: 'contains', value: '' });
 
-interface RuleFormState {
-  label: string;
-  conditionOperator: 'AND' | 'OR';
-  category: string;
-  priority: string;
+interface RuleGroupForm {
+  id: string;
+  groupOperator: 'AND' | 'OR';
   conditions: RuleCondition[];
 }
 
+interface RuleFormState {
+  label: string;
+  rootOperator: 'AND' | 'OR';
+  category: string;
+  priority: string;
+  groups: RuleGroupForm[];
+}
+
+const emptyGroup = (): RuleGroupForm => ({
+  id: crypto.randomUUID(),
+  groupOperator: 'AND',
+  conditions: [emptyCondition()],
+});
+
 const emptyRuleForm = (): RuleFormState => ({
   label: '',
-  conditionOperator: 'AND',
+  rootOperator: 'AND',
   category: '',
   priority: '0',
-  conditions: [emptyCondition()],
+  groups: [emptyGroup()],
 });
 
 function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
@@ -1522,12 +1586,27 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
 
   const openEdit = (rule: AccountingRule) => {
     setEditingRule(rule);
+    let groups: RuleGroupForm[];
+    if (rule.groups && rule.groups.length > 0) {
+      groups = rule.groups.map(g => ({
+        id: g.id || crypto.randomUUID(),
+        groupOperator: g.groupOperator,
+        conditions: g.conditions.length > 0 ? g.conditions : [emptyCondition()],
+      }));
+    } else {
+      // Backward compat: single group from flat conditions
+      groups = [{
+        id: crypto.randomUUID(),
+        groupOperator: rule.conditionOperator,
+        conditions: rule.conditions.length > 0 ? rule.conditions : [emptyCondition()],
+      }];
+    }
     setForm({
       label: rule.label,
-      conditionOperator: rule.conditionOperator,
+      rootOperator: rule.rootOperator || 'AND',
       category: rule.category,
       priority: String(rule.priority),
-      conditions: rule.conditions.length > 0 ? rule.conditions : [emptyCondition()],
+      groups,
     });
     setCatInput(rule.category);
     setShowEditor(true);
@@ -1544,12 +1623,20 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
     if (!form.label.trim() || !form.category.trim()) return;
     setSaving(true);
     try {
+      const validGroups = form.groups
+        .map(g => ({ ...g, conditions: g.conditions.filter(c => c.value.trim()) }))
+        .filter(g => g.conditions.length > 0);
+      if (validGroups.length === 0) return;
+      const flatConditions = validGroups.flatMap(g => g.conditions);
+      const conditionOperator = validGroups[0].groupOperator; // compat
       const payload = {
         label: form.label.trim(),
-        conditionOperator: form.conditionOperator,
+        conditionOperator,
+        rootOperator: form.rootOperator,
         category: form.category.trim(),
         priority: parseInt(form.priority) || 0,
-        conditions: form.conditions.filter(c => c.value.trim()),
+        groups: validGroups,
+        conditions: flatConditions,
       };
       if (editingRule) {
         await api.put(`/accounting/rules/${editingRule.id}`, payload);
@@ -1576,20 +1663,44 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
     }
   };
 
-  const updateCondition = (idx: number, patch: Partial<RuleCondition>) => {
+  const updateGroup = (gIdx: number, patch: Partial<RuleGroupForm>) =>
     setForm(prev => ({
       ...prev,
-      conditions: prev.conditions.map((c, i) => i === idx ? { ...c, ...patch } : c),
+      groups: prev.groups.map((g, i) => i === gIdx ? { ...g, ...patch } : g),
     }));
-  };
 
-  const removeCondition = (idx: number) => {
-    setForm(prev => ({ ...prev, conditions: prev.conditions.filter((_, i) => i !== idx) }));
-  };
+  const removeGroup = (gIdx: number) =>
+    setForm(prev => ({ ...prev, groups: prev.groups.filter((_, i) => i !== gIdx) }));
 
-  const addCondition = () => {
-    setForm(prev => ({ ...prev, conditions: [...prev.conditions, emptyCondition()] }));
-  };
+  const addGroup = () =>
+    setForm(prev => ({ ...prev, groups: [...prev.groups, emptyGroup()] }));
+
+  const updateGroupCondition = (gIdx: number, cIdx: number, patch: Partial<RuleCondition>) =>
+    setForm(prev => ({
+      ...prev,
+      groups: prev.groups.map((g, gi) => gi !== gIdx ? g : {
+        ...g,
+        conditions: g.conditions.map((c, ci) => ci === cIdx ? { ...c, ...patch } : c),
+      }),
+    }));
+
+  const removeGroupCondition = (gIdx: number, cIdx: number) =>
+    setForm(prev => ({
+      ...prev,
+      groups: prev.groups.map((g, gi) => gi !== gIdx ? g : {
+        ...g,
+        conditions: g.conditions.filter((_, ci) => ci !== cIdx),
+      }),
+    }));
+
+  const addGroupCondition = (gIdx: number) =>
+    setForm(prev => ({
+      ...prev,
+      groups: prev.groups.map((g, gi) => gi !== gIdx ? g : {
+        ...g,
+        conditions: [...g.conditions, emptyCondition()],
+      }),
+    }));
 
   return (
     <div className="flex gap-4 flex-col lg:flex-row">
@@ -1656,12 +1767,8 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
                     </span>
                     <span className="text-xs text-gray-400">priorité: {rule.priority}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {rule.conditionOperator === 'AND' ? 'Toutes les conditions' : 'Au moins une condition'} :
-                    {' '}
-                    {rule.conditions.map(c =>
-                      `${FIELD_LABELS[c.field]} ${OPERATOR_LABELS[c.operator]} "${c.value}"`
-                    ).join(rule.conditionOperator === 'AND' ? ' ET ' : ' OU ')}
+                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                    {formatRuleDescription(rule)}
                   </p>
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
@@ -1703,100 +1810,154 @@ function RulesTab({ categories, onCategoriesChange }: RulesTabProps) {
               </div>
 
               <div>
-                <label className="label">Opérateur</label>
-                <div className="flex gap-3">
-                  {(['AND', 'OR'] as const).map(op => (
-                    <label key={op} className="flex items-center gap-1.5 cursor-pointer text-sm">
-                      <input
-                        type="radio"
-                        name="condOp"
-                        value={op}
-                        checked={form.conditionOperator === op}
-                        onChange={() => setForm(prev => ({ ...prev, conditionOperator: op }))}
-                      />
-                      {op === 'AND' ? 'ET (toutes)' : 'OU (au moins une)'}
-                    </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="label mb-0">Conditions</label>
+                  {form.groups.length > 1 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-gray-400">Groupes :</span>
+                      {(['AND', 'OR'] as const).map(op => (
+                        <label key={op} className="flex items-center gap-1 cursor-pointer text-xs text-gray-600">
+                          <input
+                            type="radio"
+                            name="rootOp"
+                            value={op}
+                            checked={form.rootOperator === op}
+                            onChange={() => setForm(prev => ({ ...prev, rootOperator: op }))}
+                          />
+                          {op}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {form.groups.map((group, gIdx) => (
+                    <div key={group.id}>
+                      {/* Séparateur entre groupes */}
+                      {gIdx > 0 && (
+                        <div className="flex items-center gap-2 my-2">
+                          <div className="flex-1 h-px bg-gray-200" />
+                          <span className="text-xs font-semibold text-gray-400 px-2 py-0.5 border border-gray-200 rounded bg-gray-50">
+                            {form.rootOperator}
+                          </span>
+                          <div className="flex-1 h-px bg-gray-200" />
+                        </div>
+                      )}
+
+                      {/* Groupe */}
+                      <div className="border border-gray-200 rounded-lg p-2 space-y-1.5 bg-gray-50/50">
+                        {/* En-tête du groupe */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400">Dans ce groupe :</span>
+                          {(['AND', 'OR'] as const).map(op => (
+                            <label key={op} className="flex items-center gap-1 cursor-pointer text-xs text-gray-600">
+                              <input
+                                type="radio"
+                                name={`grpOp-${group.id}`}
+                                value={op}
+                                checked={group.groupOperator === op}
+                                onChange={() => updateGroup(gIdx, { groupOperator: op })}
+                              />
+                              {op === 'AND' ? 'Toutes (ET)' : 'Au moins une (OU)'}
+                            </label>
+                          ))}
+                          {form.groups.length > 1 && (
+                            <button
+                              className="ml-auto text-gray-300 hover:text-red-500 transition-colors"
+                              onClick={() => removeGroup(gIdx)}
+                              title="Supprimer ce groupe"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Conditions du groupe */}
+                        {group.conditions.map((cond, cIdx) => {
+                          const kind = getFieldKind(cond.field as RuleField);
+                          const availableOps = kind === 'numeric' ? NUMERIC_OPERATORS : kind === 'enum' ? ENUM_OPERATORS : kind === 'date' ? DATE_OPERATORS : TEXT_OPERATORS;
+                          const enumValues = ENUM_FIELD_VALUES[cond.field as RuleField];
+                          return (
+                            <div key={cIdx} className="flex gap-1 items-center">
+                              <select
+                                className="input text-xs py-1 flex-1"
+                                value={cond.field}
+                                onChange={e => {
+                                  const f = e.target.value as RuleField;
+                                  const nk = getFieldKind(f);
+                                  updateGroupCondition(gIdx, cIdx, { field: f, operator: defaultOperatorForKind(nk), value: '' });
+                                }}
+                              >
+                                {ALL_FIELDS.map(f => <option key={f} value={f}>{FIELD_LABELS[f]}</option>)}
+                              </select>
+                              <select
+                                className="input text-xs py-1 flex-1"
+                                value={cond.operator}
+                                onChange={e => updateGroupCondition(gIdx, cIdx, { operator: e.target.value as RuleOperator })}
+                              >
+                                {availableOps.map(o => <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>)}
+                              </select>
+                              {kind === 'enum' && enumValues ? (
+                                <select
+                                  className="input text-xs py-1 flex-1"
+                                  value={cond.value}
+                                  onChange={e => updateGroupCondition(gIdx, cIdx, { value: e.target.value })}
+                                >
+                                  <option value="">— Sélectionner —</option>
+                                  {enumValues.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+                                </select>
+                              ) : kind === 'date' ? (
+                                <input
+                                  type="date"
+                                  className="input text-xs py-1 flex-1"
+                                  value={cond.value}
+                                  onChange={e => updateGroupCondition(gIdx, cIdx, { value: e.target.value })}
+                                />
+                              ) : kind === 'numeric' ? (
+                                <input
+                                  type="number" min="0" step="0.01"
+                                  className="input text-xs py-1 flex-1"
+                                  placeholder="Montant (€)"
+                                  value={cond.value}
+                                  onChange={e => updateGroupCondition(gIdx, cIdx, { value: e.target.value })}
+                                />
+                              ) : (
+                                <input
+                                  className="input text-xs py-1 flex-1"
+                                  placeholder="Valeur"
+                                  value={cond.value}
+                                  onChange={e => updateGroupCondition(gIdx, cIdx, { value: e.target.value })}
+                                />
+                              )}
+                              {group.conditions.length > 1 && (
+                                <button
+                                  className="text-gray-400 hover:text-red-500 flex-shrink-0"
+                                  onClick={() => removeGroupCondition(gIdx, cIdx)}
+                                >
+                                  <X size={13} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        <button
+                          className="text-xs text-tennis-green hover:underline flex items-center gap-1 pt-0.5"
+                          onClick={() => addGroupCondition(gIdx)}
+                        >
+                          <Plus size={11} /> Ajouter une condition
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
-              </div>
 
-              <div>
-                <label className="label">Conditions</label>
-                <div className="space-y-2">
-                  {form.conditions.map((cond, idx) => {
-                    const kind = getFieldKind(cond.field as RuleField);
-                    const availableOps = kind === 'numeric' ? NUMERIC_OPERATORS : kind === 'enum' ? ENUM_OPERATORS : kind === 'date' ? DATE_OPERATORS : TEXT_OPERATORS;
-                    const enumValues = ENUM_FIELD_VALUES[cond.field as RuleField];
-                    return (
-                      <div key={idx} className="flex gap-1 items-center">
-                        <select
-                          className="input text-xs py-1 flex-1"
-                          value={cond.field}
-                          onChange={e => {
-                            const f = e.target.value as RuleField;
-                            const newKind = getFieldKind(f);
-                            updateCondition(idx, { field: f, operator: defaultOperatorForKind(newKind), value: '' });
-                          }}
-                        >
-                          {ALL_FIELDS.map(f => (
-                            <option key={f} value={f}>{FIELD_LABELS[f]}</option>
-                          ))}
-                        </select>
-                        <select
-                          className="input text-xs py-1 flex-1"
-                          value={cond.operator}
-                          onChange={e => updateCondition(idx, { operator: e.target.value as RuleOperator })}
-                        >
-                          {availableOps.map(o => (
-                            <option key={o} value={o}>{OPERATOR_LABELS[o]}</option>
-                          ))}
-                        </select>
-                        {kind === 'enum' && enumValues ? (
-                          <select
-                            className="input text-xs py-1 flex-1"
-                            value={cond.value}
-                            onChange={e => updateCondition(idx, { value: e.target.value })}
-                          >
-                            <option value="">— Sélectionner —</option>
-                            {enumValues.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
-                          </select>
-                        ) : kind === 'date' ? (
-                          <input
-                            type="date"
-                            className="input text-xs py-1 flex-1"
-                            value={cond.value}
-                            onChange={e => updateCondition(idx, { value: e.target.value })}
-                          />
-                        ) : kind === 'numeric' ? (
-                          <input
-                            type="number" min="0" step="0.01"
-                            className="input text-xs py-1 flex-1"
-                            placeholder="Montant (€)"
-                            value={cond.value}
-                            onChange={e => updateCondition(idx, { value: e.target.value })}
-                          />
-                        ) : (
-                          <input
-                            className="input text-xs py-1 flex-1"
-                            placeholder="Valeur"
-                            value={cond.value}
-                            onChange={e => updateCondition(idx, { value: e.target.value })}
-                          />
-                        )}
-                        {form.conditions.length > 1 && (
-                          <button className="text-gray-400 hover:text-red-500" onClick={() => removeCondition(idx)}>
-                            <X size={13} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
                 <button
-                  className="mt-2 text-xs text-tennis-green hover:underline flex items-center gap-1"
-                  onClick={addCondition}
+                  className="mt-2 text-xs text-indigo-500 hover:underline flex items-center gap-1"
+                  onClick={addGroup}
                 >
-                  <Plus size={12} /> Ajouter une condition
+                  <Plus size={11} /> Ajouter un groupe (parenthèses)
                 </button>
               </div>
 
