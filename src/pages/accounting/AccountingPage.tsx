@@ -434,6 +434,8 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [filterMethod, setFilterMethod] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterSearch, setFilterSearch] = useState('');
+  const [filterAmountMin, setFilterAmountMin] = useState('');
+  const [filterAmountMax, setFilterAmountMax] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -445,6 +447,8 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
       if (filterMethod)    params.set('paymentMethod', filterMethod);
       if (filterCategory)  params.set('category', filterCategory);
       if (filterSearch)    params.set('search', filterSearch);
+      if (filterAmountMin) params.set('amountMin', filterAmountMin);
+      if (filterAmountMax) params.set('amountMax', filterAmountMax);
       const data = await api.get<BankOperation[]>(`/accounting/operations?${params.toString()}`);
       setOperations(data);
     } catch {
@@ -452,7 +456,7 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     } finally {
       setLoading(false);
     }
-  }, [filterPeriod, filterImport, filterDirection, filterMethod, filterCategory, filterSearch]);
+  }, [filterPeriod, filterImport, filterDirection, filterMethod, filterCategory, filterSearch, filterAmountMin, filterAmountMax]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -461,15 +465,17 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   }, []);
 
   const currentFilters = () => ({
-    periodId: filterPeriod || undefined,
-    importId: filterImport || undefined,
-    direction: filterDirection || undefined,
+    periodId:   filterPeriod    || undefined,
+    importId:   filterImport    || undefined,
+    direction:  filterDirection || undefined,
     paymentMethod: filterMethod || undefined,
-    category: filterCategory || undefined,
-    search: filterSearch || undefined,
+    category:   filterCategory  || undefined,
+    search:     filterSearch    || undefined,
+    amountMin:  filterAmountMin || undefined,
+    amountMax:  filterAmountMax || undefined,
   });
 
-  const hasActiveFilter = () => !!(filterPeriod || filterImport || filterDirection || filterMethod || filterCategory || filterSearch);
+  const hasActiveFilter = () => !!(filterPeriod || filterImport || filterDirection || filterMethod || filterCategory || filterSearch || filterAmountMin || filterAmountMax);
 
   const handleSaveFilter = async () => {
     if (!savingName.trim()) return;
@@ -491,6 +497,8 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     setFilterMethod(sf.filters.paymentMethod || '');
     setFilterCategory(sf.filters.category || '');
     setFilterSearch(sf.filters.search || '');
+    setFilterAmountMin(sf.filters.amountMin || '');
+    setFilterAmountMax(sf.filters.amountMax || '');
     setSavedFilterOpen(false);
   };
 
@@ -501,6 +509,8 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     setFilterMethod('');
     setFilterCategory('');
     setFilterSearch('');
+    setFilterAmountMin('');
+    setFilterAmountMax('');
   };
 
   useEffect(() => {
@@ -705,6 +715,48 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
               <button
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors"
                 onClick={() => setFilterSearch('')}
+                tabIndex={-1}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          <div className="relative">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input text-sm py-1.5 w-28 pr-7"
+              placeholder="Montant ≥"
+              value={filterAmountMin}
+              onChange={e => setFilterAmountMin(e.target.value)}
+            />
+            {filterAmountMin && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors"
+                onClick={() => setFilterAmountMin('')}
+                tabIndex={-1}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          <div className="relative">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="input text-sm py-1.5 w-28 pr-7"
+              placeholder="Montant ≤"
+              value={filterAmountMax}
+              onChange={e => setFilterAmountMax(e.target.value)}
+            />
+            {filterAmountMax && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors"
+                onClick={() => setFilterAmountMax('')}
                 tabIndex={-1}
               >
                 <X size={13} />

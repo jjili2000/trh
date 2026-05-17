@@ -284,6 +284,8 @@ export interface SavedFilter {
     paymentMethod?: string;
     category?: string;
     search?: string;
+    amountMin?: string;
+    amountMax?: string;
   };
   createdAt: string;
 }

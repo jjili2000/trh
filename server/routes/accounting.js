@@ -522,7 +522,7 @@ router.post('/import/confirm', async (req, res) => {
 // GET /accounting/operations
 router.get('/operations', async (req, res) => {
   try {
-    const { importId, periodId, direction, paymentMethod, category, search, dateFrom, dateTo } = req.query;
+    const { importId, periodId, direction, paymentMethod, category, search, dateFrom, dateTo, amountMin, amountMax } = req.query;
 
     // bo.periodId (affectation manuelle) prime sur bi.periodId (période de l'import)
     let sql = `SELECT bo.*, ar.label as ruleName,
@@ -551,8 +551,10 @@ router.get('/operations', async (req, res) => {
       const like = `%${search}%`;
       params.push(like, like, like);
     }
-    if (dateFrom) { sql += ' AND bo.operationDate >= ?'; params.push(dateFrom); }
-    if (dateTo)   { sql += ' AND bo.operationDate <= ?'; params.push(dateTo); }
+    if (dateFrom)   { sql += ' AND bo.operationDate >= ?'; params.push(dateFrom); }
+    if (dateTo)     { sql += ' AND bo.operationDate <= ?'; params.push(dateTo); }
+    if (amountMin)  { sql += ' AND bo.amount >= ?'; params.push(parseFloat(amountMin)); }
+    if (amountMax)  { sql += ' AND bo.amount <= ?'; params.push(parseFloat(amountMax)); }
 
     sql += ' ORDER BY bo.operationDate DESC, bo.createdAt DESC';
 
