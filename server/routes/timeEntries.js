@@ -48,6 +48,20 @@ router.get('/calendar-suggestions', async (req, res) => {
   try {
     // On récupère toutes les dates planifiées jusqu'à aujourd'hui (saisons publiées/clôturées).
     // Pas de borne inférieure arbitraire : c'est existingDates qui filtre les jours déjà saisis.
+    // Borne inférieure : date de la dernière saisie issue du calendrier pour cet utilisateur.
+    // Les saisies manuelles (source IS NULL) sont ignorées pour ce calcul.
+    const [lastCalRows] = await pool.execute(
+      `SELECT MAX(date) AS last_cal_date
+       FROM time_entries
+       WHERE user_id = ? AND source = 'calendar'`,
+      [req.user.id]
+    );
+    const lastCalDate = lastCalRows[0]?.last_cal_date
+      ? (lastCalRows[0].last_cal_date instanceof Date
+          ? lastCalRows[0].last_cal_date.toISOString().slice(0, 10)
+          : String(lastCalRows[0].last_cal_date).slice(0, 10))
+      : null;
+
     const [rows] = await pool.execute(
       `SELECT
          DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) AS actual_date,
@@ -61,11 +75,12 @@ router.get('/calendar-suggestions', async (req, res) => {
        WHERE tc.teacher_id = ?
          AND s.status IN ('published', 'closed')
          AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) <= CURDATE()
+         ${lastCalDate ? 'AND DATE_ADD(swa.week_start_date, INTERVAL (tc.day_of_week - 1) DAY) > ?' : ''}
        ORDER BY actual_date ASC`,
-      [req.user.id]
+      lastCalDate ? [req.user.id, lastCalDate] : [req.user.id]
     );
 
-    // Get dates that already have time entries for this user
+    // Get dates that already have time entries for this user (toutes origines confondues)
     const [existingEntryRows] = await pool.execute(
       'SELECT DISTINCT date FROM time_entries WHERE user_id = ?',
       [req.user.id]
@@ -152,8 +167,8 @@ router.post('/bulk', async (req, res) => {
       }
       const id = crypto.randomUUID();
       await pool.execute(
-        `INSERT INTO time_entries (id, user_id, date, hours, activity_type_id, description, status)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+        `INSERT INTO time_entries (id, user_id, date, hours, activity_type_id, description, status, source)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', 'calendar')`,
         [id, req.user.id, date, hours, activityTypeId || null, description || null]
       );
       createdIds.push(id);
