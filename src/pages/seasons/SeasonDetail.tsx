@@ -238,7 +238,7 @@ function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCours
   }));
 }
 
-function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId, onEditCourse, onAddCourse, holidays }: {
+function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId, onEditCourse, onAddCourse, holidays, showDates = true }: {
   templateWeek: TemplateWeek | null;
   startDay: Date;
   numDays?: number;
@@ -247,6 +247,7 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
   onEditCourse?: (course: TemplateCourse) => void;
   onAddCourse?:  (dayOfWeek: number, startTime: string) => void;
   holidays?: Map<string, string>;
+  showDates?: boolean;
 }) {
   const { appSettings } = useApp();
   const START_HOUR = appSettings.calendarStartHour ?? DEFAULT_START_HOUR;
@@ -285,11 +286,13 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
       <div className="flex border-b border-gray-200">
         <div className="w-12 flex-shrink-0" />
         {days.map((d, i) => {
-          const holiday = holidays?.get(isoDate(d));
+          const holiday = showDates ? holidays?.get(isoDate(d)) : undefined;
           return (
             <div key={i} className={`flex-1 min-w-20 text-center py-2 text-xs font-semibold border-l border-gray-200 ${holiday ? 'bg-orange-50' : ''}`}>
               <div className={holiday ? 'text-orange-700' : 'text-gray-600'}>{DAYS_SHORT[getDayOfWeek(d) - 1]}</div>
-              <div className={`font-normal ${holiday ? 'text-orange-400' : 'text-gray-400'}`}>{d.getDate()}</div>
+              {showDates && (
+                <div className={`font-normal ${holiday ? 'text-orange-400' : 'text-gray-400'}`}>{d.getDate()}</div>
+              )}
               {holiday && (
                 <div className="text-orange-500 text-[9px] leading-tight px-0.5 truncate mt-0.5" title={holiday}>
                   {holiday}
@@ -1353,7 +1356,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
             users={users}
             onEditCourse={(course) => openEditCourse(selectedTW, course)}
             onAddCourse={(dayOfWeek, startTime) => openAddCourse(selectedTW, dayOfWeek, startTime)}
-            holidays={getFrenchHolidays(TEMPLATE_WEEK_START.getFullYear())}
+            showDates={false}
           />
         </div>
       ) : (
