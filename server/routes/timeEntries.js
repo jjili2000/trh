@@ -334,16 +334,17 @@ router.put('/:id/reject', async (req, res) => {
 });
 
 // Vérifie si une entrée est protégée par une paie validée
-// (son validated_at tombe dans une période de paie au statut 'validated')
+// (la date de travail tombe dans une période de paie au statut 'validated')
 async function isLockedByPayroll(entry) {
-  if (!entry.validated_at) return false;
+  const entryDate = entry.date instanceof Date
+    ? entry.date.toISOString().slice(0, 10)
+    : String(entry.date).slice(0, 10);
   const [rows] = await pool.execute(
     `SELECT id FROM payroll_periods
      WHERE status = 'validated'
-       AND ? >= start_date
-       AND ? <= CONCAT(end_date, ' 23:59:59')
+       AND ? BETWEEN start_date AND end_date
      LIMIT 1`,
-    [entry.validated_at, entry.validated_at]
+    [entryDate]
   );
   return rows.length > 0;
 }

@@ -92,34 +92,34 @@ router.get('/:id', async (req, res) => {
     const endStr = mapDate(period.end_date);
     const endDatetime = endStr + ' 23:59:59';
 
-    // Time entries validées dans la période (par validated_at)
+    // Time entries approuvées dont la date de travail tombe dans la période
     const [timeRows] = await pool.execute(
       `SELECT te.*, u.first_name, u.last_name
        FROM time_entries te
        JOIN users u ON u.id = te.user_id
        WHERE te.status = 'approved'
-         AND te.validated_at BETWEEN ? AND ?`,
-      [startStr, endDatetime]
+         AND te.date BETWEEN ? AND ?`,
+      [startStr, endStr]
     );
 
-    // Absences validées dans la période (par validated_at)
+    // Absences approuvées qui chevauchent la période (début ou fin dans la période)
     const [absenceRows] = await pool.execute(
       `SELECT ar.*, u.first_name, u.last_name
        FROM absence_requests ar
        JOIN users u ON u.id = ar.user_id
        WHERE ar.status = 'approved'
-         AND ar.validated_at BETWEEN ? AND ?`,
-      [startStr, endDatetime]
+         AND ar.start_date <= ? AND ar.end_date >= ?`,
+      [endStr, startStr]
     );
 
-    // Frais validés dans la période (par validated_at)
+    // Frais approuvés dont la date tombe dans la période
     const [expenseRows] = await pool.execute(
       `SELECT e.*, u.first_name, u.last_name
        FROM expenses e
        JOIN users u ON u.id = e.user_id
        WHERE e.status = 'approved'
-         AND e.validated_at BETWEEN ? AND ?`,
-      [startStr, endDatetime]
+         AND e.date BETWEEN ? AND ?`,
+      [startStr, endStr]
     );
 
     // Regrouper par userId
@@ -270,22 +270,22 @@ router.get('/:id/export', async (req, res) => {
       `SELECT te.user_id, te.hours, u.first_name, u.last_name
        FROM time_entries te
        JOIN users u ON u.id = te.user_id
-       WHERE te.status = 'approved' AND te.validated_at BETWEEN ? AND ?`,
-      [startStr, endDatetime]
+       WHERE te.status = 'approved' AND te.date BETWEEN ? AND ?`,
+      [startStr, endStr]
     );
     const [absenceRows] = await pool.execute(
       `SELECT ar.user_id, ar.start_date, ar.end_date, u.first_name, u.last_name
        FROM absence_requests ar
        JOIN users u ON u.id = ar.user_id
-       WHERE ar.status = 'approved' AND ar.validated_at BETWEEN ? AND ?`,
-      [startStr, endDatetime]
+       WHERE ar.status = 'approved' AND ar.start_date <= ? AND ar.end_date >= ?`,
+      [endStr, startStr]
     );
     const [expenseRows] = await pool.execute(
       `SELECT e.user_id, e.amount, u.first_name, u.last_name
        FROM expenses e
        JOIN users u ON u.id = e.user_id
-       WHERE e.status = 'approved' AND e.validated_at BETWEEN ? AND ?`,
-      [startStr, endDatetime]
+       WHERE e.status = 'approved' AND e.date BETWEEN ? AND ?`,
+      [startStr, endStr]
     );
 
     const userMap = {};
