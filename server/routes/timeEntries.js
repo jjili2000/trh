@@ -346,6 +346,13 @@ async function isLockedByPayroll(entry) {
      LIMIT 1`,
     [entryDate]
   );
+  console.log('[isLockedByPayroll] entryDate:', entryDate, '→ locked:', rows.length > 0);
+  if (rows.length === 0) {
+    const [allPeriods] = await pool.execute(
+      `SELECT id, start_date, end_date, status FROM payroll_periods ORDER BY start_date DESC`
+    );
+    console.log('[isLockedByPayroll] périodes connues:', JSON.stringify(allPeriods));
+  }
   return rows.length > 0;
 }
 
