@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, FormEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Edit2, Calendar, BookOpen, Plus, X, Trash2,
@@ -29,6 +29,69 @@ const SLOT_H     = 30; // px per 30 min
 
 // Lundi de référence pour l'affichage des semaines type (2024-01-01 est un lundi)
 const TEMPLATE_WEEK_START = new Date(2024, 0, 1);
+
+// ─── French public holidays ───────────────────────────────────────────────────
+
+function getEaster(year: number): Date {
+  // Meeus/Jones/Butcher algorithm
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day   = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+function getFrenchHolidays(year: number): Map<string, string> {
+  const map = new Map<string, string>();
+  const add = (month: number, day: number, name: string) => {
+    const d = new Date(year, month - 1, day);
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    map.set(`${y}-${mo}-${dd}`, name);
+  };
+  // Fixed
+  add(1,  1,  "Jour de l'an");
+  add(5,  1,  'Fête du travail');
+  add(5,  8,  'Victoire 1945');
+  add(7,  14, 'Fête nationale');
+  add(8,  15, 'Assomption');
+  add(11, 1,  'Toussaint');
+  add(11, 11, 'Armistice');
+  add(12, 25, 'Noël');
+  // Easter-based
+  const easter = getEaster(year);
+  const addOffset = (offset: number, name: string) => {
+    const d = new Date(easter);
+    d.setDate(d.getDate() + offset);
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    map.set(`${y}-${mo}-${dd}`, name);
+  };
+  addOffset(1,  'Lundi de Pâques');
+  addOffset(39, 'Ascension');
+  addOffset(50, 'Lundi de Pentecôte');
+  return map;
+}
+
+function getFrenchHolidaysForRange(startYear: number, endYear: number): Map<string, string> {
+  const all = new Map<string, string>();
+  for (let y = startYear; y <= endYear; y++) {
+    for (const [date, name] of getFrenchHolidays(y)) all.set(date, name);
+  }
+  return all;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -175,7 +238,7 @@ function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCours
   }));
 }
 
-function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId, onEditCourse, onAddCourse }: {
+function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId, onEditCourse, onAddCourse, holidays }: {
   templateWeek: TemplateWeek | null;
   startDay: Date;
   numDays?: number;
@@ -183,6 +246,7 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
   filterUserId?: string | null;
   onEditCourse?: (course: TemplateCourse) => void;
   onAddCourse?:  (dayOfWeek: number, startTime: string) => void;
+  holidays?: Map<string, string>;
 }) {
   const { appSettings } = useApp();
   const START_HOUR = appSettings.calendarStartHour ?? DEFAULT_START_HOUR;
@@ -220,12 +284,20 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
       {/* Day headers */}
       <div className="flex border-b border-gray-200">
         <div className="w-12 flex-shrink-0" />
-        {days.map((d, i) => (
-          <div key={i} className="flex-1 min-w-20 text-center py-2 text-xs font-semibold text-gray-600 border-l border-gray-200">
-            <div>{DAYS_SHORT[getDayOfWeek(d) - 1]}</div>
-            <div className="text-gray-400 font-normal">{d.getDate()}</div>
-          </div>
-        ))}
+        {days.map((d, i) => {
+          const holiday = holidays?.get(isoDate(d));
+          return (
+            <div key={i} className={`flex-1 min-w-20 text-center py-2 text-xs font-semibold border-l border-gray-200 ${holiday ? 'bg-orange-50' : ''}`}>
+              <div className={holiday ? 'text-orange-700' : 'text-gray-600'}>{DAYS_SHORT[getDayOfWeek(d) - 1]}</div>
+              <div className={`font-normal ${holiday ? 'text-orange-400' : 'text-gray-400'}`}>{d.getDate()}</div>
+              {holiday && (
+                <div className="text-orange-500 text-[9px] leading-tight px-0.5 truncate mt-0.5" title={holiday}>
+                  {holiday}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Time grid */}
@@ -246,8 +318,9 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
             c.dayOfWeek === getDayOfWeek(days[di]) &&
             (!filterUserId || c.teacherId === filterUserId)
           )) || [];
+          const isHoliday = !!holidays?.get(isoDate(days[di]));
           return (
-            <div key={di} className="flex-1 min-w-20 relative border-l border-gray-200" style={{ height: totalH }}>
+            <div key={di} className={`flex-1 min-w-20 relative border-l border-gray-200 ${isHoliday ? 'bg-orange-50/40' : ''}`} style={{ height: totalH }}>
               {/* Hour grid lines */}
               {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => (
                 <div key={i} className="absolute inset-x-0 border-t border-gray-200"
@@ -397,6 +470,12 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   const twColorMap     = Object.fromEntries(templateWeeks.map((tw, i) => [tw.id, TW_COLORS[i % TW_COLORS.length]]));
   const allMonthGroups = groupByMonth(allWeeks);
   const allMonthKeys   = Array.from(allMonthGroups.keys());
+
+  const holidays = useMemo(() => {
+    const sy = parseInt(season.startDate.slice(0, 4));
+    const ey = parseInt(season.endDate.slice(0, 4));
+    return getFrenchHolidaysForRange(sy, ey);
+  }, [season.startDate, season.endDate]);
 
   // Week view
   const currentWeek = allWeeks[weekIdx] || allWeeks[0];
@@ -694,6 +773,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               filterUserId={filterUserId}
               onEditCourse={handleEditCourse}
               onAddCourse={handleAddCourse}
+              holidays={holidays}
             />
           ) : (
             <div className="card text-center py-12 text-gray-400">
@@ -740,6 +820,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               filterUserId={filterUserId}
               onEditCourse={handleEditCourse}
               onAddCourse={handleAddCourse}
+              holidays={holidays}
             />
           ) : (
             <div className="card text-center py-12 text-gray-400">
@@ -789,6 +870,20 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                               return dc.some(c => isConflictingCourse(c, dc));
                             })
                           : false;
+                        // Check if any course day coincides with a French public holiday
+                        const holidayConflicts: string[] = [];
+                        if (tw) {
+                          for (let di = 0; di < 7; di++) {
+                            const dayD = addDays(w, di);
+                            const h = holidays.get(isoDate(dayD));
+                            if (h) {
+                              const dow = getDayOfWeek(dayD); // 1=Lun … 7=Dim
+                              if (tw.courses.some(c => c.dayOfWeek === dow)) {
+                                holidayConflicts.push(h);
+                              }
+                            }
+                          }
+                        }
                         const isThisWeek = isoDate(w) === isoDate(getMonday(todayDate));
                         return (
                           <tr key={wKey} id={isThisWeek ? 'cal-today-row' : undefined}
@@ -816,6 +911,11 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                                   {hasConflict && (
                                     <span title="Une ou plusieurs activités sont en conflit d'agenda">
                                       <AlertTriangle size={13} className="text-yellow-500" />
+                                    </span>
+                                  )}
+                                  {holidayConflicts.length > 0 && (
+                                    <span title={`Cours sur jour(s) férié(s) : ${holidayConflicts.join(', ')}`}>
+                                      <AlertCircle size={13} className="text-orange-500" />
                                     </span>
                                   )}
                                 </div>
@@ -1253,6 +1353,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
             users={users}
             onEditCourse={(course) => openEditCourse(selectedTW, course)}
             onAddCourse={(dayOfWeek, startTime) => openAddCourse(selectedTW, dayOfWeek, startTime)}
+            holidays={getFrenchHolidays(TEMPLATE_WEEK_START.getFullYear())}
           />
         </div>
       ) : (
