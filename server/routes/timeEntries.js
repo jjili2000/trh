@@ -348,30 +348,7 @@ async function isLockedByPayroll(entry) {
   return rows.length > 0;
 }
 
-// DELETE /api/time-entries/:id
-router.delete('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
-    if (existing.length === 0) return res.status(404).json({ error: 'Entrée non trouvée' });
-
-    const entry = existing[0];
-    if (entry.user_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Accès refusé' });
-    }
-    if (await isLockedByPayroll(entry)) {
-      return res.status(400).json({ error: 'Cette saisie a été prise en compte dans une paie validée et ne peut pas être supprimée.' });
-    }
-
-    await pool.execute('DELETE FROM time_entries WHERE id = ?', [id]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// DELETE /api/time-entries/bulk — suppression multiple
+// DELETE /api/time-entries/bulk — suppression multiple (DOIT être avant /:id)
 router.delete('/bulk', async (req, res) => {
   try {
     const { ids } = req.body;
@@ -406,6 +383,29 @@ router.delete('/bulk', async (req, res) => {
       locked: locked.length,
       lockedIds: locked,
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// DELETE /api/time-entries/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
+    if (existing.length === 0) return res.status(404).json({ error: 'Entrée non trouvée' });
+
+    const entry = existing[0];
+    if (entry.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+    if (await isLockedByPayroll(entry)) {
+      return res.status(400).json({ error: 'Cette saisie a été prise en compte dans une paie validée et ne peut pas être supprimée.' });
+    }
+
+    await pool.execute('DELETE FROM time_entries WHERE id = ?', [id]);
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
