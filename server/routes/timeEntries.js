@@ -397,9 +397,39 @@ router.delete('/bulk', async (req, res) => {
   }
 });
 
+// GET /api/time-entries/:id/payroll-debug — diagnostic temporaire
+router.get('/:id/payroll-debug', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
+    if (existing.length === 0) return res.status(404).json({ error: 'Entrée non trouvée' });
+    const entry = existing[0];
+    const entryDate = entry.date instanceof Date
+      ? entry.date.toISOString().slice(0, 10)
+      : String(entry.date).slice(0, 10);
+    const [periods] = await pool.execute(
+      'SELECT id, start_date, end_date, status FROM payroll_periods ORDER BY start_date DESC'
+    );
+    const [matching] = await pool.execute(
+      `SELECT id, start_date, end_date, status FROM payroll_periods
+       WHERE status = 'validated' AND ? BETWEEN start_date AND end_date`,
+      [entryDate]
+    );
+    res.json({
+      entryId: id,
+      entryDate,
+      entryStatus: entry.status,
+      isLocked: matching.length > 0,
+      matchingPeriods: matching,
+      allPeriods: periods,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // DELETE /api/time-entries/:id
 router.delete('/:id', async (req, res) => {
-  console.log('[DELETE /:id] called, id=', req.params.id, 'user=', req.user?.id);
   try {
     const { id } = req.params;
     const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
