@@ -397,32 +397,20 @@ router.delete('/bulk', async (req, res) => {
   }
 });
 
-// GET /api/time-entries/:id/payroll-debug — diagnostic temporaire
-router.get('/:id/payroll-debug', async (req, res) => {
+// GET /api/time-entries/payroll-debug — diagnostic temporaire (liste les périodes + saisies récentes)
+router.get('/payroll-debug', async (req, res) => {
   try {
-    const { id } = req.params;
-    const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
-    if (existing.length === 0) return res.status(404).json({ error: 'Entrée non trouvée' });
-    const entry = existing[0];
-    const entryDate = entry.date instanceof Date
-      ? entry.date.toISOString().slice(0, 10)
-      : String(entry.date).slice(0, 10);
     const [periods] = await pool.execute(
       'SELECT id, start_date, end_date, status FROM payroll_periods ORDER BY start_date DESC'
     );
-    const [matching] = await pool.execute(
-      `SELECT id, start_date, end_date, status FROM payroll_periods
-       WHERE status = 'validated' AND ? BETWEEN start_date AND end_date`,
-      [entryDate]
+    const [entries] = await pool.execute(
+      `SELECT te.id, te.user_id, te.date, te.status as entry_status,
+              u.first_name, u.last_name
+       FROM time_entries te
+       JOIN users u ON u.id = te.user_id
+       ORDER BY te.date DESC LIMIT 20`
     );
-    res.json({
-      entryId: id,
-      entryDate,
-      entryStatus: entry.status,
-      isLocked: matching.length > 0,
-      matchingPeriods: matching,
-      allPeriods: periods,
-    });
+    res.json({ periods, recentEntries: entries });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
