@@ -12,6 +12,7 @@ const statusLabels: Record<string, string> = {
   pending: 'En attente',
   approved: 'Approuvé',
   rejected: 'Rejeté',
+  paid: 'Payée',
 };
 
 interface EntryFormData {
@@ -453,9 +454,9 @@ export default function TimeTracking() {
                         <input
                           type="checkbox"
                           className="rounded border-gray-300 text-tennis-green"
-                          checked={myEntries.length > 0 && mySelectedIds.size === myEntries.length}
-                          ref={el => { if (el) el.indeterminate = mySelectedIds.size > 0 && mySelectedIds.size < myEntries.length; }}
-                          onChange={() => setMySelectedIds(mySelectedIds.size === myEntries.length ? new Set() : new Set(myEntries.map(e => e.id)))}
+                          checked={myEntries.filter(e => e.status !== 'paid').length > 0 && mySelectedIds.size === myEntries.filter(e => e.status !== 'paid').length}
+                          ref={el => { if (el) { const deletable = myEntries.filter(e => e.status !== 'paid'); el.indeterminate = mySelectedIds.size > 0 && mySelectedIds.size < deletable.length; } }}
+                          onChange={() => { const deletable = myEntries.filter(e => e.status !== 'paid').map(e => e.id); setMySelectedIds(mySelectedIds.size === deletable.length ? new Set() : new Set(deletable)); }}
                         />
                       </th>
                       <th className="text-left py-2 pr-4 text-gray-500 font-medium">Date</th>
@@ -472,14 +473,16 @@ export default function TimeTracking() {
                       const at = getActivityType(entry.activityTypeId);
                       const isSelected = mySelectedIds.has(entry.id);
                       return (
-                        <tr key={entry.id} className={`hover:bg-gray-50 ${isSelected ? 'bg-red-50/40' : ''}`}>
+                        <tr key={entry.id} className={`hover:bg-gray-50 ${isSelected ? 'bg-red-50/40' : entry.status === 'paid' ? 'bg-blue-50/30' : ''}`}>
                           <td className="py-3 pr-3">
-                            <input
-                              type="checkbox"
-                              className="rounded border-gray-300 text-tennis-green"
-                              checked={isSelected}
-                              onChange={() => toggleMySelect(entry.id)}
-                            />
+                            {entry.status !== 'paid' && (
+                              <input
+                                type="checkbox"
+                                className="rounded border-gray-300 text-tennis-green"
+                                checked={isSelected}
+                                onChange={() => toggleMySelect(entry.id)}
+                              />
+                            )}
                           </td>
                           <td className="py-3 pr-4 text-gray-700 whitespace-nowrap">
                             {new Date(entry.date + 'T12:00:00').toLocaleDateString('fr-FR')}
@@ -509,13 +512,15 @@ export default function TimeTracking() {
                                   <Pencil size={14} />
                                 </button>
                               )}
-                              <button
-                                onClick={() => handleDeleteOne(entry)}
-                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Supprimer"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              {entry.status !== 'paid' && (
+                                <button
+                                  onClick={() => handleDeleteOne(entry)}
+                                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

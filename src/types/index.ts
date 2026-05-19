@@ -51,7 +51,7 @@ export interface TimeEntry {
   description?: string;
   startTime?: string; // HH:MM
   endTime?: string;   // HH:MM
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'paid';
   validatedBy?: string;
   validatedAt?: string;
   createdAt: string;

@@ -336,6 +336,9 @@ router.put('/:id/reject', async (req, res) => {
 // Vérifie si une entrée est protégée par une paie validée
 // (la date de travail tombe dans une période de paie au statut 'validated')
 async function isLockedByPayroll(entry) {
+  // Chemin rapide : statut 'paid' signifie déjà intégré dans une paie validée
+  if (entry.status === 'paid') return true;
+  // Fallback : vérifier si la date tombe dans une période validée
   const entryDate = entry.date instanceof Date
     ? entry.date.toISOString().slice(0, 10)
     : String(entry.date).slice(0, 10);
@@ -402,20 +405,12 @@ router.delete('/:id', async (req, res) => {
     if (entry.user_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const entryDate = entry.date instanceof Date
-      ? entry.date.toISOString().slice(0, 10)
-      : String(entry.date).slice(0, 10);
-
     if (await isLockedByPayroll(entry)) {
       return res.status(400).json({ error: 'Cette saisie a été prise en compte dans une paie validée et ne peut pas être supprimée.' });
     }
 
-    // DEBUG TEMPORAIRE — à supprimer après diagnostic
-    const [validatedPeriods] = await pool.execute(
-      `SELECT id, start_date, end_date, status FROM payroll_periods WHERE status = 'validated'`
-    );
     await pool.execute('DELETE FROM time_entries WHERE id = ?', [id]);
-    res.json({ success: true, _debug: { entryDate, validatedPeriods } });
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
