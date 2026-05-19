@@ -913,17 +913,17 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               </select>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div>
+              <div className="min-w-0">
                 <label className="label">Début *</label>
                 <input type="time" className="input" value={calCourseForm.startTime}
                   onChange={e => handleCalStartTimeChange(e.target.value)} required />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="label">Fin *</label>
                 <input type="time" className="input" value={calCourseForm.endTime}
                   onChange={e => setCalCourseForm(f => ({ ...f, endTime: e.target.value }))} required />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="label">Durée</label>
                 <select
                   className="input"
@@ -1298,17 +1298,17 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
               </select>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div>
+              <div className="min-w-0">
                 <label className="label">Début *</label>
                 <input type="time" className="input" value={courseForm.startTime}
                   onChange={e => handleStartTimeChange(e.target.value)} required />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="label">Fin *</label>
                 <input type="time" className="input" value={courseForm.endTime}
                   onChange={e => setCourseForm(f => ({ ...f, endTime: e.target.value }))} required />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="label">Durée</label>
                 <select
                   className="input"
