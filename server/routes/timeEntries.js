@@ -399,6 +399,7 @@ router.delete('/bulk', async (req, res) => {
 
 // DELETE /api/time-entries/:id
 router.delete('/:id', async (req, res) => {
+  console.log('[DELETE /:id] called, id=', req.params.id, 'user=', req.user?.id);
   try {
     const { id } = req.params;
     const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
