@@ -728,9 +728,31 @@ export default function BudgetRequestDetail() {
         )}
 
         {showOwnerSubmittedView && (
-          <button className="btn-danger" onClick={handleCancel} disabled={saving}>
-            Annuler la demande
-          </button>
+          <>
+            <button
+              className="btn-secondary"
+              disabled={saving}
+              onClick={async () => {
+                if (!confirm('Repasser cette demande en brouillon ? Elle ne sera plus en attente de validation.')) return;
+                setSaving(true);
+                setError(null);
+                try {
+                  const updated = await api.post<BudgetRequest>(`/budgets/requests/${id}/return-to-draft`, {});
+                  setRequest(updated);
+                  setLines(updated.lines || []);
+                } catch {
+                  setError('Erreur lors du retour en brouillon');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              Retour en brouillon
+            </button>
+            <button className="btn-danger" onClick={handleCancel} disabled={saving}>
+              Annuler la demande
+            </button>
+          </>
         )}
       </div>
 

@@ -379,12 +379,17 @@ router.post('/requests/:id/approve', async (req, res) => {
 // POST /requests/:id/return-to-draft
 router.post('/requests/:id/return-to-draft', async (req, res) => {
   try {
-    if (!(await isBudgetValidator(req.user.id, req.user.role))) return res.status(403).json({ error: 'Accès refusé' });
     const { id } = req.params;
     const { approverComment } = req.body;
     const [rows] = await pool.execute('SELECT * FROM budget_requests WHERE id = ?', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Demande non trouvée' });
     const request = rows[0];
+
+    // Autorisé : le validateur budgétaire OU le propriétaire de la demande
+    const isValidator = await isBudgetValidator(req.user.id, req.user.role);
+    const isOwner = request.user_id === req.user.id;
+    if (!isValidator && !isOwner) return res.status(403).json({ error: 'Accès refusé' });
+
     if (request.status !== 'submitted') return res.status(400).json({ error: 'Seules les demandes soumises peuvent être renvoyées en brouillon' });
 
     await pool.execute(
