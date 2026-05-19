@@ -888,16 +888,20 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                           }
                         }
                         const isThisWeek = isoDate(w) === isoDate(getMonday(todayDate));
+                        const goToWeekView = () => {
+                          const idx = allWeeks.findIndex(wk => isoDate(wk) === wKey);
+                          if (idx !== -1) setWeekIdx(idx);
+                          setViewMode('week');
+                        };
                         return (
                           <tr key={wKey} id={isThisWeek ? 'cal-today-row' : undefined}
-                            className={`hover:bg-gray-50 ${isThisWeek ? 'bg-tennis-green/5' : ''}`}>
+                            className={`cursor-pointer hover:bg-gray-100 transition-colors ${isThisWeek ? 'bg-tennis-green/5' : ''}`}
+                            onClick={goToWeekView}
+                          >
                             <td className={`px-4 py-2.5 font-mono text-xs ${isThisWeek ? 'text-tennis-green font-bold' : 'text-gray-400'}`}>
                               {getWeekNum(w)}{isThisWeek && ' ●'}
                             </td>
-                            <td
-                              className="px-4 py-2.5 text-gray-600 cursor-pointer"
-                              onClick={() => setAssignModal({ weekDate: w, current: twId })}
-                            >
+                            <td className="px-4 py-2.5 text-gray-600">
                               {fmtShort(w)} → {fmtShort(addDays(w, 6))}
                             </td>
                             <td className="px-4 py-2.5">
@@ -906,7 +910,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                                   <button
                                     className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
                                     style={{ backgroundColor: twColorMap[tw.id] }}
-                                    onClick={() => onEditTemplateWeek(tw.id)}
+                                    onClick={e => { e.stopPropagation(); onEditTemplateWeek(tw.id); }}
                                     title="Modifier cette semaine type"
                                   >
                                     {tw.label}
@@ -923,17 +927,15 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                                   )}
                                 </div>
                               ) : (
-                                <span
-                                  className="text-gray-300 text-xs cursor-pointer hover:text-gray-400"
-                                  onClick={() => setAssignModal({ weekDate: w, current: twId })}
-                                >—</span>
+                                <span className="text-gray-300 text-xs">—</span>
                               )}
                             </td>
                             <td className="px-2 py-2.5">
                               <Edit2
                                 size={13}
                                 className="text-gray-300 cursor-pointer hover:text-gray-500"
-                                onClick={() => setAssignModal({ weekDate: w, current: twId })}
+                                onClick={e => { e.stopPropagation(); setAssignModal({ weekDate: w, current: twId }); }}
+                                title="Modifier l'affectation"
                               />
                             </td>
                           </tr>
