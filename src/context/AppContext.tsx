@@ -61,6 +61,8 @@ interface AppContextType {
   addTimeEntry: (entry: Omit<TimeEntry, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   bulkAddTimeEntries: (entries: Omit<TimeEntry, 'id' | 'createdAt' | 'status'>[]) => Promise<void>;
   updateTimeEntry: (id: string, data: Partial<TimeEntry>) => Promise<void>;
+  deleteTimeEntry: (id: string) => Promise<void>;
+  bulkDeleteTimeEntries: (ids: string[]) => Promise<{ deleted: number; locked: number }>;
   approveTimeEntry: (id: string) => Promise<void>;
   rejectTimeEntry: (id: string) => Promise<void>;
 
@@ -327,6 +329,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeEntries(updated);
   };
 
+  const deleteTimeEntry = async (id: string) => {
+    await api.delete(`/time-entries/${id}`);
+    setTimeEntries(prev => prev.filter(e => e.id !== id));
+  };
+
+  const bulkDeleteTimeEntries = async (ids: string[]): Promise<{ deleted: number; locked: number }> => {
+    const res = await api.delete<{ deleted: number; locked: number; lockedIds: string[] }>('/time-entries/bulk', { ids });
+    if (res.deleted > 0) {
+      const deletedSet = new Set(ids.filter(id => !res.lockedIds.includes(id)));
+      setTimeEntries(prev => prev.filter(e => !deletedSet.has(e.id)));
+    }
+    return { deleted: res.deleted, locked: res.locked };
+  };
+
   const approveTimeEntry = async (id: string) => {
     await api.put(`/time-entries/${id}/approve`, {});
     const updated = await api.get<TimeEntry[]>('/time-entries');
@@ -466,6 +482,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addTimeEntry,
         bulkAddTimeEntries,
         updateTimeEntry,
+        deleteTimeEntry,
+        bulkDeleteTimeEntries,
         approveTimeEntry,
         rejectTimeEntry,
         addAbsenceRequest,

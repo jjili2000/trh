@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, ReactNode, FormEvent } from 'reac
 import { useLocation } from 'react-router-dom';
 import {
   Plus, Check, X, Clock, ChevronDown, ChevronUp, Pencil, Calendar,
-  Filter, ChevronsUpDown, ChevronUp as SortAsc, ChevronDown as SortDesc,
+  Filter, ChevronsUpDown, ChevronUp as SortAsc, ChevronDown as SortDesc, Trash2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { TimeEntry } from '../../types';
@@ -71,6 +71,8 @@ export default function TimeTracking() {
     addTimeEntry,
     bulkAddTimeEntries,
     updateTimeEntry,
+    deleteTimeEntry,
+    bulkDeleteTimeEntries,
     approveTimeEntry,
     rejectTimeEntry,
   } = useApp();
@@ -84,6 +86,35 @@ export default function TimeTracking() {
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showCalendarEntry, setShowCalendarEntry] = useState(false);
   const newMenuRef = useRef<HTMLDivElement>(null);
+
+  // ── My entries selection & delete ────────────────────────────────────────────
+  const [mySelectedIds, setMySelectedIds] = useState<Set<string>>(new Set());
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const toggleMySelect = (id: string) =>
+    setMySelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const handleDeleteOne = async (entry: TimeEntry) => {
+    setDeleteError(null);
+    if (!confirm(`Supprimer la saisie du ${new Date(entry.date + 'T12:00:00').toLocaleDateString('fr-FR')} ?`)) return;
+    try {
+      await deleteTimeEntry(entry.id);
+      setMySelectedIds(prev => { const n = new Set(prev); n.delete(entry.id); return n; });
+    } catch (e: unknown) {
+      setDeleteError((e as { message?: string }).message ?? 'Erreur lors de la suppression.');
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    setDeleteError(null);
+    if (mySelectedIds.size === 0) return;
+    if (!confirm(`Supprimer ${mySelectedIds.size} saisie(s) ?`)) return;
+    const { deleted, locked } = await bulkDeleteTimeEntries(Array.from(mySelectedIds));
+    setMySelectedIds(new Set());
+    if (locked > 0) {
+      setDeleteError(`${deleted} saisie(s) supprimée(s). ${locked} saisie(s) non supprimée(s) car prises en compte dans une paie validée.`);
+    }
+  };
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -383,6 +414,31 @@ export default function TimeTracking() {
 
         {expandedSection === 'mine' && (
           <div className="mt-4">
+            {/* Barre d'erreur delete */}
+            {deleteError && (
+              <div className="mb-3 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm flex items-start gap-2">
+                <span className="flex-1">{deleteError}</span>
+                <button onClick={() => setDeleteError(null)} className="text-amber-500 hover:text-amber-700"><X size={14} /></button>
+              </div>
+            )}
+            {/* Barre de sélection bulk */}
+            {mySelectedIds.size > 0 && (
+              <div className="mb-3 flex items-center gap-3 px-1">
+                <span className="text-sm text-gray-500">{mySelectedIds.size} saisie(s) sélectionnée(s)</span>
+                <button
+                  className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded-lg px-2.5 py-1 transition-colors"
+                  onClick={handleDeleteSelected}
+                >
+                  <Trash2 size={13} /> Supprimer la sélection
+                </button>
+                <button
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                  onClick={() => setMySelectedIds(new Set())}
+                >
+                  Tout désélectionner
+                </button>
+              </div>
+            )}
             {myEntries.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 <Clock size={32} className="mx-auto mb-2 opacity-40" />
@@ -393,7 +449,17 @@ export default function TimeTracking() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100">
+                      <th className="py-2 pr-3 w-8">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300 text-tennis-green"
+                          checked={myEntries.length > 0 && mySelectedIds.size === myEntries.length}
+                          ref={el => { if (el) el.indeterminate = mySelectedIds.size > 0 && mySelectedIds.size < myEntries.length; }}
+                          onChange={() => setMySelectedIds(mySelectedIds.size === myEntries.length ? new Set() : new Set(myEntries.map(e => e.id)))}
+                        />
+                      </th>
                       <th className="text-left py-2 pr-4 text-gray-500 font-medium">Date</th>
+                      <th className="text-left py-2 pr-4 text-gray-500 font-medium">Horaires</th>
                       <th className="text-left py-2 pr-4 text-gray-500 font-medium">Heures</th>
                       <th className="text-left py-2 pr-4 text-gray-500 font-medium">Type d'activité</th>
                       <th className="text-left py-2 pr-4 text-gray-500 font-medium">Description</th>
@@ -404,14 +470,30 @@ export default function TimeTracking() {
                   <tbody className="divide-y divide-gray-50">
                     {myEntries.map(entry => {
                       const at = getActivityType(entry.activityTypeId);
+                      const isSelected = mySelectedIds.has(entry.id);
                       return (
-                        <tr key={entry.id} className="hover:bg-gray-50">
-                          <td className="py-3 pr-4 text-gray-700">{new Date(entry.date).toLocaleDateString('fr-FR')}</td>
+                        <tr key={entry.id} className={`hover:bg-gray-50 ${isSelected ? 'bg-red-50/40' : ''}`}>
+                          <td className="py-3 pr-3">
+                            <input
+                              type="checkbox"
+                              className="rounded border-gray-300 text-tennis-green"
+                              checked={isSelected}
+                              onChange={() => toggleMySelect(entry.id)}
+                            />
+                          </td>
+                          <td className="py-3 pr-4 text-gray-700 whitespace-nowrap">
+                            {new Date(entry.date + 'T12:00:00').toLocaleDateString('fr-FR')}
+                          </td>
+                          <td className="py-3 pr-4 text-gray-500 whitespace-nowrap text-xs">
+                            {entry.startTime && entry.endTime
+                              ? <span className="font-mono">{entry.startTime}–{entry.endTime}</span>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
                           <td className="py-3 pr-4 font-semibold text-tennis-green">{entry.hours}h</td>
                           <td className="py-3 pr-4">
                             {at && (
                               <div className="flex items-center gap-2">
-                                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: at.color }} />
+                                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: at.color }} />
                                 <span className="text-gray-700">{at.name}</span>
                               </div>
                             )}
@@ -421,11 +503,20 @@ export default function TimeTracking() {
                             <span className={`badge-${entry.status}`}>{statusLabels[entry.status]}</span>
                           </td>
                           <td className="py-3 text-right">
-                            {entry.status === 'pending' && (
-                              <button onClick={() => openEdit(entry)} className="p-1.5 text-gray-400 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg transition-colors">
-                                <Pencil size={14} />
+                            <div className="flex items-center justify-end gap-1">
+                              {entry.status === 'pending' && (
+                                <button onClick={() => openEdit(entry)} className="p-1.5 text-gray-400 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg transition-colors" title="Modifier">
+                                  <Pencil size={14} />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteOne(entry)}
+                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Supprimer"
+                              >
+                                <Trash2 size={14} />
                               </button>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       );

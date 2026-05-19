@@ -333,7 +333,22 @@ router.put('/:id/reject', async (req, res) => {
   }
 });
 
-// DELETE /api/time-entries/:id — delete own pending entry
+// Vérifie si une entrée est protégée par une paie validée
+// (son validated_at tombe dans une période de paie au statut 'validated')
+async function isLockedByPayroll(entry) {
+  if (!entry.validated_at) return false;
+  const [rows] = await pool.execute(
+    `SELECT id FROM payroll_periods
+     WHERE status = 'validated'
+       AND ? >= start_date
+       AND ? <= CONCAT(end_date, ' 23:59:59')
+     LIMIT 1`,
+    [entry.validated_at, entry.validated_at]
+  );
+  return rows.length > 0;
+}
+
+// DELETE /api/time-entries/:id
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -344,12 +359,53 @@ router.delete('/:id', async (req, res) => {
     if (entry.user_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    if (entry.status !== 'pending' && req.user.role !== 'admin') {
-      return res.status(400).json({ error: 'Seules les entrées en attente peuvent être supprimées' });
+    if (await isLockedByPayroll(entry)) {
+      return res.status(400).json({ error: 'Cette saisie a été prise en compte dans une paie validée et ne peut pas être supprimée.' });
     }
 
     await pool.execute('DELETE FROM time_entries WHERE id = ?', [id]);
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// DELETE /api/time-entries/bulk — suppression multiple
+router.delete('/bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids (array) requis' });
+    }
+
+    const placeholders = ids.map(() => '?').join(', ');
+    const [entries] = await pool.execute(
+      `SELECT * FROM time_entries WHERE id IN (${placeholders})`,
+      ids
+    );
+
+    const locked = [];
+    const deletable = [];
+    for (const entry of entries) {
+      if (entry.user_id !== req.user.id && req.user.role !== 'admin') continue; // skip unauthorized
+      if (await isLockedByPayroll(entry)) {
+        locked.push(entry.id);
+      } else {
+        deletable.push(entry.id);
+      }
+    }
+
+    if (deletable.length > 0) {
+      const ph = deletable.map(() => '?').join(', ');
+      await pool.execute(`DELETE FROM time_entries WHERE id IN (${ph})`, deletable);
+    }
+
+    res.json({
+      deleted: deletable.length,
+      locked: locked.length,
+      lockedIds: locked,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
