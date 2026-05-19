@@ -188,16 +188,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<true | string> => {
     try {
-      const { token, user } = await api.post<{ token: string; user: User }>('/auth/login', {
-        email,
-        password,
+      // Utiliser fetch directement pour éviter l'interception du 401 par api.client
+      // (un 401 ici = mauvais identifiants, pas une session expirée)
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       });
+      const data = await res.json();
+      if (!res.ok) {
+        return data.error || 'Email ou mot de passe incorrect.';
+      }
+      const { token, user } = data as { token: string; user: User };
       setToken(token);
       setCurrentUser(user);
       await loadAll();
       return true;
     } catch (err) {
-      return err instanceof Error ? err.message : 'Email ou mot de passe incorrect.';
+      return err instanceof Error ? err.message : 'Erreur de connexion.';
     }
   };
 
