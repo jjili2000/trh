@@ -346,13 +346,6 @@ async function isLockedByPayroll(entry) {
      LIMIT 1`,
     [entryDate]
   );
-  console.log('[isLockedByPayroll] entryDate:', entryDate, '→ locked:', rows.length > 0);
-  if (rows.length === 0) {
-    const [allPeriods] = await pool.execute(
-      `SELECT id, start_date, end_date, status FROM payroll_periods ORDER BY start_date DESC`
-    );
-    console.log('[isLockedByPayroll] périodes connues:', JSON.stringify(allPeriods));
-  }
   return rows.length > 0;
 }
 
@@ -397,24 +390,6 @@ router.delete('/bulk', async (req, res) => {
   }
 });
 
-// GET /api/time-entries/payroll-debug — diagnostic temporaire (liste les périodes + saisies récentes)
-router.get('/payroll-debug', async (req, res) => {
-  try {
-    const [periods] = await pool.execute(
-      'SELECT id, start_date, end_date, status FROM payroll_periods ORDER BY start_date DESC'
-    );
-    const [entries] = await pool.execute(
-      `SELECT te.id, te.user_id, te.date, te.status as entry_status,
-              u.first_name, u.last_name
-       FROM time_entries te
-       JOIN users u ON u.id = te.user_id
-       ORDER BY te.date DESC LIMIT 20`
-    );
-    res.json({ periods, recentEntries: entries });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
-  }
-});
 
 // DELETE /api/time-entries/:id
 router.delete('/:id', async (req, res) => {
