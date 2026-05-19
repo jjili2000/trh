@@ -63,6 +63,7 @@ export default function BudgetRequestDetail() {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const savedStatusTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const skipAutoSaveRef = useRef(0); // nb de déclenchements à ignorer (ex : après chargement)
+  const isCreatingRef = useRef(false); // empêche la double-création pour les nouveaux brouillons
 
   const load = useCallback(async () => {
     if (isNew) return;
@@ -86,15 +87,14 @@ export default function BudgetRequestDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Auto-save pour les brouillons existants ──────────────────────────────
+  // ── Auto-save ──────────────────────────────────────────────────────────────
   useEffect(() => {
     // Ignorer les déclenchements provoqués par le chargement initial
     if (skipAutoSaveRef.current > 0) {
       skipAutoSaveRef.current--;
       return;
     }
-    // Seulement pour les brouillons existants avec un ID valide
-    if (isNew || !id || !label.trim() || !startDate || !endDate) return;
+    if (!label.trim() || !startDate || !endDate) return;
 
     clearTimeout(autoSaveTimerRef.current);
     clearTimeout(savedStatusTimerRef.current);
@@ -102,25 +102,30 @@ export default function BudgetRequestDetail() {
     autoSaveTimerRef.current = setTimeout(async () => {
       setSaveStatus('saving');
       try {
-        await api.put<BudgetRequest>(`/budgets/requests/${id}`, {
-          label,
-          startDate,
-          endDate,
-          comment: comment || null,
-          lines: lines.map(l => ({
-            type: l.type,
-            label: l.label,
-            qty: l.qty,
-            unitPrice: l.unitPrice,
-            amount: l.amount,
-          })),
-        });
-        setSaveStatus('saved');
-        savedStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
+        if (isNew) {
+          // Créer le brouillon automatiquement au premier auto-save
+          if (isCreatingRef.current) return;
+          isCreatingRef.current = true;
+          const created = await api.post<BudgetRequest>('/budgets/requests', {
+            label, startDate, endDate, comment: comment || null, lines: allLinesForSave(),
+          });
+          setSaveStatus('saved');
+          savedStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
+          navigate(`/budget/requests/${created.id}`, { replace: true });
+        } else {
+          if (!id) return;
+          await api.put<BudgetRequest>(`/budgets/requests/${id}`, {
+            label, startDate, endDate, comment: comment || null,
+            lines: lines.map(l => ({ type: l.type, label: l.label, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount })),
+          });
+          setSaveStatus('saved');
+          savedStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
+        }
       } catch {
         setSaveStatus('error');
+        isCreatingRef.current = false;
       }
-    }, 800);
+    }, isNew ? 1500 : 800);
 
     return () => clearTimeout(autoSaveTimerRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,20 +172,33 @@ export default function BudgetRequestDetail() {
   };
 
   const handleSubmit = async () => {
+    if (!label.trim() || !startDate || !endDate) {
+      setError('Libellé, date de début et date de fin requis pour soumettre');
+      return;
+    }
     if (!confirm('Soumettre cette demande pour approbation ?')) return;
     setSaving(true);
     setError(null);
     try {
-      // Save first if there are unsaved changes
+      let targetId = id;
       if (isNew) {
-        await handleSaveDraft();
-        return;
+        // Créer le brouillon puis soumettre
+        clearTimeout(autoSaveTimerRef.current);
+        const created = await api.post<BudgetRequest>('/budgets/requests', {
+          label, startDate, endDate, comment: comment || null, lines: allLinesForSave(),
+        });
+        targetId = created.id;
+      } else {
+        await api.put<BudgetRequest>(`/budgets/requests/${id}`, {
+          label, startDate, endDate, comment: comment || null, lines: allLinesForSave(),
+        });
       }
-      await api.put<BudgetRequest>(`/budgets/requests/${id}`, {
-        label, startDate, endDate, comment: comment || null, lines: allLinesForSave(),
-      });
-      const updated = await api.post<BudgetRequest>(`/budgets/requests/${id}/submit`, {});
-      setRequest(updated);
+      const updated = await api.post<BudgetRequest>(`/budgets/requests/${targetId}/submit`, {});
+      if (isNew) {
+        navigate(`/budget/requests/${targetId}`, { replace: true });
+      } else {
+        setRequest(updated);
+      }
     } catch (e: unknown) {
       const err = e as { message?: string };
       setError(err.message || 'Erreur lors de la soumission');
@@ -190,6 +208,12 @@ export default function BudgetRequestDetail() {
   };
 
   const handleCancel = async () => {
+    if (isNew) {
+      // Pas encore de demande en base : retour simple à la liste
+      if (!confirm('Abandonner la création de cette demande ?')) return;
+      navigate('/budget');
+      return;
+    }
     if (!confirm('Annuler cette demande de budget ?')) return;
     setSaving(true);
     try {
@@ -347,8 +371,8 @@ export default function BudgetRequestDetail() {
              request.status === 'approved' ? 'Approuvée' : 'Annulée'}
           </span>
         )}
-        {/* Indicateur d'auto-save — affiché uniquement en mode brouillon existant */}
-        {!isNew && isDraft && (
+        {/* Indicateur d'auto-save */}
+        {isDraft && (
           <div className="flex items-center gap-1.5 text-xs">
             {saveStatus === 'saving' && (
               <span className="flex items-center gap-1 text-gray-400">
@@ -667,27 +691,24 @@ export default function BudgetRequestDetail() {
       <div className="flex flex-wrap gap-3">
         {canEdit && (
           <>
-            {/* Pour un nouveau budget : bouton de création initiale */}
-            {isNew && (
-              <button className="btn-primary" onClick={handleSaveDraft} disabled={saving}>
-                {saving ? 'Création…' : 'Créer la demande'}
-              </button>
-            )}
-            {/* Pour un brouillon existant : auto-save actif, plus de bouton "Enregistrer" */}
-            {!isNew && (
-              <>
-                <button
-                  className="btn-secondary"
-                  onClick={handleSubmit}
-                  disabled={saving || saveStatus === 'saving'}
-                >
-                  Soumettre
-                </button>
-                <button className="btn-danger" onClick={handleCancel} disabled={saving}>
-                  Annuler la demande
-                </button>
-              </>
-            )}
+            <button
+              className="btn-secondary flex items-center gap-2"
+              onClick={handleSaveDraft}
+              disabled={saving || saveStatus === 'saving'}
+            >
+              {saving && !saveStatus ? <Loader2 size={14} className="animate-spin" /> : null}
+              Enregistrer le brouillon
+            </button>
+            <button
+              className="btn-primary"
+              onClick={handleSubmit}
+              disabled={saving || saveStatus === 'saving'}
+            >
+              Soumettre
+            </button>
+            <button className="btn-danger" onClick={handleCancel} disabled={saving}>
+              Annuler la demande
+            </button>
           </>
         )}
 
