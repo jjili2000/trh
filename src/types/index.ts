@@ -212,6 +212,19 @@ export interface RealBudget {
   createdAt: string; lines?: RealBudgetLine[]; accessGrants?: BudgetAccessGrant[];
 }
 
+export type BudgetAuditAction = 'add_line' | 'delete_line' | 'add_detail' | 'update_detail' | 'delete_detail';
+
+export interface BudgetAuditLog {
+  id: string;
+  userId: string;
+  userName: string;
+  action: BudgetAuditAction;
+  lineLabel: string | null;
+  detailLabel: string | null;
+  detailAmount: number | null;
+  createdAt: string;
+}
+
 export interface AppNotification {
   id: string; type: string; title: string; body: string | null;
   refType: string | null; refId: string | null;

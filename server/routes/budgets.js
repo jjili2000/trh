@@ -135,6 +135,18 @@ function mapDetail(row) {
   };
 }
 
+async function logBudgetAudit(realBudgetId, userId, action, lineLabel, detailLabel, detailAmount) {
+  try {
+    const logId = crypto.randomUUID();
+    await pool.execute(
+      `INSERT INTO budget_audit_log (id, real_budget_id, user_id, action, line_label, detail_label, detail_amount) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [logId, realBudgetId, userId, action, lineLabel || null, detailLabel || null, detailAmount != null ? detailAmount : null]
+    );
+  } catch (err) {
+    console.error('Audit log failed (silent):', err);
+  }
+}
+
 // ─── Budget Requests ──────────────────────────────────────────────────────────
 
 // GET /requests
@@ -581,6 +593,7 @@ router.post('/real/:id/lines', async (req, res) => {
     const [lineRows] = await pool.execute('SELECT * FROM real_budget_lines WHERE id = ?', [lineId]);
     const line = mapRealBudgetLine(lineRows[0]);
     line.details = [];
+    await logBudgetAudit(id, req.user.id, 'add_line', label, null, null);
     res.status(201).json(line);
   } catch (err) {
     console.error(err);
@@ -598,7 +611,10 @@ router.delete('/real/:id/lines/:lineId', async (req, res) => {
     if (!(await isBudgetValidator(req.user.id, req.user.role)) && budget.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
+    const [lineRows] = await pool.execute('SELECT label FROM real_budget_lines WHERE id = ? AND real_budget_id = ?', [lineId, id]);
+    const lineLabel = lineRows[0]?.label || null;
     await pool.execute('DELETE FROM real_budget_lines WHERE id = ? AND real_budget_id = ?', [lineId, id]);
+    await logBudgetAudit(id, req.user.id, 'delete_line', lineLabel, null, null);
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -633,6 +649,7 @@ router.post('/real/:id/lines/:lineId/details', async (req, res) => {
       [detailId, lineId, detailDate, label, paymentMethod, parseFloat(qty) || 1, parseFloat(unitPrice) || 0, amount, receiptFile || null, receiptFileName || null, receiptFileType || null, req.user.id]
     );
     const [detailRows] = await pool.execute('SELECT * FROM budget_line_details WHERE id = ?', [detailId]);
+    await logBudgetAudit(id, req.user.id, 'add_detail', null, label, amount);
     res.status(201).json(mapDetail(detailRows[0]));
   } catch (err) {
     console.error(err);
@@ -672,7 +689,9 @@ router.put('/real/:id/lines/:lineId/details/:detailId', async (req, res) => {
       await pool.execute(`UPDATE budget_line_details SET ${updates.join(', ')} WHERE id = ?`, values);
     }
     const [updated] = await pool.execute('SELECT * FROM budget_line_details WHERE id = ?', [detailId]);
-    res.json(mapDetail(updated[0]));
+    const updatedDetail = updated[0];
+    await logBudgetAudit(id, req.user.id, 'update_detail', null, updatedDetail.label, parseFloat(updatedDetail.amount) || null);
+    res.json(mapDetail(updatedDetail));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -694,6 +713,7 @@ router.delete('/real/:id/lines/:lineId/details/:detailId', async (req, res) => {
     if (!canEdit) return res.status(403).json({ error: 'Accès refusé' });
 
     await pool.execute('DELETE FROM budget_line_details WHERE id = ?', [detailId]);
+    await logBudgetAudit(id, req.user.id, 'delete_detail', null, detail.label, parseFloat(detail.amount) || null);
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -753,6 +773,46 @@ router.delete('/real/:id/access/:grantId', async (req, res) => {
     }
     await pool.execute('DELETE FROM budget_access_grants WHERE id = ? AND real_budget_id = ?', [grantId, id]);
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// GET /real/:id/audit-log
+router.get('/real/:id/audit-log', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await pool.execute('SELECT * FROM real_budgets WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Budget non trouvé' });
+    const budget = rows[0];
+    const canAccess = (await isBudgetValidator(req.user.id, req.user.role)) || budget.user_id === req.user.id;
+    if (!canAccess) {
+      const [grant] = await pool.execute(
+        'SELECT id FROM budget_access_grants WHERE real_budget_id = ? AND user_id = ?',
+        [id, req.user.id]
+      );
+      if (grant.length === 0) return res.status(403).json({ error: 'Accès refusé' });
+    }
+    const [logRows] = await pool.execute(
+      `SELECT bal.*, u.first_name, u.last_name
+       FROM budget_audit_log bal
+       JOIN users u ON u.id = bal.user_id
+       WHERE bal.real_budget_id = ?
+       ORDER BY bal.created_at DESC
+       LIMIT 200`,
+      [id]
+    );
+    res.json(logRows.map(r => ({
+      id: r.id,
+      userId: r.user_id,
+      userName: `${r.first_name} ${r.last_name}`,
+      action: r.action,
+      lineLabel: r.line_label || null,
+      detailLabel: r.detail_label || null,
+      detailAmount: r.detail_amount != null ? parseFloat(r.detail_amount) : null,
+      createdAt: mapDateTime(r.created_at),
+    })));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

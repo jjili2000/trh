@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight,
-  FileText, Image, Pencil, X
+  FileText, Image, Pencil, X, History
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
 import {
   RealBudget, RealBudgetLine, BudgetLineDetail,
-  BudgetLineType, BudgetAccessGrant
+  BudgetLineType, BudgetAccessGrant, BudgetAuditLog
 } from '../../types';
 
 function useIsBudgetValidator() {
@@ -93,6 +93,11 @@ export default function RealBudgetDetail() {
 
   // Receipt viewer
   const [viewReceipt, setViewReceipt] = useState<{ data: string; name: string; type: string } | null>(null);
+
+  // Audit log
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const [auditLog, setAuditLog] = useState<BudgetAuditLog[]>([]);
+  const [auditLogLoading, setAuditLogLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -329,8 +334,38 @@ export default function RealBudgetDetail() {
     }
   };
 
+  const handleToggleAuditLog = async () => {
+    if (!showAuditLog && auditLog.length === 0) {
+      setAuditLogLoading(true);
+      try {
+        const data = await api.get<BudgetAuditLog[]>(`/budgets/real/${id}/audit-log`);
+        setAuditLog(data);
+      } catch {
+        // silently ignore
+      } finally {
+        setAuditLogLoading(false);
+      }
+    }
+    setShowAuditLog(prev => !prev);
+  };
+
+  const auditActionLabel = (action: BudgetAuditLog['action']) => {
+    switch (action) {
+      case 'add_line': return 'Ligne ajoutée';
+      case 'delete_line': return 'Ligne supprimée';
+      case 'add_detail': return 'Détail ajouté';
+      case 'update_detail': return 'Détail modifié';
+      case 'delete_detail': return 'Détail supprimé';
+    }
+  };
+
   const canEditDetail = (detail: BudgetLineDetail) =>
     canEdit || detail.userId === currentUser.id;
+
+  const userName = (userId: string) => {
+    const u = users.find(u => u.id === userId);
+    return u ? `${u.firstName} ${u.lastName}` : '—';
+  };
 
   const renderLines = (lineType: BudgetLineType) => {
     const filtered = (budget?.lines || []).filter(l => l.type === lineType);
@@ -411,6 +446,7 @@ export default function RealBudgetDetail() {
                               <th className="text-left pb-1 pr-3">Libellé</th>
                               <th className="text-left pb-1 pr-3">Paiement</th>
                               <th className="text-right pb-1 pr-3">Montant</th>
+                              <th className="text-left pb-1 pr-3">Saisi par</th>
                               <th className="text-center pb-1 pr-3">Justif.</th>
                               <th className="pb-1"></th>
                             </tr>
@@ -422,6 +458,7 @@ export default function RealBudgetDetail() {
                                 <td className="py-1 pr-3">{detail.label}</td>
                                 <td className="py-1 pr-3">{detail.paymentMethod}</td>
                                 <td className="py-1 pr-3 text-right font-medium">{fmtCurrency(detail.amount)}</td>
+                                <td className="py-1 pr-3 text-gray-400">{userName(detail.userId)}</td>
                                 <td className="py-1 pr-3 text-center">
                                   {detail.receiptFile ? (
                                     <button
@@ -653,6 +690,73 @@ export default function RealBudgetDetail() {
           </div>
         </div>
       )}
+
+      {/* Audit log */}
+      <div className="card mb-6">
+        <button
+          className="flex items-center gap-2 w-full text-left"
+          onClick={handleToggleAuditLog}
+        >
+          <History size={15} className="text-gray-400" />
+          <span className="text-sm font-semibold text-gray-700 flex-1">Historique des modifications</span>
+          {showAuditLog ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+        </button>
+        {showAuditLog && (
+          <div className="mt-3">
+            {auditLogLoading ? (
+              <p className="text-gray-400 text-sm">Chargement…</p>
+            ) : auditLog.length === 0 ? (
+              <p className="text-gray-400 text-sm">Aucune modification enregistrée</p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-gray-100">
+                    <th className="text-left pb-1 pr-3">Date</th>
+                    <th className="text-left pb-1 pr-3">Utilisateur</th>
+                    <th className="text-left pb-1 pr-3">Action</th>
+                    <th className="text-left pb-1">Détail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLog.map(entry => (
+                    <tr key={entry.id} className="border-b border-gray-50">
+                      <td className="py-1 pr-3 text-gray-400 whitespace-nowrap">
+                        {new Date(entry.createdAt).toLocaleString('fr-FR', {
+                          day: '2-digit', month: '2-digit', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </td>
+                      <td className="py-1 pr-3 font-medium">{entry.userName}</td>
+                      <td className="py-1 pr-3">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          entry.action === 'add_line' || entry.action === 'add_detail'
+                            ? 'bg-green-50 text-green-700'
+                            : entry.action === 'delete_line' || entry.action === 'delete_detail'
+                            ? 'bg-red-50 text-red-700'
+                            : 'bg-blue-50 text-blue-700'
+                        }`}>
+                          {auditActionLabel(entry.action)}
+                        </span>
+                      </td>
+                      <td className="py-1 text-gray-600">
+                        {entry.lineLabel && <span>{entry.lineLabel}</span>}
+                        {entry.detailLabel && (
+                          <span>
+                            {entry.detailLabel}
+                            {entry.detailAmount != null && (
+                              <span className="text-gray-400 ml-1">({fmtCurrency(entry.detailAmount)})</span>
+                            )}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Detail modal */}
       {detailModal && (
