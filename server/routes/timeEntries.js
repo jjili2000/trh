@@ -4,6 +4,12 @@ const pool = require('../db');
 
 const router = express.Router();
 
+function fmtTime(t) {
+  if (!t) return undefined;
+  if (t instanceof Date) return t.toTimeString().slice(0, 5); // "HH:MM"
+  return String(t).slice(0, 5); // "HH:MM:SS" → "HH:MM"
+}
+
 function mapEntry(row) {
   return {
     id: row.id,
@@ -14,6 +20,8 @@ function mapEntry(row) {
     hours: parseFloat(row.hours),
     activityTypeId: row.activity_type_id || undefined,
     description: row.description || undefined,
+    startTime: fmtTime(row.start_time),
+    endTime:   fmtTime(row.end_time),
     status: row.status,
     validatedBy: row.validated_by || undefined,
     validatedAt: row.validated_at instanceof Date
@@ -212,15 +220,15 @@ router.get('/', async (req, res) => {
 // POST /api/time-entries
 router.post('/', async (req, res) => {
   try {
-    const { date, hours, activityTypeId, description } = req.body;
+    const { date, hours, activityTypeId, description, startTime, endTime } = req.body;
     if (!date || hours === undefined) {
       return res.status(400).json({ error: 'Date et heures requis' });
     }
     const id = crypto.randomUUID();
     await pool.execute(
-      `INSERT INTO time_entries (id, user_id, date, hours, activity_type_id, description, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      [id, req.user.id, date, hours, activityTypeId || null, description || null]
+      `INSERT INTO time_entries (id, user_id, date, hours, activity_type_id, description, status, start_time, end_time)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      [id, req.user.id, date, hours, activityTypeId || null, description || null, startTime || null, endTime || null]
     );
     const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
     res.status(201).json(mapEntry(rows[0]));
@@ -245,13 +253,15 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Seules les entrées en attente peuvent être modifiées' });
     }
 
-    const { date, hours, activityTypeId, description } = req.body;
+    const { date, hours, activityTypeId, description, startTime, endTime } = req.body;
     const updates = [];
     const values = [];
     if (date !== undefined)           { updates.push('date = ?');             values.push(date); }
     if (hours !== undefined)          { updates.push('hours = ?');            values.push(hours); }
     if (activityTypeId !== undefined) { updates.push('activity_type_id = ?'); values.push(activityTypeId || null); }
     if (description !== undefined)    { updates.push('description = ?');      values.push(description || null); }
+    if (startTime !== undefined)      { updates.push('start_time = ?');       values.push(startTime || null); }
+    if (endTime !== undefined)        { updates.push('end_time = ?');         values.push(endTime || null); }
 
     if (updates.length > 0) {
       values.push(id);

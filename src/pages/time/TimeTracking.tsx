@@ -16,14 +16,28 @@ const statusLabels: Record<string, string> = {
 
 interface EntryFormData {
   date: string;
+  startTime: string;
+  endTime: string;
   hours: string;
   activityTypeId: string;
   description: string;
 }
 
+const timeToMins = (t: string): number => {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + (m || 0);
+};
+const minsToTime = (m: number): string => {
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+};
+
 const emptyForm: EntryFormData = {
   date: new Date().toISOString().slice(0, 10),
-  hours: '',
+  startTime: '09:00',
+  endTime: '10:00',
+  hours: '1',
   activityTypeId: '',
   description: '',
 };
@@ -216,7 +230,16 @@ export default function TimeTracking() {
   const openAdd = () => { setForm(emptyForm); setEditingEntry(null); setFormError(''); setShowForm(true); };
 
   const openEdit = (entry: TimeEntry) => {
-    setForm({ date: entry.date, hours: String(entry.hours), activityTypeId: entry.activityTypeId, description: entry.description ?? '' });
+    const st = entry.startTime ?? '09:00';
+    const et = entry.endTime ?? minsToTime(timeToMins('09:00') + entry.hours * 60);
+    setForm({
+      date: entry.date,
+      startTime: st,
+      endTime: et,
+      hours: String(entry.hours),
+      activityTypeId: entry.activityTypeId,
+      description: entry.description ?? '',
+    });
     setEditingEntry(entry);
     setFormError('');
     setShowForm(true);
@@ -230,10 +253,45 @@ export default function TimeTracking() {
     if (isNaN(hours) || hours <= 0 || hours > 24) { setFormError('Les heures doivent être entre 0.1 et 24.'); return; }
     if (!form.activityTypeId) { setFormError("Le type d'activité est obligatoire."); return; }
 
+    // ── Détection de chevauchement ───────────────────────────────────────────
+    if (form.startTime && form.endTime) {
+      const newStart = timeToMins(form.startTime);
+      const newEnd   = timeToMins(form.endTime);
+      if (newEnd <= newStart) { setFormError("L'heure de fin doit être postérieure à l'heure de début."); return; }
+
+      const conflicts = myEntries.filter(e => {
+        if (e.id === editingEntry?.id) return false;   // on exclut l'entrée en cours de modif
+        if (e.date !== form.date) return false;
+        if (!e.startTime || !e.endTime) return false;  // pas de créneau → pas de contrôle
+        const eStart = timeToMins(e.startTime);
+        const eEnd   = timeToMins(e.endTime);
+        return newStart < eEnd && eStart < newEnd;     // chevauchement partiel ou total
+      });
+
+      if (conflicts.length > 0) {
+        const at = activityTypes.find(a => a.id === conflicts[0].activityTypeId);
+        setFormError(
+          `Conflit de créneau : cette saisie chevauche "${at?.name ?? 'une autre activité'}" ` +
+          `de ${conflicts[0].startTime} à ${conflicts[0].endTime} le ${new Date(form.date + 'T12:00:00').toLocaleDateString('fr-FR')}.`
+        );
+        return;
+      }
+    }
+
+    const payload = {
+      userId: currentUser!.id,
+      date: form.date,
+      hours,
+      activityTypeId: form.activityTypeId,
+      description: form.description || undefined,
+      startTime: form.startTime || undefined,
+      endTime: form.endTime || undefined,
+    };
+
     if (editingEntry) {
-      updateTimeEntry(editingEntry.id, { date: form.date, hours, activityTypeId: form.activityTypeId, description: form.description || undefined, status: 'pending', validatedBy: undefined, validatedAt: undefined });
+      updateTimeEntry(editingEntry.id, { ...payload, status: 'pending', validatedBy: undefined, validatedAt: undefined });
     } else {
-      addTimeEntry({ userId: currentUser!.id, date: form.date, hours, activityTypeId: form.activityTypeId, description: form.description || undefined });
+      addTimeEntry(payload);
     }
     setShowForm(false);
   };
@@ -628,9 +686,61 @@ export default function TimeTracking() {
               <label className="label">Date *</label>
               <input type="date" className="input" value={form.date} max={new Date().toISOString().slice(0, 10)} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required />
             </div>
-            <div>
-              <label className="label">Nombre d'heures *</label>
-              <input type="number" className="input" value={form.hours} onChange={e => setForm(f => ({ ...f, hours: e.target.value }))} min="0.5" max="24" step="0.5" placeholder="Ex: 7.5" required />
+            {/* Heure début / fin / durée — cascade automatique */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="label">Heure de début</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={form.startTime}
+                  onChange={e => {
+                    const st = e.target.value;
+                    if (!st) { setForm(f => ({ ...f, startTime: st })); return; }
+                    const hrs = parseFloat(form.hours) || 1;
+                    const et = minsToTime(timeToMins(st) + Math.round(hrs * 60));
+                    setForm(f => ({ ...f, startTime: st, endTime: et }));
+                  }}
+                />
+              </div>
+              <div>
+                <label className="label">Heure de fin</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={form.endTime}
+                  onChange={e => {
+                    const et = e.target.value;
+                    if (!et || !form.startTime) { setForm(f => ({ ...f, endTime: et })); return; }
+                    const diff = timeToMins(et) - timeToMins(form.startTime);
+                    const hrs = diff > 0 ? String(Math.round(diff / 60 * 10) / 10) : form.hours;
+                    setForm(f => ({ ...f, endTime: et, hours: hrs }));
+                  }}
+                />
+              </div>
+              <div>
+                <label className="label">Durée (h) *</label>
+                <input
+                  type="number"
+                  className="input"
+                  value={form.hours}
+                  min="0.5"
+                  max="24"
+                  step="0.5"
+                  placeholder="Ex: 1.5"
+                  required
+                  onChange={e => {
+                    const hrs = e.target.value;
+                    const hrsNum = parseFloat(hrs);
+                    if (form.startTime && !isNaN(hrsNum) && hrsNum > 0) {
+                      const et = minsToTime(timeToMins(form.startTime) + Math.round(hrsNum * 60));
+                      setForm(f => ({ ...f, hours: hrs, endTime: et }));
+                    } else {
+                      setForm(f => ({ ...f, hours: hrs }));
+                    }
+                  }}
+                />
+              </div>
             </div>
             <div>
               <label className="label">Type d'activité *</label>

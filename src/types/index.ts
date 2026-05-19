@@ -49,6 +49,8 @@ export interface TimeEntry {
   hours: number;
   activityTypeId: string;
   description?: string;
+  startTime?: string; // HH:MM
+  endTime?: string;   // HH:MM
   status: 'pending' | 'approved' | 'rejected';
   validatedBy?: string;
   validatedAt?: string;
