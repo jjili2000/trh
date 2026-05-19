@@ -931,12 +931,9 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                               )}
                             </td>
                             <td className="px-2 py-2.5">
-                              <Edit2
-                                size={13}
-                                className="text-gray-300 cursor-pointer hover:text-gray-500"
-                                onClick={e => { e.stopPropagation(); setAssignModal({ weekDate: w, current: twId }); }}
-                                title="Modifier l'affectation"
-                              />
+                              <span title="Modifier l'affectation" onClick={e => { e.stopPropagation(); setAssignModal({ weekDate: w, current: twId }); }}>
+                                <Edit2 size={13} className="text-gray-300 cursor-pointer hover:text-gray-500" />
+                              </span>
                             </td>
                           </tr>
                         );
