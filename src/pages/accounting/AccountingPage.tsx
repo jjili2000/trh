@@ -2827,8 +2827,17 @@ interface ImportsListProps {
 
 function ImportsList({ imports, onDelete }: ImportsListProps) {
   const [open, setOpen] = useState(false);
+  const [confirmImport, setConfirmImport] = useState<BankImport | null>(null);
+  const [confirmInput, setConfirmInput] = useState('');
 
   if (imports.length === 0) return null;
+
+  const handleConfirmDelete = () => {
+    if (!confirmImport) return;
+    onDelete(confirmImport.id);
+    setConfirmImport(null);
+    setConfirmInput('');
+  };
 
   return (
     <div className="mb-4">
@@ -2861,7 +2870,8 @@ function ImportsList({ imports, onDelete }: ImportsListProps) {
                   <td className="px-4 py-2">
                     <button
                       className="text-gray-400 hover:text-red-500"
-                      onClick={() => onDelete(imp.id)}
+                      title="Supprimer cet import"
+                      onClick={() => { setConfirmImport(imp); setConfirmInput(''); }}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -2870,6 +2880,51 @@ function ImportsList({ imports, onDelete }: ImportsListProps) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Confirm delete modal */}
+      {confirmImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onMouseDown={e => { if (e.target === e.currentTarget) { setConfirmImport(null); setConfirmInput(''); } }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 size={18} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Supprimer l'import</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Cette action supprimera définitivement <strong className="text-red-600">{confirmImport.operationCount} opération(s)</strong> et toutes leurs catégorisations associées. Elle est irréversible.
+                </p>
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-lg px-3 py-2 mb-4 text-sm text-gray-700">
+              <span className="text-gray-500">Import :</span> <strong>{confirmImport.label}</strong>
+            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Saisissez <span className="font-mono bg-gray-100 px-1 rounded">{confirmImport.label}</span> pour confirmer
+            </label>
+            <input
+              className="input mb-4"
+              value={confirmInput}
+              onChange={e => setConfirmInput(e.target.value)}
+              placeholder={confirmImport.label}
+              autoFocus
+            />
+            <div className="flex justify-end gap-3">
+              <button className="btn-secondary" onClick={() => { setConfirmImport(null); setConfirmInput(''); }}>
+                Annuler
+              </button>
+              <button
+                className="btn-danger"
+                disabled={confirmInput !== confirmImport.label}
+                onClick={handleConfirmDelete}
+              >
+                Supprimer définitivement
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
