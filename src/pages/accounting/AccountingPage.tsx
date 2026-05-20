@@ -3591,7 +3591,6 @@ export default function AccountingPage() {
   }, [loadImports, loadCategories, loadPeriods]);
 
   const handleDeleteImport = async (id: string) => {
-    if (!confirm('Supprimer cet import et toutes ses opérations ?')) return;
     try {
       await api.delete(`/accounting/imports/${id}`);
       setImports(prev => prev.filter(i => i.id !== id));
