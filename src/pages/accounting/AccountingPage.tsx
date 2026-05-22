@@ -798,6 +798,7 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
 
   // Multi-selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastCheckedOpIdxRef = useRef<number>(-1);
   const [bulkCategory, setBulkCategory] = useState('');
   const [bulkPeriodId, setBulkPeriodId] = useState('');
   const [applyingBulk, setApplyingBulk] = useState(false);
@@ -934,14 +935,6 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
     } catch { /* silent */ }
   };
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
   const toggleSelectAll = () => {
     if (selectedIds.size === displayedOps.length) {
       setSelectedIds(new Set());
@@ -1045,6 +1038,32 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   });
 
   const displayedOps = sorted;
+
+  // Shift+clic : sélection en plage dans la liste des opérations
+  const handleOpCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>, id: string, idx: number) => {
+    const shiftKey = (e.nativeEvent as MouseEvent).shiftKey;
+    if (shiftKey && lastCheckedOpIdxRef.current >= 0) {
+      const start = Math.min(lastCheckedOpIdxRef.current, idx);
+      const end   = Math.max(lastCheckedOpIdxRef.current, idx);
+      const shouldSelect = !selectedIds.has(id);
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        for (let i = start; i <= end; i++) {
+          if (displayedOps[i]) {
+            shouldSelect ? next.add(displayedOps[i].id) : next.delete(displayedOps[i].id);
+          }
+        }
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.has(id) ? next.delete(id) : next.add(id);
+        return next;
+      });
+      lastCheckedOpIdxRef.current = idx;
+    }
+  };
 
   // Lookup map importId → label pour affichage dans la table
   const importLabelMap = new Map(imports.map(imp => [imp.id, imp.label]));
@@ -1377,10 +1396,10 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
                 </tr>
               </thead>
               <tbody>
-                {displayedOps.map(op => (
+                {displayedOps.map((op, opIdx) => (
                   <tr key={op.id} className={`border-b border-gray-50 hover:bg-gray-50/50 transition-colors ${selectedIds.has(op.id) ? 'bg-indigo-50/40' : ''}`}>
                     <td className="pl-4 pr-2 py-2">
-                      <input type="checkbox" checked={selectedIds.has(op.id)} onChange={() => toggleSelect(op.id)} className="rounded" />
+                      <input type="checkbox" checked={selectedIds.has(op.id)} onChange={e => handleOpCheckboxChange(e, op.id, opIdx)} className="rounded cursor-pointer" />
                     </td>
                     <td className="px-4 py-2 whitespace-nowrap">
                       <p className="text-sm text-gray-700">{fmtDate(op.operationDate)}</p>
@@ -1749,16 +1768,34 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
 
   // Multi-select for bulk delete / merge
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastCheckedRuleIdxRef = useRef<number>(-1);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const allSelected = rules.length > 0 && selectedIds.size === rules.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
 
-  const toggleRule = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  const toggleRule = (e: React.ChangeEvent<HTMLInputElement>, id: string, idx: number) => {
+    const shiftKey = (e.nativeEvent as MouseEvent).shiftKey;
+    if (shiftKey && lastCheckedRuleIdxRef.current >= 0) {
+      const start = Math.min(lastCheckedRuleIdxRef.current, idx);
+      const end   = Math.max(lastCheckedRuleIdxRef.current, idx);
+      const shouldSelect = !selectedIds.has(id);
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        for (let i = start; i <= end; i++) {
+          if (rules[i]) {
+            shouldSelect ? next.add(rules[i].id) : next.delete(rules[i].id);
+          }
+        }
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+      lastCheckedRuleIdxRef.current = idx;
+    }
   };
 
   const toggleAll = () => {
@@ -2025,7 +2062,7 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
               </span>
             </div>
 
-            {rules.map(rule => (
+            {rules.map((rule, ruleIdx) => (
               <div
                 key={rule.id}
                 className={`card flex items-start gap-3 transition-colors ${
@@ -2035,7 +2072,7 @@ function RulesTab({ categories, onCategoriesChange, openEditRule, onEditRuleHand
                 <input
                   type="checkbox"
                   checked={selectedIds.has(rule.id)}
-                  onChange={() => toggleRule(rule.id)}
+                  onChange={e => toggleRule(e, rule.id, ruleIdx)}
                   className="w-4 h-4 mt-0.5 rounded border-gray-300 text-tennis-green cursor-pointer flex-shrink-0"
                 />
                 <div className="flex-1 min-w-0">
