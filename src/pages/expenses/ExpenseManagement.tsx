@@ -354,7 +354,7 @@ export default function ExpenseManagement() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className={`grid grid-cols-1 gap-4 mb-6 ${isManagerOrAdmin ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
         <div className="card text-center">
           <p className="text-3xl font-bold text-yellow-500">
             {myExpenses.filter(e => e.status === 'pending').length}
@@ -398,17 +398,24 @@ export default function ExpenseManagement() {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Manager alert */}
-      {isManagerOrAdmin && pendingTeamExpenses.length > 0 && (
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3">
-          <Receipt size={18} className="text-blue-500 flex-shrink-0" />
-          <p className="text-sm text-blue-800">
-            <span className="font-semibold">{pendingTeamExpenses.length}</span> note(s) de frais en attente de validation.
-          </p>
-        </div>
-      )}
+        {/* Tuile "À valider" — managers/admins uniquement */}
+        {isManagerOrAdmin && (
+          <div
+            className="card text-center cursor-pointer hover:border-orange-200 hover:shadow-sm transition-all"
+            onClick={() => setExpandedSection('team')}
+            title="Voir les notes de l'équipe"
+          >
+            <p className={`text-3xl font-bold ${pendingTeamExpenses.length > 0 ? 'text-orange-500' : 'text-gray-300'}`}>
+              {pendingTeamExpenses.length}
+            </p>
+            <p className="text-sm text-gray-500 mt-1">À valider</p>
+            {pendingTeamExpenses.length > 0 && (
+              <p className="text-xs text-orange-400 mt-1">Cliquer pour voir</p>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* My expenses */}
       <div className="card mb-4">
