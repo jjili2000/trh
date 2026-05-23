@@ -3106,18 +3106,18 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
   <div class="card"><div class="card-label">Crédits</div><div class="card-val credit">+${fmtAmt(totalCredit)}&nbsp;€</div></div>
   <div class="card"><div class="card-label">Débits</div><div class="card-val debit">−${fmtAmt(totalDebit)}&nbsp;€</div></div>
   <div class="card"><div class="card-label">Solde</div><div class="card-val ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}&nbsp;€</div></div>`;
-    const tableFooter = `
-  <tfoot>
-    <tr>
-      <td>Total</td>
-      <td class="text-center">${operations.length}</td>
-      <td class="text-right credit">+${fmtAmt(totalCredit)}</td>
-      <td class="text-right debit">−${fmtAmt(totalDebit)}</td>
-      <td class="text-right ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}</td>
-    </tr>
-  </tfoot>`;
 
-    // ── Chapitre 1 : résumé par catégorie (sans le détail des opérations) ──────
+    // Chapitre 1 — total en <tbody> (pas de <tfoot> pour éviter la répétition sur chaque page imprimée)
+    const ch1TotalRow = `
+  <tr class="total-row">
+    <td>Total</td>
+    <td class="text-center">${operations.length}</td>
+    <td class="text-right credit">+${fmtAmt(totalCredit)}</td>
+    <td class="text-right debit">−${fmtAmt(totalDebit)}</td>
+    <td class="text-right ${solde >= 0 ? 'credit' : 'debit'}">${soldeSign}${fmtAmt(Math.abs(solde))}</td>
+  </tr>`;
+
+    // ── Chapitre 1 : résumé par catégorie ─────────────────────────────────────
     const summaryRows = groups.map(g => {
       const s = g.totalCredit - g.totalDebit;
       return `
@@ -3130,11 +3130,12 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
         </tr>`;
     }).join('');
 
-    // ── Chapitre 2 : détail complet (catégorie + opérations) ──────────────────
+    // ── Chapitre 2 : détail complet ────────────────────────────────────────────
+    // data-credit / data-debit sur les op-row uniquement (pour le calcul du total de page côté client)
     const detailRows = groups.map(g => {
       const s = g.totalCredit - g.totalDebit;
       const opsHtml = g.ops.map(op => `
-        <tr class="op-row">
+        <tr class="op-row" data-credit="${op.direction === 'credit' ? op.amount.toFixed(2) : '0'}" data-debit="${op.direction === 'debit' ? op.amount.toFixed(2) : '0'}">
           <td class="pl-8 text-muted">${fmtD(op.operationDate)}&nbsp;— ${(op.thirdParty || op.rawLabel || '—').replace(/</g, '&lt;')}</td>
           <td class="text-center text-muted">${PAYMENT_METHOD_LABELS[op.paymentMethod]}</td>
           <td class="text-right ${op.direction === 'credit' ? 'credit' : ''}">${op.direction === 'credit' ? '+' + fmtAmt(op.amount) : ''}</td>
@@ -3142,7 +3143,7 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
           <td></td>
         </tr>`).join('');
       return `
-        <tr class="group-row">
+        <tr class="group-row" data-credit="0" data-debit="0">
           <td><strong>${g.category.replace(/</g, '&lt;')}</strong></td>
           <td class="text-center">${g.ops.length}</td>
           <td class="text-right credit">${g.totalCredit > 0 ? '+' + fmtAmt(g.totalCredit) : '—'}</td>
@@ -3151,6 +3152,10 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
         </tr>
         ${opsHtml}`;
     }).join('');
+
+    const grandCreditStr = totalCredit.toFixed(2);
+    const grandDebitStr  = totalDebit.toFixed(2);
+    const grandCount     = operations.length;
 
     w.document.write(`<!DOCTYPE html>
 <html lang="fr">
@@ -3174,7 +3179,10 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
        padding: 5px 8px; border-bottom: 2px solid #e5e7eb; background: #f9fafb; }
   .group-row td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; background: #fff; font-weight: 600; }
   .op-row td { padding: 3px 8px; border-bottom: 1px solid #f3f4f6; background: #fafafa; font-weight: normal; }
-  tfoot td { padding: 7px 8px; border-top: 2px solid #d1d5db; background: #f3f4f6; font-weight: 700; font-size: 11px; }
+  .total-row td, .page-total-row td { padding: 7px 8px; border-top: 2px solid #d1d5db; background: #f3f4f6; font-weight: 700; font-size: 11px; }
+  .grand-total-row td { padding: 7px 8px; border-top: 2px solid #16a34a; background: #f0fdf4; font-weight: 800; font-size: 12px; color: #15803d; }
+  .grand-total-row td.credit { color: #16a34a; }
+  .grand-total-row td.debit  { color: #dc2626; }
   .text-right { text-align: right; }
   .text-center { text-align: center; }
   .text-muted { color: #6b7280; }
@@ -3206,18 +3214,19 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
         <th class="text-right">Solde (€)</th>
       </tr>
     </thead>
-    <tbody>${summaryRows}</tbody>
-    ${tableFooter}
+    <tbody>${summaryRows}${ch1TotalRow}</tbody>
   </table>
 </div>
 
 <!-- ═══ Chapitre 2 : Détail des opérations ═══ -->
-<div class="chapter page-break">
-  <h1>${periodTitle}</h1>
-  <p class="sub">${periodSub}</p>
-  <h2>Détail des opérations par ${groupLabel.toLowerCase()}</h2>
-  <table>
-    <thead>
+<div class="chapter page-break" id="ch2">
+  <div id="ch2-header">
+    <h1>${periodTitle}</h1>
+    <p class="sub">${periodSub}</p>
+    <h2>Détail des opérations par ${groupLabel.toLowerCase()}</h2>
+  </div>
+  <table id="detail-table">
+    <thead id="detail-thead">
       <tr>
         <th>${groupLabel}</th>
         <th class="text-center">Opérations</th>
@@ -3226,12 +3235,102 @@ function PeriodDetailView({ period, onBack }: PeriodDetailViewProps) {
         <th class="text-right">Solde (€)</th>
       </tr>
     </thead>
-    <tbody>${detailRows}</tbody>
-    ${tableFooter}
+    <tbody id="detail-tbody">${detailRows}</tbody>
   </table>
 </div>
 
-<script>window.onload = () => { window.print(); }<\/script>
+<script>
+var GRAND_C = ${grandCreditStr};
+var GRAND_D = ${grandDebitStr};
+var GRAND_N = ${grandCount};
+
+function fmtNum(n) {
+  return parseFloat(n).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function makeRow(cls, label, opCount, credit, debit) {
+  var s = credit - debit;
+  var sSign = s >= 0 ? '+' : '−';
+  var opCell = (opCount !== null && opCount !== undefined) ? opCount : '';
+  return '<tr class="' + cls + '">' +
+    '<td>' + label + '</td>' +
+    '<td class="text-center">' + opCell + '</td>' +
+    '<td class="text-right credit">' + (credit > 0.001 ? '+' + fmtNum(credit) : '—') + '</td>' +
+    '<td class="text-right debit">'  + (debit  > 0.001 ? '−' + fmtNum(debit) : '—') + '</td>' +
+    '<td class="text-right ' + (s >= 0 ? 'credit' : 'debit') + '">' + sSign + fmtNum(Math.abs(s)) + '</td>' +
+    '</tr>';
+}
+
+function paginateDetail() {
+  var PAGE_H = 960;
+  var ch2   = document.getElementById('ch2');
+  var hdr   = document.getElementById('ch2-header');
+  var thead = document.getElementById('detail-thead');
+  var tbody = document.getElementById('detail-tbody');
+  var allRows = Array.from(tbody.querySelectorAll('tr'));
+  if (allRows.length === 0) return;
+
+  var hdrH = hdr.getBoundingClientRect().height;
+  var thH  = thead.getBoundingClientRect().height;
+  var ftrH = 32;
+
+  var pages = [];
+  var cur = {rows: [], credit: 0, debit: 0};
+  var avail = PAGE_H - hdrH - thH - ftrH * 2;
+  var used = 0;
+
+  allRows.forEach(function(row) {
+    var rh = Math.max(row.getBoundingClientRect().height, 14);
+    if (used + rh > avail && cur.rows.length > 0) {
+      pages.push(cur);
+      cur = {rows: [], credit: 0, debit: 0};
+      used = 0;
+      avail = PAGE_H - thH - ftrH * 2;
+    }
+    cur.rows.push(row);
+    cur.credit += parseFloat(row.getAttribute('data-credit') || '0');
+    cur.debit  += parseFloat(row.getAttribute('data-debit')  || '0');
+    used += rh;
+  });
+  if (cur.rows.length > 0) pages.push(cur);
+
+  // Page unique : total général seulement
+  if (pages.length <= 1) {
+    var tfoot = document.createElement('tfoot');
+    tfoot.innerHTML = makeRow('total-row', 'Total général', GRAND_N, GRAND_C, GRAND_D);
+    document.getElementById('detail-table').appendChild(tfoot);
+    return;
+  }
+
+  // Plusieurs pages : reconstruction en blocs indépendants
+  var theadHtml = thead.outerHTML;
+  var hdrHtml   = hdr.outerHTML;
+  var newHtml   = '';
+
+  pages.forEach(function(page, pi) {
+    var isLast = pi === pages.length - 1;
+    newHtml += '<div class="chapter' + (pi > 0 ? ' page-break' : '') + '">';
+    newHtml += pi === 0 ? hdrHtml : '<h2 style="margin-bottom:10px">Détail des opérations (suite)</h2>';
+    newHtml += '<table>' + theadHtml + '<tbody>';
+    page.rows.forEach(function(r) { newHtml += r.outerHTML; });
+    newHtml += '</tbody><tfoot>';
+    newHtml += makeRow('page-total-row', 'Total de la page', null, page.credit, page.debit);
+    if (isLast) {
+      newHtml += makeRow('grand-total-row', 'Total général', GRAND_N, GRAND_C, GRAND_D);
+    }
+    newHtml += '</tfoot></table></div>';
+  });
+
+  var parent = ch2.parentNode;
+  var frag = document.createRange().createContextualFragment(newHtml);
+  parent.insertBefore(frag, ch2);
+  parent.removeChild(ch2);
+}
+
+window.onload = function() {
+  paginateDetail();
+  setTimeout(function() { window.print(); }, 150);
+};<\/script>
 </body></html>`);
     w.document.close();
   };
