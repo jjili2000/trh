@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const pool = require('../db');
+const { notify } = require('../services/notifications');
 
 const router = express.Router();
 
@@ -94,6 +95,14 @@ router.post('/', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     res.status(201).json(mapRequest(rows[0]));
+    // Notifier le manager
+    const [[submitter]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
+    if (submitter?.manager_id) {
+      const startLabel = new Date(startDate + 'T12:00:00').toLocaleDateString('fr-FR');
+      await notify(submitter.manager_id, 'absence_submitted', 'Absence à valider',
+        `${submitter.first_name} ${submitter.last_name} a soumis une demande d'absence à partir du ${startLabel}.`,
+        'absence_request', id);
+    }
   } catch (err) {
     // Si la colonne n'existe pas encore (migration non jouée), fallback sans duration_days
     if (err.code === 'ER_BAD_FIELD_ERROR') {
@@ -176,6 +185,12 @@ router.put('/:id/approve', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     res.json(mapRequest(rows[0]));
+    const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
+    const vName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const startLabel = new Date(String(record.start_date).slice(0,10) + 'T12:00:00').toLocaleDateString('fr-FR');
+    await notify(record.user_id, 'absence_approved', 'Absence approuvée',
+      `Votre demande d'absence du ${startLabel} a été approuvée par ${vName}.`,
+      'absence_request', id);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -204,6 +219,12 @@ router.put('/:id/reject', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     res.json(mapRequest(rows[0]));
+    const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
+    const vName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const startLabel = new Date(String(record.start_date).slice(0,10) + 'T12:00:00').toLocaleDateString('fr-FR');
+    await notify(record.user_id, 'absence_rejected', 'Absence refusée',
+      `Votre demande d'absence du ${startLabel} a été refusée par ${vName}.`,
+      'absence_request', id);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

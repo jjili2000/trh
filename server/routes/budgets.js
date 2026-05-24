@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const pool = require('../db');
+const { notify } = require('../services/notifications');
 
 const router = express.Router();
 
@@ -31,18 +32,6 @@ async function getBudgetValidators() {
     const ids = new Set([...adminRows.map(r => r.id), ...cfgRows.map(r => r.id)]);
     return [...ids];
   } catch { return []; }
-}
-
-async function createNotification(userId, type, title, body, refType, refId) {
-  try {
-    const id = crypto.randomUUID();
-    await pool.execute(
-      `INSERT INTO notifications (id, user_id, type, title, body, ref_type, ref_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, userId, type, title, body || null, refType || null, refId || null]
-    );
-  } catch (err) {
-    console.error('Notification creation failed (silent):', err);
-  }
 }
 
 function mapDate(val) {
@@ -311,7 +300,7 @@ router.post('/requests/:id/submit', async (req, res) => {
     const validatorIds = await getBudgetValidators();
     for (const vid of validatorIds) {
       if (vid !== req.user.id) {
-        await createNotification(
+        await notify(
           vid,
           'budget_request_submitted',
           'Nouvelle demande de budget soumise',
@@ -369,7 +358,7 @@ router.post('/requests/:id/approve', async (req, res) => {
     }
 
     // Notify requester
-    await createNotification(
+    await notify(
       request.user_id,
       'budget_request_approved',
       'Demande de budget approuvée',
@@ -409,7 +398,7 @@ router.post('/requests/:id/return-to-draft', async (req, res) => {
       [req.user.id, approverComment || null, id]
     );
 
-    await createNotification(
+    await notify(
       request.user_id,
       'budget_request_returned',
       'Demande de budget renvoyée en brouillon',

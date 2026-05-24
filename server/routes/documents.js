@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const pool = require('../db');
 const { recognizeDocument } = require('../services/recognition');
 const { sendDocumentNotification } = require('../services/email');
+const { notify } = require('../services/notifications');
 
 const router = express.Router();
 
@@ -140,6 +141,11 @@ router.put('/:id', async (req, res) => {
         }
       } catch (emailErr) {
         console.error('Email error:', emailErr.message);
+      }
+      if (userId) {
+        await notify(userId, 'document_available', 'Nouveau document disponible',
+          `Un document "${documentType || existing.document_type}" est disponible dans votre espace.`,
+          'document', id);
       }
     }
 

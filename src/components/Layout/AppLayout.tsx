@@ -17,6 +17,7 @@ import {
   Bell,
   BarChart2,
   DollarSign,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -198,6 +199,13 @@ export default function AppLayout() {
               {notifCount > 99 ? '99+' : notifCount}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => navigate('/preferences')}
+          className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg text-sm transition-colors mb-1"
+        >
+          <SlidersHorizontal size={16} />
+          Préférences
         </button>
         <button
           onClick={handleLogout}

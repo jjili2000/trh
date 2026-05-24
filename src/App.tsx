@@ -18,6 +18,7 @@ import BudgetList from './pages/budget/BudgetList';
 import BudgetRequestDetail from './pages/budget/BudgetRequestDetail';
 import RealBudgetDetail from './pages/budget/RealBudgetDetail';
 import NotificationsPage from './pages/notifications/NotificationsPage';
+import PreferencesPage from './pages/preferences/PreferencesPage';
 import AccountingPage from './pages/accounting/AccountingPage';
 import PayrollList from './pages/payroll/PayrollList';
 import PayrollDetail from './pages/payroll/PayrollDetail';
@@ -84,6 +85,7 @@ function AppRoutes() {
         <Route path="budget/requests/:id" element={<BudgetRequestDetail />} />
         <Route path="budget/real/:id" element={<RealBudgetDetail />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="preferences" element={<PreferencesPage />} />
         <Route path="accounting" element={<AccountingPage />} />
         <Route path="payroll" element={<ModuleRoute module="payroll"><PayrollList /></ModuleRoute>} />
         <Route path="payroll/:id" element={<ModuleRoute module="payroll"><PayrollDetail /></ModuleRoute>} />

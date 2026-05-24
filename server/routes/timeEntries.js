@@ -1,31 +1,9 @@
 const express = require('express');
 const crypto = require('crypto');
 const pool = require('../db');
+const { notify } = require('../services/notifications');
 
 const router = express.Router();
-
-// ─── Notification helper ──────────────────────────────────────────────────────
-
-async function createNotification(userId, type, title, body, refType, refId) {
-  try {
-    const id = crypto.randomUUID();
-    await pool.execute(
-      `INSERT INTO notifications (id, user_id, type, title, body, ref_type, ref_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, userId, type, title, body || null, refType || null, refId || null]
-    );
-  } catch (err) {
-    console.error('[time-entries] createNotification:', err.message);
-  }
-}
-
-// Retourne { id, first_name, last_name, manager_id } pour un utilisateur
-async function getUserInfo(userId) {
-  const [rows] = await pool.execute(
-    'SELECT id, first_name, last_name, manager_id FROM users WHERE id = ?',
-    [userId]
-  );
-  return rows[0] || null;
-}
 
 function fmtTime(t) {
   if (!t) return undefined;
@@ -213,10 +191,10 @@ router.post('/bulk', async (req, res) => {
     res.status(201).json(rows.map(mapEntry));
 
     // Notifier le manager — une seule notification groupée
-    const user = await getUserInfo(req.user.id);
+    const [[user]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
     if (user && user.manager_id) {
       const n = createdIds.length;
-      await createNotification(
+      await notify(
         user.manager_id,
         'time_entry_submitted',
         'Heures à valider',
@@ -271,10 +249,10 @@ router.post('/', async (req, res) => {
     res.status(201).json(mapEntry(rows[0]));
 
     // Notifier le manager
-    const user = await getUserInfo(req.user.id);
+    const [[user]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
     if (user && user.manager_id) {
       const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-      await createNotification(
+      await notify(
         user.manager_id,
         'time_entry_submitted',
         'Heures à valider',
@@ -352,11 +330,11 @@ router.put('/:id/approve', async (req, res) => {
     res.json(mapEntry(rows[0]));
 
     // Notifier l'employé
-    const validator = await getUserInfo(req.user.id);
+    const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const validatorName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
     const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
     const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-    await createNotification(
+    await notify(
       entry.user_id,
       'time_entry_approved',
       'Saisie d\'heures validée',
@@ -394,11 +372,11 @@ router.put('/:id/reject', async (req, res) => {
     res.json(mapEntry(rows[0]));
 
     // Notifier l'employé
-    const validator = await getUserInfo(req.user.id);
+    const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const validatorName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
     const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
     const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-    await createNotification(
+    await notify(
       entry.user_id,
       'time_entry_rejected',
       'Saisie d\'heures rejetée',

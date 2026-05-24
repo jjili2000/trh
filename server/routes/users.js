@@ -253,4 +253,34 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// GET /api/users/preferences
+router.get('/preferences', async (req, res) => {
+  try {
+    const [[user]] = await pool.execute(
+      'SELECT notif_in_app, notif_email FROM users WHERE id = ?', [req.user.id]
+    );
+    res.json({ notifInApp: (user?.notif_in_app ?? 1) !== 0, notifEmail: (user?.notif_email ?? 1) !== 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// PUT /api/users/preferences
+router.put('/preferences', async (req, res) => {
+  try {
+    const { notifInApp, notifEmail } = req.body;
+    const updates = [];
+    const values = [];
+    if (notifInApp !== undefined) { updates.push('notif_in_app = ?'); values.push(notifInApp ? 1 : 0); }
+    if (notifEmail !== undefined) { updates.push('notif_email = ?'); values.push(notifEmail ? 1 : 0); }
+    if (updates.length > 0) { values.push(req.user.id); await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values); }
+    const [[user]] = await pool.execute('SELECT notif_in_app, notif_email FROM users WHERE id = ?', [req.user.id]);
+    res.json({ notifInApp: (user?.notif_in_app ?? 1) !== 0, notifEmail: (user?.notif_email ?? 1) !== 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 module.exports = router;

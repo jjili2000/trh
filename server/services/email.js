@@ -88,4 +88,31 @@ async function sendPasswordResetEmail({ toEmail, toName, resetUrl, clubName }) {
   });
 }
 
-module.exports = { sendDocumentNotification, sendPasswordResetEmail };
+async function sendNotificationEmail({ toEmail, toName, title, body, clubName }) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return;
+  const transporter = createTransporter();
+  await transporter.sendMail({
+    from: `"${clubName || 'Tennis Club RH'}" <${process.env.SMTP_USER}>`,
+    to: toEmail,
+    subject: title,
+    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#2d6a4f;padding:20px;text-align:center">
+        <h1 style="color:white;margin:0">🎾 ${clubName || 'Tennis Club RH'}</h1>
+      </div>
+      <div style="padding:30px;background:#f9f9f9">
+        <p>Bonjour ${toName},</p>
+        <div style="background:white;border-left:4px solid #2d6a4f;padding:15px;margin:20px 0">
+          <strong>${title}</strong>${body ? `<p style="margin:8px 0 0;color:#555">${body}</p>` : ''}
+        </div>
+        <a href="${process.env.APP_URL || 'https://trh.neos.live'}" style="background:#2d6a4f;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block">
+          Accéder à l'application
+        </a>
+      </div>
+      <div style="padding:15px;text-align:center;color:#999;font-size:12px">
+        ${clubName || 'Tennis Club RH'} — Gestion des Ressources Humaines
+      </div>
+    </div>`,
+  });
+}
+
+module.exports = { sendDocumentNotification, sendPasswordResetEmail, sendNotificationEmail };
