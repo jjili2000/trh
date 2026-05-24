@@ -36,7 +36,7 @@ function mapSeason(r) {
 }
 
 function mapTW(r) {
-  return { id: r.id, seasonId: r.season_id, label: r.label, createdAt: r.created_at };
+  return { id: r.id, seasonId: r.season_id, label: r.label, isCustom: r.is_custom !== 0, createdAt: r.created_at };
 }
 
 function mapCourse(r) {
@@ -267,6 +267,72 @@ router.put('/:seasonId/assignments', checkAM, async (req, res) => {
       [id, req.params.seasonId, templateWeekId, weekStartDate, templateWeekId]
     );
     res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
+});
+
+// Crée une semaine personnalisée pour une semaine du calendrier :
+// - Nouvelle template_week (is_custom = 1) avec copie des activités actuelles
+// - Met à jour l'affectation pour pointer vers cette nouvelle TW
+router.post('/:seasonId/assignments/create-custom', checkAM, async (req, res) => {
+  try {
+    const { seasonId } = req.params;
+    const { weekStartDate } = req.body;
+    if (!weekStartDate) return res.status(400).json({ error: 'weekStartDate requis' });
+
+    // Trouver l'affectation actuelle
+    const [[existing]] = await pool.execute(
+      'SELECT * FROM season_week_assignments WHERE season_id = ? AND week_start_date = ?',
+      [seasonId, weekStartDate]
+    );
+
+    // Récupérer les activités de la TW actuelle (si existante)
+    let coursesToCopy = [];
+    if (existing?.template_week_id) {
+      const [courses] = await pool.execute(
+        'SELECT * FROM template_courses WHERE template_week_id = ? ORDER BY day_of_week, start_time',
+        [existing.template_week_id]
+      );
+      coursesToCopy = courses;
+    }
+
+    // Créer la nouvelle TW personnalisée
+    const newTwId = crypto.randomUUID();
+    await pool.execute(
+      'INSERT INTO template_weeks (id, season_id, label, is_custom) VALUES (?, ?, ?, 1)',
+      [newTwId, seasonId, 'Semaine personnalisée']
+    );
+
+    // Copier les activités
+    const newCourses = [];
+    for (const c of coursesToCopy) {
+      const newCId = crypto.randomUUID();
+      await pool.execute(
+        `INSERT INTO template_courses
+           (id, template_week_id, label, day_of_week, start_time, end_time, teacher_id, course_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newCId, newTwId, c.label, c.day_of_week, c.start_time, c.end_time, c.teacher_id || null, c.course_type || null]
+      );
+      newCourses.push(mapCourse({
+        id: newCId, template_week_id: newTwId, label: c.label,
+        day_of_week: c.day_of_week, start_time: c.start_time, end_time: c.end_time,
+        teacher_id: c.teacher_id || null, course_type: c.course_type || null,
+      }));
+    }
+
+    // Mettre à jour (ou créer) l'affectation
+    await pool.execute(
+      `INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE template_week_id = VALUES(template_week_id)`,
+      [crypto.randomUUID(), seasonId, newTwId, weekStartDate]
+    );
+
+    const newTemplateWeek = {
+      id: newTwId, seasonId, label: 'Semaine personnalisée', isCustom: true,
+      courses: newCourses, createdAt: new Date().toISOString(),
+    };
+
+    res.status(201).json({ newTemplateWeek });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 

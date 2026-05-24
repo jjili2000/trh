@@ -238,14 +238,15 @@ function layoutCourses(courses: TemplateCourse[]): Array<{ course: TemplateCours
   }));
 }
 
-function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId, onEditCourse, onAddCourse, holidays, showDates = true }: {
+function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId, onEditCourse, onAddCourse, onDeleteCourse, holidays, showDates = true }: {
   templateWeek: TemplateWeek | null;
   startDay: Date;
   numDays?: number;
   users: User[];
   filterUserId?: string | null;
-  onEditCourse?: (course: TemplateCourse) => void;
-  onAddCourse?:  (dayOfWeek: number, startTime: string) => void;
+  onEditCourse?:   (course: TemplateCourse) => void;
+  onAddCourse?:    (dayOfWeek: number, startTime: string) => void;
+  onDeleteCourse?: (course: TemplateCourse) => void;
   holidays?: Map<string, string>;
   showDates?: boolean;
 }) {
@@ -265,6 +266,8 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
 
   // Hovered time slot (for "+" creation)
   const [hoverSlot, setHoverSlot] = useState<{ day: number; slotIndex: number; time: string } | null>(null);
+  // Hovered course (for delete button)
+  const [hoveredCourseId, setHoveredCourseId] = useState<string | null>(null);
 
   const showTooltip = (course: TemplateCourse, teacherName: string | null, isConflict: boolean) => {
     if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
@@ -387,13 +390,22 @@ function WeekTimeGrid({ templateWeek, startDay, numDays = 7, users, filterUserId
                       width: `calc((100% - 20px) / ${totalCols} - 4px)`,
                       backgroundColor: bg,
                     }}
-                    onMouseEnter={() => showTooltip(c, teacherName, isConflict)}
-                    onMouseLeave={hideTooltip}
+                    onMouseEnter={() => { showTooltip(c, teacherName, isConflict); setHoveredCourseId(c.id); }}
+                    onMouseLeave={() => { hideTooltip(); setHoveredCourseId(null); }}
                     onClick={e => { e.stopPropagation(); onEditCourse?.(c); }}
                   >
                     <div className="flex items-start gap-0.5">
                       <div className="font-semibold truncate flex-1">{c.label}</div>
                       {isConflict && <AlertTriangle size={10} className="text-yellow-300 flex-shrink-0 mt-0.5" />}
+                      {onDeleteCourse && hoveredCourseId === c.id && (
+                        <button
+                          className="flex-shrink-0 ml-0.5 bg-black/20 hover:bg-black/50 rounded p-0.5 transition-colors"
+                          onClick={e => { e.stopPropagation(); hideTooltip(); setHoveredCourseId(null); onDeleteCourse(c); }}
+                          title="Supprimer l'activité"
+                        >
+                          <Trash2 size={9} />
+                        </button>
+                      )}
                     </div>
                     {height > 30 && <div className="opacity-80 truncate">{c.startTime} – {c.endTime}</div>}
                     {height > 50 && teacherName && <div className="opacity-70 truncate">{teacherName}</div>}
@@ -441,7 +453,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   users: User[];
   onAssign: (weekStartDate: string, templateWeekId: string | null) => Promise<void>;
   onRefresh: () => Promise<void>;
-  onEditTemplateWeek: (twId: string) => void;
+  onEditTemplateWeek: (twId: string, autoAdd?: { dayOfWeek: number; startTime: string }) => void;
 }) {
   const { activityTypes, appSettings } = useApp();
   const END_HOUR   = appSettings.calendarEndHour   ?? DEFAULT_END_HOUR;
@@ -467,6 +479,20 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   });
   const [calCourseError, setCalCourseError] = useState('');
   const [calCourseSaving, setCalCourseSaving] = useState(false);
+
+  // Dialog "modifier le modèle ou créer une semaine personnalisée"
+  const [intentModal, setIntentModal] = useState<{
+    type: 'add' | 'edit' | 'delete';
+    dayOfWeek?: number;
+    startTime?: string;
+    course?: TemplateCourse;
+  } | null>(null);
+  const [customizing, setCustomizing] = useState(false);
+
+  // Confirmation suppression d'activité depuis le calendrier
+  const [calDeleteConfirm, setCalDeleteConfirm] = useState<{
+    tw: TemplateWeek; course: TemplateCourse;
+  } | null>(null);
 
   const allWeeks       = getSeasonWeeks(season.startDate, season.endDate);
   const assignMap      = Object.fromEntries(assignments.map(a => [a.weekStartDate, a.templateWeekId]));
@@ -542,29 +568,117 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
   };
 
   // Course handlers — use activeTW (works for both week and day views)
-  const handleEditCourse = (course: TemplateCourse) => {
-    if (!activeTW) return;
-    setCalCourseForm({
-      label: course.label, dayOfWeek: course.dayOfWeek,
-      startTime: course.startTime, endTime: course.endTime,
-      teacherId: course.teacherId || '', courseType: course.courseType || '',
-    });
-    setCalCourseError('');
-    setCalCourseModal({ tw: activeTW, editing: course });
-  };
+  // Si la TW n'est pas personnalisée, on demande d'abord si l'utilisateur veut modifier
+  // le modèle partagé ou créer une semaine personnalisée.
 
-  const handleAddCourse = (dayOfWeek: number, startTime: string) => {
-    if (!activeTW) return;
+  const openAddModal = (tw: TemplateWeek, dayOfWeek: number, startTime: string) => {
     const endMin = Math.min(timeToMin(startTime) + 60, END_HOUR * 60);
-    const endH   = Math.floor(endMin / 60);
-    const endM   = endMin % 60;
+    const endH = Math.floor(endMin / 60);
+    const endM = endMin % 60;
     setCalCourseForm({
       label: '', dayOfWeek, startTime,
       endTime: `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`,
       teacherId: '', courseType: '',
     });
     setCalCourseError('');
-    setCalCourseModal({ tw: activeTW, editing: null });
+    setCalCourseModal({ tw, editing: null });
+  };
+
+  const openEditModal = (tw: TemplateWeek, course: TemplateCourse) => {
+    setCalCourseForm({
+      label: course.label, dayOfWeek: course.dayOfWeek,
+      startTime: course.startTime, endTime: course.endTime,
+      teacherId: course.teacherId || '', courseType: course.courseType || '',
+    });
+    setCalCourseError('');
+    setCalCourseModal({ tw, editing: course });
+  };
+
+  const handleAddCourse = (dayOfWeek: number, startTime: string) => {
+    if (!activeTW) return;
+    if (!activeTW.isCustom) {
+      setIntentModal({ type: 'add', dayOfWeek, startTime });
+      return;
+    }
+    openAddModal(activeTW, dayOfWeek, startTime);
+  };
+
+  const handleEditCourse = (course: TemplateCourse) => {
+    if (!activeTW) return;
+    if (!activeTW.isCustom) {
+      setIntentModal({ type: 'edit', course });
+      return;
+    }
+    openEditModal(activeTW, course);
+  };
+
+  const handleDeleteCourse = (course: TemplateCourse) => {
+    if (!activeTW) return;
+    if (!activeTW.isCustom) {
+      setIntentModal({ type: 'delete', course });
+      return;
+    }
+    setCalDeleteConfirm({ tw: activeTW, course });
+  };
+
+  // L'utilisateur choisit "Modifier la semaine type"
+  const handleGoToTemplate = () => {
+    if (!intentModal || !activeTW) return;
+    const { type, dayOfWeek, startTime } = intentModal;
+    setIntentModal(null);
+    if (type === 'add' && dayOfWeek !== undefined && startTime) {
+      onEditTemplateWeek(activeTW.id, { dayOfWeek, startTime });
+    } else {
+      onEditTemplateWeek(activeTW.id);
+    }
+  };
+
+  // L'utilisateur choisit "Créer une semaine personnalisée"
+  const handleCreateCustomAndProceed = async () => {
+    if (!intentModal || !activeTW) return;
+    const intent = { ...intentModal };
+    setIntentModal(null);
+    setCustomizing(true);
+    try {
+      const weekStart = isoDate(viewMode === 'day' ? dayMonday : currentWeek);
+      const { newTemplateWeek } = await api.post<{ newTemplateWeek: TemplateWeek }>(
+        `/seasons/${season.id}/assignments/create-custom`,
+        { weekStartDate: weekStart }
+      );
+      await onRefresh();
+
+      if (intent.type === 'add' && intent.dayOfWeek !== undefined && intent.startTime) {
+        openAddModal(newTemplateWeek, intent.dayOfWeek, intent.startTime);
+      } else if (intent.type === 'edit' && intent.course) {
+        const equiv = newTemplateWeek.courses.find(c =>
+          c.label === intent.course!.label &&
+          c.dayOfWeek === intent.course!.dayOfWeek &&
+          c.startTime === intent.course!.startTime
+        );
+        if (equiv) openEditModal(newTemplateWeek, equiv);
+      } else if (intent.type === 'delete' && intent.course) {
+        const equiv = newTemplateWeek.courses.find(c =>
+          c.label === intent.course!.label &&
+          c.dayOfWeek === intent.course!.dayOfWeek &&
+          c.startTime === intent.course!.startTime
+        );
+        if (equiv) setCalDeleteConfirm({ tw: newTemplateWeek, course: equiv });
+      }
+    } catch (err) {
+      console.error('createCustom error:', err);
+    } finally {
+      setCustomizing(false);
+    }
+  };
+
+  const deleteCalCourse = async () => {
+    if (!calDeleteConfirm) return;
+    const { tw, course } = calDeleteConfirm;
+    setCalDeleteConfirm(null);
+    try {
+      await api.delete(`/seasons/${season.id}/template-weeks/${tw.id}/courses/${course.id}`);
+      await onRefresh();
+    } catch (err) { console.error('deleteCalCourse error:', err); }
   };
 
   const saveCalCourse = async (e: FormEvent) => {
@@ -752,14 +866,18 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               Semaine {getWeekNum(currentWeek)} · {fmtFull(currentWeek)} → {fmtFull(addDays(currentWeek, 6))}
             </h3>
             {currentTW ? (
-              <button
-                className="text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
-                style={{ backgroundColor: twColorMap[currentTW.id] }}
-                onClick={() => onEditTemplateWeek(currentTW.id)}
-                title="Modifier cette semaine type"
-              >
-                {currentTW.label}
-              </button>
+              currentTW.isCustom ? (
+                <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500 italic">{currentTW.label}</span>
+              ) : (
+                <button
+                  className="text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
+                  style={{ backgroundColor: twColorMap[currentTW.id] }}
+                  onClick={() => onEditTemplateWeek(currentTW.id)}
+                  title="Modifier cette semaine type"
+                >
+                  {currentTW.label}
+                </button>
+              )
             ) : (
               <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">Non planifiée</span>
             )}
@@ -776,6 +894,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               filterUserId={filterUserId}
               onEditCourse={handleEditCourse}
               onAddCourse={handleAddCourse}
+              onDeleteCourse={handleDeleteCourse}
               holidays={holidays}
             />
           ) : (
@@ -796,14 +915,18 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
         <div>
           <div className="flex items-center gap-3 mb-4 flex-wrap">
             {dayTW ? (
-              <button
-                className="text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
-                style={{ backgroundColor: twColorMap[dayTW.id] }}
-                onClick={() => onEditTemplateWeek(dayTW.id)}
-                title="Modifier cette semaine type"
-              >
-                {dayTW.label}
-              </button>
+              dayTW.isCustom ? (
+                <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500 italic">{dayTW.label}</span>
+              ) : (
+                <button
+                  className="text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
+                  style={{ backgroundColor: twColorMap[dayTW.id] }}
+                  onClick={() => onEditTemplateWeek(dayTW.id)}
+                  title="Modifier cette semaine type"
+                >
+                  {dayTW.label}
+                </button>
+              )
             ) : (
               <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">Non planifiée</span>
             )}
@@ -823,6 +946,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               filterUserId={filterUserId}
               onEditCourse={handleEditCourse}
               onAddCourse={handleAddCourse}
+              onDeleteCourse={handleDeleteCourse}
               holidays={holidays}
             />
           ) : (
@@ -907,6 +1031,11 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                             <td className="px-4 py-2.5">
                               {tw ? (
                                 <div className="flex items-center gap-1.5">
+                                  {tw.isCustom ? (
+                                    <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500 font-medium italic">
+                                      {tw.label}
+                                    </span>
+                                  ) : (
                                   <button
                                     className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full text-white font-medium hover:brightness-110 transition-all"
                                     style={{ backgroundColor: twColorMap[tw.id] }}
@@ -915,13 +1044,14 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
                                   >
                                     {tw.label}
                                   </button>
+                                  )}
                                   {hasConflict && (
                                     <span title="Une ou plusieurs activités sont en conflit d'agenda">
                                       <AlertTriangle size={13} className="text-yellow-500" />
                                     </span>
                                   )}
                                   {holidayConflicts.length > 0 && (
-                                    <span title={`Cours sur jour(s) férié(s) : ${holidayConflicts.join(', ')}`}>
+                                    <span title={`Cours sur jour(s)férié(s) : ${holidayConflicts.join(', ')}`}>
                                       <AlertCircle size={13} className="text-orange-500" />
                                     </span>
                                   )}
@@ -989,6 +1119,68 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
       )}
 
       {/* Course create / edit modal (from calendar) */}
+      {/* Dialog : modifier le modèle partagé ou créer une semaine personnalisée */}
+      {intentModal && activeTW && (
+        <Modal
+          title={
+            intentModal.type === 'add' ? 'Ajouter une activité' :
+            intentModal.type === 'edit' ? "Modifier l'activité" :
+            "Supprimer l'activité"
+          }
+          onClose={() => setIntentModal(null)}
+        >
+          <p className="text-sm text-gray-600 mb-3">
+            Cette semaine est liée à la semaine type <strong>«&nbsp;{activeTW.label}&nbsp;»</strong>.
+          </p>
+          <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-700 mb-5">
+            ⚠️ Modifier la semaine type affectera toutes les semaines qui l'utilisent.
+          </div>
+          <div className="space-y-2">
+            <button
+              onClick={handleGoToTemplate}
+              className="w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border-2 border-gray-100 hover:border-gray-300 transition-colors"
+            >
+              <span className="mt-0.5 text-base">✏️</span>
+              <span>
+                <span className="block text-sm font-medium text-gray-800">Modifier la semaine type</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Toutes les semaines «&nbsp;{activeTW.label}&nbsp;» seront impactées
+                </span>
+              </span>
+            </button>
+            <button
+              onClick={handleCreateCustomAndProceed}
+              disabled={customizing}
+              className="w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border-2 border-tennis-green/30 bg-tennis-green/5 hover:bg-tennis-green/10 transition-colors disabled:opacity-50"
+            >
+              <span className="mt-0.5 text-base">📋</span>
+              <span>
+                <span className="block text-sm font-medium text-tennis-green">
+                  {customizing ? 'Création en cours…' : 'Créer une semaine personnalisée'}
+                </span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Cette semaine uniquement — les autres semaines ne sont pas modifiées
+                </span>
+              </span>
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirmation suppression d'activité depuis le calendrier */}
+      {calDeleteConfirm && (
+        <Modal title="Supprimer l'activité" onClose={() => setCalDeleteConfirm(null)}>
+          <p className="text-gray-600 mb-2">
+            Supprimer <strong>«&nbsp;{calDeleteConfirm.course.label}&nbsp;»</strong> ?
+          </p>
+          <p className="text-sm text-gray-400 mb-6">Cette action est irréversible.</p>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setCalDeleteConfirm(null)} className="btn-secondary">Annuler</button>
+            <button onClick={deleteCalCourse} className="btn-danger">Supprimer</button>
+          </div>
+        </Modal>
+      )}
+
       {calCourseModal && (
         <Modal
           title={calCourseModal.editing ? "Modifier l'activité" : 'Nouvelle activité'}
@@ -1074,7 +1266,7 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
 
 // ─── Template Weeks Panel ─────────────────────────────────────────────────────
 
-function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefresh, selectedTWId, onSelectedTWChange }: {
+function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefresh, selectedTWId, onSelectedTWChange, pendingCourseAdd, onPendingCourseAddConsumed }: {
   season: Season;
   templateWeeks: TemplateWeek[];
   users: User[];
@@ -1082,6 +1274,8 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   onRefresh: () => Promise<void>;
   selectedTWId: string | null;
   onSelectedTWChange: (id: string | null) => void;
+  pendingCourseAdd?: { dayOfWeek: number; startTime: string } | null;
+  onPendingCourseAddConsumed?: () => void;
 }) {
   const { activityTypes, appSettings } = useApp();
   const END_HOUR   = appSettings.calendarEndHour   ?? DEFAULT_END_HOUR;
@@ -1109,6 +1303,15 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
   const [applyResult, setApplyResult] = useState('');
 
   const selectedTW = templateWeeks.find(tw => tw.id === selectedTWId) || templateWeeks[0] || null;
+
+  // Auto-ouvre la modale d'ajout d'activité si redirigé depuis le calendrier
+  useEffect(() => {
+    if (pendingCourseAdd && selectedTW) {
+      openAddCourse(selectedTW, pendingCourseAdd.dayOfWeek, pendingCourseAdd.startTime);
+      onPendingCourseAddConsumed?.();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCourseAdd]);
 
   const openAddTW = () => { setTWForm({ label: '' }); setTWError(''); setTWModal({ editing: null }); };
   const openEditTW = (tw: TemplateWeek) => { setTWForm({ label: tw.label }); setTWError(''); setTWModal({ editing: tw }); };
@@ -1355,6 +1558,7 @@ function TemplateWeeksPanel({ season, templateWeeks, users, allSeasons, onRefres
             users={users}
             onEditCourse={(course) => openEditCourse(selectedTW, course)}
             onAddCourse={(dayOfWeek, startTime) => openAddCourse(selectedTW, dayOfWeek, startTime)}
+            onDeleteCourse={(course) => setDeleteConfirm({ type: 'course', id: course.id, twId: selectedTW.id })}
             showDates={false}
           />
         </div>
@@ -1573,6 +1777,7 @@ export default function SeasonDetail() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'calendar' | 'template-weeks'>('calendar');
   const [panelSelectedTWId, setPanelSelectedTWId] = useState<string | null>(null);
+  const [pendingCourseAdd, setPendingCourseAdd] = useState<{ dayOfWeek: number; startTime: string } | null>(null);
 
   // Status edit
   const [statusEditing, setStatusEditing] = useState(false);
@@ -1621,9 +1826,10 @@ export default function SeasonDetail() {
     setSeason(updated); setDeptEditing(false);
   };
 
-  const handleEditTemplateWeek = (twId: string) => {
+  const handleEditTemplateWeek = (twId: string, autoAdd?: { dayOfWeek: number; startTime: string }) => {
     setPanelSelectedTWId(twId);
     setActiveTab('template-weeks');
+    if (autoAdd) setPendingCourseAdd(autoAdd);
   };
 
   if (loading) return <div className="p-8 text-center text-gray-400">Chargement…</div>;
@@ -1753,6 +1959,8 @@ export default function SeasonDetail() {
           onRefresh={loadData}
           selectedTWId={panelSelectedTWId}
           onSelectedTWChange={setPanelSelectedTWId}
+          pendingCourseAdd={pendingCourseAdd}
+          onPendingCourseAddConsumed={() => setPendingCourseAdd(null)}
         />
       </div>
     </div>

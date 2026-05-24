@@ -119,6 +119,7 @@ export interface TemplateWeek {
   id: string;
   seasonId: string;
   label: string;
+  isCustom?: boolean;
   courses: TemplateCourse[];
   createdAt: string;
 }
