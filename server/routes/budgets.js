@@ -306,7 +306,9 @@ router.post('/requests/:id/submit', async (req, res) => {
           'Nouvelle demande de budget soumise',
           `La demande "${request.label}" a été soumise et attend votre approbation.`,
           'budget_request',
-          id
+          id,
+          'budgets',
+          'action'
         );
       }
     }
@@ -364,7 +366,9 @@ router.post('/requests/:id/approve', async (req, res) => {
       'Demande de budget approuvée',
       `Votre demande "${request.label}" a été approuvée. Le budget réel a été créé.`,
       'real_budget',
-      realBudgetId
+      realBudgetId,
+      'budgets',
+      'response'
     );
 
     const [updatedRows] = await pool.execute('SELECT * FROM budget_requests WHERE id = ?', [id]);
@@ -404,7 +408,9 @@ router.post('/requests/:id/return-to-draft', async (req, res) => {
       'Demande de budget renvoyée en brouillon',
       `Votre demande "${request.label}" a été renvoyée en brouillon${approverComment ? ': ' + approverComment : '.'}`,
       'budget_request',
-      id
+      id,
+      'budgets',
+      'response'
     );
 
     const [updatedRows] = await pool.execute('SELECT * FROM budget_requests WHERE id = ?', [id]);

@@ -783,7 +783,7 @@ export default function TimeTracking() {
               <input type="date" className="input" value={form.date} max={new Date().toISOString().slice(0, 10)} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required />
             </div>
             {/* Heure début / fin / durée — cascade automatique */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="min-w-0">
                 <label className="label">Heure de début</label>
                 <input

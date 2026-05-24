@@ -100,8 +100,8 @@ router.post('/', async (req, res) => {
     if (submitter?.manager_id) {
       const startLabel = new Date(startDate + 'T12:00:00').toLocaleDateString('fr-FR');
       await notify(submitter.manager_id, 'absence_submitted', 'Absence à valider',
-        `${submitter.first_name} ${submitter.last_name} a soumis une demande d'absence à partir du ${startLabel}.`,
-        'absence_request', id);
+        `${submitter.first_name} a soumis une demande d'absence à partir du ${startLabel}.`,
+        'absence_request', id, 'absences', 'action');
     }
   } catch (err) {
     // Si la colonne n'existe pas encore (migration non jouée), fallback sans duration_days
@@ -186,11 +186,11 @@ router.put('/:id/approve', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     res.json(mapRequest(rows[0]));
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
-    const vName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const vName = validator ? validator.first_name : 'Votre responsable';
     const startLabel = new Date(String(record.start_date).slice(0,10) + 'T12:00:00').toLocaleDateString('fr-FR');
     await notify(record.user_id, 'absence_approved', 'Absence approuvée',
       `Votre demande d'absence du ${startLabel} a été approuvée par ${vName}.`,
-      'absence_request', id);
+      'absence_request', id, 'absences', 'response');
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -220,11 +220,11 @@ router.put('/:id/reject', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     res.json(mapRequest(rows[0]));
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
-    const vName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const vName = validator ? validator.first_name : 'Votre responsable';
     const startLabel = new Date(String(record.start_date).slice(0,10) + 'T12:00:00').toLocaleDateString('fr-FR');
     await notify(record.user_id, 'absence_rejected', 'Absence refusée',
       `Votre demande d'absence du ${startLabel} a été refusée par ${vName}.`,
-      'absence_request', id);
+      'absence_request', id, 'absences', 'response');
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

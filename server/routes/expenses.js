@@ -164,8 +164,8 @@ router.post('/', async (req, res) => {
     const [[submitter]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
     if (submitter?.manager_id) {
       await notify(submitter.manager_id, 'expense_submitted', 'Note de frais à valider',
-        `${submitter.first_name} ${submitter.last_name} a soumis une note de frais.`,
-        'expense', id);
+        `${submitter.first_name} a soumis une note de frais.`,
+        'expense', id, 'expenses', 'action');
     }
   } catch (err) {
     // Fallback si colonnes vendor/amount_ht/vat_details pas encore migrées
@@ -272,10 +272,10 @@ router.put('/:id/approve', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.json(mapExpense(rows[0]));
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
-    const vName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const vName = validator ? validator.first_name : 'Votre responsable';
     await notify(existing[0].user_id, 'expense_approved', 'Note de frais approuvée',
       `Votre note de frais a été approuvée par ${vName}.`,
-      'expense', id);
+      'expense', id, 'expenses', 'response');
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -300,10 +300,10 @@ router.put('/:id/reject', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.json(mapExpense(rows[0]));
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
-    const vName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const vName = validator ? validator.first_name : 'Votre responsable';
     await notify(existing[0].user_id, 'expense_rejected', 'Note de frais refusée',
       `Votre note de frais a été refusée par ${vName}.`,
-      'expense', id);
+      'expense', id, 'expenses', 'response');
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

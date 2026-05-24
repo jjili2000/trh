@@ -198,9 +198,11 @@ router.post('/bulk', async (req, res) => {
         user.manager_id,
         'time_entry_submitted',
         'Heures à valider',
-        `${user.first_name} ${user.last_name} a soumis ${n} saisie${n > 1 ? 's' : ''} d'heures.`,
+        `${user.first_name} a soumis ${n} saisie${n > 1 ? 's' : ''} d'heures.`,
         'time_entry',
-        null
+        null,
+        'time',
+        'action'
       );
     }
   } catch (err) {
@@ -256,9 +258,11 @@ router.post('/', async (req, res) => {
         user.manager_id,
         'time_entry_submitted',
         'Heures à valider',
-        `${user.first_name} ${user.last_name} a soumis une saisie d'heures pour le ${dateLabel}.`,
+        `${user.first_name} a soumis une saisie d'heures pour le ${dateLabel}.`,
         'time_entry',
-        id
+        id,
+        'time',
+        'action'
       );
     }
   } catch (err) {
@@ -331,7 +335,7 @@ router.put('/:id/approve', async (req, res) => {
 
     // Notifier l'employé
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
-    const validatorName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const validatorName = validator ? validator.first_name : 'Votre responsable';
     const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
     const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
     await notify(
@@ -340,7 +344,9 @@ router.put('/:id/approve', async (req, res) => {
       'Saisie d\'heures validée',
       `Votre saisie du ${dateLabel} a été validée par ${validatorName}.`,
       'time_entry',
-      id
+      id,
+      'time',
+      'response'
     );
   } catch (err) {
     console.error(err);
@@ -373,7 +379,7 @@ router.put('/:id/reject', async (req, res) => {
 
     // Notifier l'employé
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
-    const validatorName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const validatorName = validator ? validator.first_name : 'Votre responsable';
     const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
     const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
     await notify(
@@ -382,7 +388,9 @@ router.put('/:id/reject', async (req, res) => {
       'Saisie d\'heures rejetée',
       `Votre saisie du ${dateLabel} a été rejetée par ${validatorName}.`,
       'time_entry',
-      id
+      id,
+      'time',
+      'response'
     );
   } catch (err) {
     console.error(err);

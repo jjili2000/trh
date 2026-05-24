@@ -145,7 +145,7 @@ router.put('/:id', async (req, res) => {
       if (userId) {
         await notify(userId, 'document_available', 'Nouveau document disponible',
           `Un document "${documentType || existing.document_type}" est disponible dans votre espace.`,
-          'document', id);
+          'document', id, 'documents', 'response');
       }
     }
 
