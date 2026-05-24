@@ -4,6 +4,29 @@ const pool = require('../db');
 
 const router = express.Router();
 
+// ─── Notification helper ──────────────────────────────────────────────────────
+
+async function createNotification(userId, type, title, body, refType, refId) {
+  try {
+    const id = crypto.randomUUID();
+    await pool.execute(
+      `INSERT INTO notifications (id, user_id, type, title, body, ref_type, ref_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, userId, type, title, body || null, refType || null, refId || null]
+    );
+  } catch (err) {
+    console.error('[time-entries] createNotification:', err.message);
+  }
+}
+
+// Retourne { id, first_name, last_name, manager_id } pour un utilisateur
+async function getUserInfo(userId) {
+  const [rows] = await pool.execute(
+    'SELECT id, first_name, last_name, manager_id FROM users WHERE id = ?',
+    [userId]
+  );
+  return rows[0] || null;
+}
+
 function fmtTime(t) {
   if (!t) return undefined;
   if (t instanceof Date) return t.toTimeString().slice(0, 5); // "HH:MM"
@@ -188,6 +211,20 @@ router.post('/bulk', async (req, res) => {
       createdIds
     );
     res.status(201).json(rows.map(mapEntry));
+
+    // Notifier le manager — une seule notification groupée
+    const user = await getUserInfo(req.user.id);
+    if (user && user.manager_id) {
+      const n = createdIds.length;
+      await createNotification(
+        user.manager_id,
+        'time_entry_submitted',
+        'Heures à valider',
+        `${user.first_name} ${user.last_name} a soumis ${n} saisie${n > 1 ? 's' : ''} d'heures.`,
+        'time_entry',
+        null
+      );
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -232,6 +269,20 @@ router.post('/', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
     res.status(201).json(mapEntry(rows[0]));
+
+    // Notifier le manager
+    const user = await getUserInfo(req.user.id);
+    if (user && user.manager_id) {
+      const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+      await createNotification(
+        user.manager_id,
+        'time_entry_submitted',
+        'Heures à valider',
+        `${user.first_name} ${user.last_name} a soumis une saisie d'heures pour le ${dateLabel}.`,
+        'time_entry',
+        id
+      );
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -299,6 +350,20 @@ router.put('/:id/approve', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
     res.json(mapEntry(rows[0]));
+
+    // Notifier l'employé
+    const validator = await getUserInfo(req.user.id);
+    const validatorName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
+    const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    await createNotification(
+      entry.user_id,
+      'time_entry_approved',
+      'Saisie d\'heures validée',
+      `Votre saisie du ${dateLabel} a été validée par ${validatorName}.`,
+      'time_entry',
+      id
+    );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -327,6 +392,20 @@ router.put('/:id/reject', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
     res.json(mapEntry(rows[0]));
+
+    // Notifier l'employé
+    const validator = await getUserInfo(req.user.id);
+    const validatorName = validator ? `${validator.first_name} ${validator.last_name}` : 'Votre responsable';
+    const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
+    const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    await createNotification(
+      entry.user_id,
+      'time_entry_rejected',
+      'Saisie d\'heures rejetée',
+      `Votre saisie du ${dateLabel} a été rejetée par ${validatorName}.`,
+      'time_entry',
+      id
+    );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
