@@ -252,21 +252,41 @@ router.put('/:seasonId/assignments', checkAM, async (req, res) => {
   try {
     const { weekStartDate, templateWeekId } = req.body;
     if (!weekStartDate) return res.status(400).json({ error: 'weekStartDate requis' });
+
+    // Récupérer l'affectation actuelle pour détecter une éventuelle semaine personnalisée
+    const [[current]] = await pool.execute(
+      'SELECT * FROM season_week_assignments WHERE season_id = ? AND week_start_date = ?',
+      [req.params.seasonId, weekStartDate]
+    );
+    const oldTwId = current?.template_week_id || null;
+
     if (!templateWeekId) {
       await pool.execute(
         'DELETE FROM season_week_assignments WHERE season_id = ? AND week_start_date = ?',
         [req.params.seasonId, weekStartDate]
       );
-      return res.json({ success: true, removed: true });
+    } else {
+      const id = crypto.randomUUID();
+      await pool.execute(
+        `INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE template_week_id = ?`,
+        [id, req.params.seasonId, templateWeekId, weekStartDate, templateWeekId]
+      );
     }
-    const id = crypto.randomUUID();
-    await pool.execute(
-      `INSERT INTO season_week_assignments (id, season_id, template_week_id, week_start_date)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE template_week_id = ?`,
-      [id, req.params.seasonId, templateWeekId, weekStartDate, templateWeekId]
-    );
-    res.json({ success: true });
+
+    // Si l'ancienne affectation pointait vers une semaine personnalisée différente, la supprimer
+    if (oldTwId && oldTwId !== templateWeekId) {
+      const [[oldTw]] = await pool.execute(
+        'SELECT is_custom FROM template_weeks WHERE id = ?', [oldTwId]
+      );
+      if (oldTw?.is_custom) {
+        await pool.execute('DELETE FROM template_courses WHERE template_week_id = ?', [oldTwId]);
+        await pool.execute('DELETE FROM template_weeks WHERE id = ?', [oldTwId]);
+      }
+    }
+
+    res.json({ success: true, removed: !templateWeekId });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Erreur serveur' }); }
 });
 
@@ -296,10 +316,12 @@ router.post('/:seasonId/assignments/create-custom', checkAM, async (req, res) =>
     }
 
     // Créer la nouvelle TW personnalisée
+    const [wy, wm, wd] = weekStartDate.split('-');
+    const customLabel = `Semaine du ${wd}/${wm}/${wy.slice(2)}`;
     const newTwId = crypto.randomUUID();
     await pool.execute(
       'INSERT INTO template_weeks (id, season_id, label, is_custom) VALUES (?, ?, ?, 1)',
-      [newTwId, seasonId, 'Semaine personnalisée']
+      [newTwId, seasonId, customLabel]
     );
 
     // Copier les activités
@@ -328,7 +350,7 @@ router.post('/:seasonId/assignments/create-custom', checkAM, async (req, res) =>
     );
 
     const newTemplateWeek = {
-      id: newTwId, seasonId, label: 'Semaine personnalisée', isCustom: true,
+      id: newTwId, seasonId, label: customLabel, isCustom: true,
       courses: newCourses, createdAt: new Date().toISOString(),
     };
 

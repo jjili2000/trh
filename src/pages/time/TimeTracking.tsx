@@ -53,7 +53,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
             <X size={18} />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto max-h-[85vh]">{children}</div>
+        <div className="p-6 overflow-y-auto overflow-x-hidden max-h-[85vh]">{children}</div>
       </div>
     </div>
   );
@@ -774,16 +774,16 @@ export default function TimeTracking() {
           title={editingEntry ? 'Modifier la saisie' : 'Nouvelle saisie de temps'}
           onClose={() => setShowForm(false)}
         >
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 w-full min-w-0">
             {formError && (
               <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{formError}</div>
             )}
-            <div>
+            <div className="min-w-0">
               <label className="label">Date *</label>
               <input type="date" className="input" value={form.date} max={new Date().toISOString().slice(0, 10)} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required />
             </div>
             {/* Heure début / fin / durée — cascade automatique */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 min-w-0">
               <div className="min-w-0">
                 <label className="label">Heure de début</label>
                 <input

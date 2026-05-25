@@ -496,7 +496,14 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
 
   const allWeeks       = getSeasonWeeks(season.startDate, season.endDate);
   const assignMap      = Object.fromEntries(assignments.map(a => [a.weekStartDate, a.templateWeekId]));
-  const twColorMap     = Object.fromEntries(templateWeeks.map((tw, i) => [tw.id, TW_COLORS[i % TW_COLORS.length]]));
+  const twColorMap = (() => {
+    const map: Record<string, string> = {};
+    let idx = 0;
+    for (const tw of templateWeeks) {
+      map[tw.id] = tw.isCustom ? '#e5e7eb' : TW_COLORS[idx++ % TW_COLORS.length];
+    }
+    return map;
+  })();
   const allMonthGroups = groupByMonth(allWeeks);
   const allMonthKeys   = Array.from(allMonthGroups.keys());
 
@@ -848,12 +855,18 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
         {/* Legend */}
         {templateWeeks.length > 0 && (
           <div className="flex flex-wrap gap-2 ml-auto">
-            {templateWeeks.map((tw, i) => (
+            {templateWeeks.filter(tw => !tw.isCustom).map(tw => (
               <span key={tw.id} className="flex items-center gap-1.5 text-xs text-gray-600">
-                <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: TW_COLORS[i % TW_COLORS.length] }} />
+                <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: twColorMap[tw.id] }} />
                 {tw.label}
               </span>
             ))}
+            {templateWeeks.some(tw => tw.isCustom) && (
+              <span className="flex items-center gap-1.5 text-xs text-gray-500 italic">
+                <span className="w-3 h-3 rounded-sm flex-shrink-0 bg-gray-200" />
+                Semaine personnalisée
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -1095,8 +1108,8 @@ function CalendarView({ season, templateWeeks, assignments, users, onAssign, onR
               <span className="text-sm text-gray-500">Non planifiée</span>
               {!assignModal.current && <Check size={14} className="ml-auto text-tennis-green" />}
             </button>
-            {templateWeeks.map((tw, i) => {
-              const color = TW_COLORS[i % TW_COLORS.length];
+            {templateWeeks.map((tw) => {
+              const color = twColorMap[tw.id];
               const active = assignModal.current === tw.id;
               return (
                 <button key={tw.id}
