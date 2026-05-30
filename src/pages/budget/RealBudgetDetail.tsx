@@ -398,21 +398,15 @@ export default function RealBudgetDetail() {
                 <div key={line.id} className="border border-gray-100 rounded-lg overflow-hidden">
                   {/* Line header */}
                   <div
-                    className="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
                     onClick={() => toggleLine(line.id)}
                   >
-                    <span className="text-gray-400">
+                    {/* Ligne 1 : chevron + libellé + boutons (toujours visible) */}
+                    <span className="text-gray-400 flex-shrink-0">
                       {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </span>
-                    <span className="flex-1 text-sm font-medium text-gray-800">{line.label}</span>
-                    <span className="text-xs text-gray-500">Prévu: {fmtCurrency(line.forecastAmount)}</span>
-                    <span className={`text-xs font-medium ${lineType === 'income' ? 'text-green-700' : 'text-red-600'}`}>
-                      Réalisé: {fmtCurrency(realized)}
-                    </span>
-                    <span className={`text-xs ${diff >= 0 ? 'text-gray-500' : 'text-red-600'}`}>
-                      Écart: {fmtCurrency(diff)}
-                    </span>
-                    <div className="flex gap-1 ml-2">
+                    <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">{line.label}</span>
+                    <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
                       {canAddDetails && (
                         <button
                           className="text-xs btn-secondary py-0.5 px-2"
@@ -430,6 +424,16 @@ export default function RealBudgetDetail() {
                           <Trash2 size={14} />
                         </button>
                       )}
+                    </div>
+                    {/* Ligne 2 : montants (se place en dessous sur mobile) */}
+                    <div className="w-full flex gap-3 pl-5 flex-wrap">
+                      <span className="text-xs text-gray-500">Prévu&nbsp;: {fmtCurrency(line.forecastAmount)}</span>
+                      <span className={`text-xs font-medium ${lineType === 'income' ? 'text-green-700' : 'text-red-600'}`}>
+                        Réalisé&nbsp;: {fmtCurrency(realized)}
+                      </span>
+                      <span className={`text-xs ${diff >= 0 ? 'text-gray-500' : 'text-red-600'}`}>
+                        Écart&nbsp;: {fmtCurrency(diff)}
+                      </span>
                     </div>
                   </div>
 
@@ -760,8 +764,9 @@ export default function RealBudgetDetail() {
 
       {/* Detail modal */}
       {detailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onMouseDown={e => { if (e.target === e.currentTarget) setDetailModal(null); }}>
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={e => { if (e.target === e.currentTarget) setDetailModal(null); }}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">
                 {detailModal.editId
@@ -878,7 +883,8 @@ export default function RealBudgetDetail() {
                 {savingDetail ? 'Enregistrement…' : 'Enregistrer'}
               </button>
             </div>
-          </div>
+          </div>{/* fin p-6 */}
+          </div>{/* fin scroll wrapper */}
         </div>
       )}
 
