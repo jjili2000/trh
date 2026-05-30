@@ -6,13 +6,7 @@
   body {
     @apply bg-gray-50 text-gray-900 overflow-x-hidden;
   }
-  /* Fix iOS Safari native date/time input overflow */
-  input[type="date"],
-  input[type="time"] {
-    max-width: 100%;
-    box-sizing: border-box;
-    min-width: 0;
-  }
+
 }
 
 @layer components {
@@ -29,8 +23,7 @@
     @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
   }
   .input {
-    @apply w-full min-w-0 max-w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-tennis-green focus:border-transparent;
-    box-sizing: border-box;
+    @apply w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-tennis-green focus:border-transparent;
   }
   .label {
     @apply block text-sm font-medium text-gray-700 mb-1;

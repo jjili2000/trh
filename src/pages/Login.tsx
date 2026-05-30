@@ -85,7 +85,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-tennis-green-dark via-tennis-green to-tennis-green-light">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-tennis-green-dark via-tennis-green to-tennis-green-light px-4">
       {/* Background tennis net pattern */}
       <div className="absolute inset-0 opacity-5">
         <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
@@ -98,7 +98,7 @@ export default function Login() {
         </svg>
       </div>
 
-      <div className="relative w-full max-w-md mx-4">
+      <div className="relative w-full max-w-md">
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Header */}
