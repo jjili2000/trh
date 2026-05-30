@@ -189,7 +189,7 @@ export default function AppLayout() {
           </div>
         </div>
         <button
-          onClick={() => navigate('/notifications')}
+          onClick={() => { closeSidebar(); navigate('/notifications'); }}
           className="relative w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg text-sm transition-colors mb-1"
         >
           <Bell size={16} />
@@ -201,14 +201,14 @@ export default function AppLayout() {
           )}
         </button>
         <button
-          onClick={() => navigate('/preferences')}
+          onClick={() => { closeSidebar(); navigate('/preferences'); }}
           className="w-full flex items-center gap-3 px-3 py-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg text-sm transition-colors mb-1"
         >
           <SlidersHorizontal size={16} />
           Préférences
         </button>
         <button
-          onClick={handleLogout}
+          onClick={() => { closeSidebar(); handleLogout(); }}
           className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
         >
           <LogOut size={16} />
