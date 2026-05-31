@@ -162,7 +162,6 @@ export interface HRDocument {
   detectedEmployeeName?: string;
   periodStart?: string;
   periodEnd?: string;
-  notes?: string;
   status: DocumentStatus;
   uploadedBy: string;
   validatedAt?: string;

@@ -55,7 +55,6 @@ function mapDocument(row) {
     detectedEmployeeName: row.detected_employee_name || null,
     periodStart: row.period_start ? row.period_start.toISOString().split('T')[0] : null,
     periodEnd: row.period_end ? row.period_end.toISOString().split('T')[0] : null,
-    notes: row.notes || null,
     status: row.status,
     uploadedBy: row.uploaded_by,
     validatedAt: row.validated_at ? row.validated_at.toISOString() : null,
@@ -119,15 +118,14 @@ router.post('/', upload.single('file'), async (req, res) => {
     await pool.execute(
       `INSERT INTO documents
          (id, file_name, file_type, file_path, document_type,
-          detected_employee_name, period_start, period_end, notes, status, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_validation', ?)`,
+          detected_employee_name, period_start, period_end, status, uploaded_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_validation', ?)`,
       [
         id, fileName, fileType, filePath,
         recognized.documentType,
         recognized.detectedEmployeeName,
         recognized.periodStart || null,
         recognized.periodEnd || null,
-        recognized.notes,
         req.user.id,
       ]
     );
@@ -147,7 +145,7 @@ router.put('/:id', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const { documentType, userId, periodStart, periodEnd, notes, status } = req.body;
+    const { documentType, userId, periodStart, periodEnd, status } = req.body;
     const { id } = req.params;
 
     const [[existing]] = await pool.execute('SELECT * FROM documents WHERE id = ?', [id]);
@@ -156,14 +154,13 @@ router.put('/:id', async (req, res) => {
     const isValidating = status === 'validated' && existing.status !== 'validated';
 
     await pool.execute(
-      `UPDATE documents SET document_type=?, user_id=?, period_start=?, period_end=?, notes=?, status=?,
+      `UPDATE documents SET document_type=?, user_id=?, period_start=?, period_end=?, status=?,
        validated_at=? WHERE id=?`,
       [
         documentType || existing.document_type,
         userId || null,
         periodStart || null,
         periodEnd || null,
-        notes !== undefined ? notes : existing.notes,
         status || existing.status,
         isValidating ? new Date() : existing.validated_at,
         id,
