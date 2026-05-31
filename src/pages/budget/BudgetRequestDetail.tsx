@@ -149,6 +149,10 @@ export default function BudgetRequestDetail() {
       setError('Libellé, date de début et date de fin requis');
       return;
     }
+    if (endDate < startDate) {
+      setError('La date de fin doit être postérieure ou égale à la date de début');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -174,6 +178,10 @@ export default function BudgetRequestDetail() {
   const handleSubmit = async () => {
     if (!label.trim() || !startDate || !endDate) {
       setError('Libellé, date de début et date de fin requis pour soumettre');
+      return;
+    }
+    if (endDate < startDate) {
+      setError('La date de fin doit être postérieure ou égale à la date de début');
       return;
     }
     if (!confirm('Soumettre cette demande pour approbation ?')) return;
@@ -438,7 +446,12 @@ export default function BudgetRequestDetail() {
                 type="date"
                 className="input"
                 value={startDate}
-                onChange={e => setStartDate(e.target.value)}
+                onChange={e => {
+                  const newStart = e.target.value;
+                  setStartDate(newStart);
+                  // Positionner la date de fin sur le même jour si elle est vide ou antérieure
+                  if (newStart && (!endDate || endDate < newStart)) setEndDate(newStart);
+                }}
                 disabled={!canEdit}
               />
             </div>
@@ -448,6 +461,7 @@ export default function BudgetRequestDetail() {
                 type="date"
                 className="input"
                 value={endDate}
+                min={startDate || undefined}
                 onChange={e => setEndDate(e.target.value)}
                 disabled={!canEdit}
               />
