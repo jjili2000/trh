@@ -65,10 +65,31 @@ interface ValidationModalProps {
   onSave: (id: string, data: Partial<HRDocument>) => Promise<void>;
 }
 
+/** Cherche un utilisateur dont le nom correspond au nom détecté par l'IA. */
+function matchUserByName(
+  users: { id: string; firstName: string; lastName: string }[],
+  detectedName: string | null | undefined,
+): string {
+  if (!detectedName) return '';
+  const norm = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  const detected = norm(detectedName);
+  const match = users.find(u => {
+    const full    = norm(`${u.firstName} ${u.lastName}`);
+    const reverse = norm(`${u.lastName} ${u.firstName}`);
+    return (
+      full === detected ||
+      reverse === detected ||
+      (detected.includes(norm(u.firstName)) && detected.includes(norm(u.lastName)))
+    );
+  });
+  return match?.id ?? '';
+}
+
 function ValidationModal({ doc, users, onClose, onValidate, onSave }: ValidationModalProps) {
   const [form, setForm] = useState<ValidationFormData>({
     documentType: doc.documentType || 'autre',
-    userId: doc.userId || '',
+    userId: doc.userId || matchUserByName(users, doc.detectedEmployeeName),
     periodStart: doc.periodStart || '',
     periodEnd: doc.periodEnd || '',
     notes: doc.notes || '',
