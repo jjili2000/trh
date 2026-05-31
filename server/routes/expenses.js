@@ -61,6 +61,8 @@ function mapExpense(row) {
     receiptFilePath: row.receipt_file_path || undefined,
     receiptFileName: row.receipt_file_name || undefined,
     receiptFileType: row.receipt_file_type || undefined,
+    // Rétrocompatibilité : anciens justificatifs stockés en base64
+    receiptFile: row.receipt_file || undefined,
     status: row.status,
     validatedBy: row.validated_by || undefined,
     validatedAt: row.validated_at instanceof Date
@@ -244,9 +246,9 @@ router.put('/:id', upload.single('receipt'), async (req, res) => {
       if (req.file) deleteReceiptFile(req.file.filename);
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    if (record.status !== 'pending') {
+    if (record.status === 'approved') {
       if (req.file) deleteReceiptFile(req.file.filename);
-      return res.status(400).json({ error: 'Seules les dépenses en attente peuvent être modifiées' });
+      return res.status(400).json({ error: 'Une dépense approuvée ne peut pas être modifiée' });
     }
 
     const { date, amount, reason, vendor, amountHt, vatDetails } = req.body;

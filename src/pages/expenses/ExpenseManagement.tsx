@@ -101,6 +101,14 @@ function compressImage(dataUrl: string, fileType: string): Promise<string> {
   });
 }
 
+/** Construit une data-URL à partir du champ base64 legacy. */
+function legacyReceiptPreview(expense: Expense): string {
+  if (!expense.receiptFile) return '';
+  if (expense.receiptFile.startsWith('data:')) return expense.receiptFile;
+  const mime = expense.receiptFileType || 'image/jpeg';
+  return `data:${mime};base64,${expense.receiptFile}`;
+}
+
 function expenseToForm(expense: Expense): ExpenseForm {
   return {
     date: expense.date,
@@ -111,7 +119,8 @@ function expenseToForm(expense: Expense): ExpenseForm {
       : [],
     vendor: expense.vendor ?? '',
     reason: expense.reason,
-    receiptPreview: '',
+    // Si pas encore migré vers filesystem, on recupère le base64 pour l'affichage
+    receiptPreview: expense.receiptFilePath ? '' : legacyReceiptPreview(expense),
     receiptFileName: expense.receiptFileName ?? '',
     receiptFileType: expense.receiptFileType ?? '',
     receiptFileObj: null,
@@ -231,7 +240,8 @@ function ExpenseDetailModal({
     if (!form.date)              { setFormError('La date est obligatoire.'); return; }
     if (isNaN(amount) || amount <= 0) { setFormError('Le montant TTC doit être supérieur à 0.'); return; }
     if (!form.reason.trim())     { setFormError('Le motif est obligatoire.'); return; }
-    if (!form.receiptFileObj && !form.receiptFilePath) {
+    // Justificatif obligatoire — sauf si un ancien fichier (base64 legacy) existe déjà
+    if (!form.receiptFileObj && !form.receiptFilePath && !form.receiptPreview) {
       setFormError('Le justificatif est obligatoire.');
       return;
     }
@@ -558,10 +568,10 @@ function ExpenseDetailModal({
             </dl>
 
             {/* Justificatif */}
-            {currentFilePath && (
+            {(currentFilePath || form.receiptPreview) && (
               <div>
                 <p className="label">Justificatif</p>
-                {currentFileType === 'application/pdf' ? (
+                {currentFilePath && currentFileType === 'application/pdf' ? (
                   <a
                     href={fileUrl('expenses', currentFilePath)}
                     download={currentFileName}
@@ -578,7 +588,7 @@ function ExpenseDetailModal({
                     className="w-full"
                   >
                     <img
-                      src={fileUrl('expenses', currentFilePath)}
+                      src={currentFilePath ? fileUrl('expenses', currentFilePath) : form.receiptPreview}
                       alt="Justificatif"
                       className="w-full max-h-48 object-cover rounded-xl border border-gray-100 hover:opacity-90 transition-opacity cursor-pointer"
                     />
@@ -604,11 +614,11 @@ function ExpenseDetailModal({
         </Modal>
       )}
 
-      {/* Aperçu serveur plein écran */}
-      {showReceiptImg && currentFilePath && currentFileType !== 'application/pdf' && (
+      {/* Aperçu plein écran (fichier serveur ou base64 legacy) */}
+      {showReceiptImg && (currentFilePath || form.receiptPreview) && currentFileType !== 'application/pdf' && (
         <Modal title={currentFileName || 'Justificatif'} onClose={() => setShowReceiptImg(false)}>
           <img
-            src={fileUrl('expenses', currentFilePath)}
+            src={currentFilePath ? fileUrl('expenses', currentFilePath) : form.receiptPreview}
             alt="Justificatif"
             className="max-w-full rounded-xl mx-auto object-contain"
           />

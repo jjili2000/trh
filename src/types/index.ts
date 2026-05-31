@@ -88,6 +88,7 @@ export interface Expense {
   receiptFilePath?: string; // nom du fichier sur le serveur (UUID.ext)
   receiptFileName?: string; // nom d'origine affiché à l'utilisateur
   receiptFileType?: string; // MIME type
+  receiptFile?: string;     // base64 legacy (avant migration filesystem)
   status: 'pending' | 'approved' | 'rejected';
   validatedBy?: string;
   validatedAt?: string;
