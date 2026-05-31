@@ -53,7 +53,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
             <X size={18} />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto max-h-[85vh]">{children}</div>
+        <div className="p-6 overflow-y-auto overflow-x-hidden max-h-[85vh]">{children}</div>
       </div>
     </div>
   );

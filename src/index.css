@@ -7,6 +7,20 @@
     @apply bg-gray-50 text-gray-900 overflow-x-hidden;
   }
 
+  /*
+   * iOS WebKit (Safari + Chrome) : les inputs date/time utilisent la taille
+   * de police SYSTÈME (réglages accessibilité) au lieu de la taille CSS,
+   * ce qui peut faire déborder le champ de son conteneur.
+   * appearance:none force le box-model CSS — le picker natif reste fonctionnel.
+   * Limité à iOS via @supports (-webkit-touch-callout) qui n'existe que sur iOS.
+   */
+  @supports (-webkit-touch-callout: none) {
+    input[type="date"],
+    input[type="time"] {
+      -webkit-appearance: none;
+      appearance: none;
+    }
+  }
 }
 
 @layer components {
