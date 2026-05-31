@@ -54,7 +54,6 @@ interface ValidationFormData {
   userId: string;
   periodStart: string;
   periodEnd: string;
-  notes: string;
 }
 
 interface ValidationModalProps {
@@ -80,23 +79,15 @@ function matchUserByName(
       .trim();
 
   const detected = norm(detectedName);
-  console.log('[matchUserByName] detectedName=', detectedName, '→', detected);
-  console.log('[matchUserByName] users=', users.map(u => `${u.firstName} ${u.lastName} (${norm(u.firstName + ' ' + u.lastName)})`));
-
-  const match = users.find(u => {
+  return users.find(u => {
     const first = norm(u.firstName);
     const last  = norm(u.lastName);
     if (!first || !last) return false;
     const full    = `${first} ${last}`;
     const reverse = `${last} ${first}`;
-    const result = full === detected || reverse === detected ||
+    return full === detected || reverse === detected ||
       (detected.includes(first) && detected.includes(last));
-    if (result) console.log('[matchUserByName] matched:', u.firstName, u.lastName);
-    return result;
-  });
-
-  if (!match) console.log('[matchUserByName] no match found');
-  return match?.id ?? '';
+  })?.id ?? '';
 }
 
 function ValidationModal({ doc, users, onClose, onValidate, onSave }: ValidationModalProps) {
@@ -105,7 +96,6 @@ function ValidationModal({ doc, users, onClose, onValidate, onSave }: Validation
     userId: doc.userId || matchUserByName(users, doc.detectedEmployeeName),
     periodStart: doc.periodStart || '',
     periodEnd: doc.periodEnd || '',
-    notes: doc.notes || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -215,16 +205,7 @@ function ValidationModal({ doc, users, onClose, onValidate, onSave }: Validation
             </div>
           </div>
 
-          <div>
-            <label className="label">Notes</label>
-            <textarea
-              className="input resize-none"
-              rows={3}
-              value={form.notes}
-              onChange={e => handleChange('notes', e.target.value)}
-              placeholder="Notes sur ce document…"
-            />
-          </div>
+
         </div>
 
         <div className="flex justify-end gap-3 px-6 pb-6">
