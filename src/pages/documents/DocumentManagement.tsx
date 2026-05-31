@@ -34,20 +34,6 @@ const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   autre: 'Autre',
 };
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // Strip the data URL prefix (e.g. "data:application/pdf;base64,")
-      const base64 = result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 async function downloadDocument(docId: string, fileName: string) {
   const token = getToken();
   const response = await fetch(`/api/documents/${docId}/download`, {
@@ -308,8 +294,7 @@ export default function DocumentManagement() {
     setUploading(true);
     setUploadError('');
     try {
-      const fileData = await fileToBase64(file);
-      const created = await addDocument({ fileName: file.name, fileType: file.type, fileData });
+      const created = await addDocument(file);
       setValidatingDoc(created);
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : 'Erreur lors du téléversement');

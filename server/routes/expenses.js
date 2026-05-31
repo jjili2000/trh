@@ -1,10 +1,48 @@
 const express = require('express');
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const pool = require('../db');
 const { recognizeExpense } = require('../services/recognition');
 const { notify } = require('../services/notifications');
 
 const router = express.Router();
+
+// ── Stockage fichiers ─────────────────────────────────────────────────────────
+
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'expenses');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.bin';
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 Mo
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'image/jpeg', 'image/png', 'image/webp',
+      'image/heic', 'image/heif',
+      'application/pdf',
+    ];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
+
+/** Supprime le fichier physique d'un justificatif (ignore les erreurs). */
+function deleteReceiptFile(filePath) {
+  if (!filePath) return;
+  const fullPath = path.join(UPLOADS_DIR, path.basename(filePath));
+  try { if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath); } catch {}
+}
+
+// ── Mapping ───────────────────────────────────────────────────────────────────
 
 function mapExpense(row) {
   let vatDetails;
@@ -20,7 +58,7 @@ function mapExpense(row) {
     vendor: row.vendor || undefined,
     amountHt: row.amount_ht != null ? parseFloat(row.amount_ht) : undefined,
     vatDetails,
-    receiptFile: row.receipt_file || undefined,
+    receiptFilePath: row.receipt_file_path || undefined,
     receiptFileName: row.receipt_file_name || undefined,
     receiptFileType: row.receipt_file_type || undefined,
     status: row.status,
@@ -48,12 +86,13 @@ async function canValidateExpenses(userId) {
   } catch { return false; }
 }
 
+// ── Routes ────────────────────────────────────────────────────────────────────
+
 // GET /api/expenses/my-stats — montants en attente et sur la prochaine paie
 router.get('/my-stats', async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Dernière période de paie validée
     const [periodRows] = await pool.execute(
       `SELECT * FROM payroll_periods WHERE status = 'validated' ORDER BY end_date DESC LIMIT 1`
     );
@@ -71,7 +110,6 @@ router.get('/my-stats', async (req, res) => {
       const endStr      = mapDate(p.end_date);
       const endDatetime = endStr + ' 23:59:59';
 
-      // Frais approuvés dans la dernière période validée → prochaine paie
       const [[inPeriod]] = await pool.execute(
         `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
          WHERE user_id = ? AND status = 'approved'
@@ -81,7 +119,6 @@ router.get('/my-stats', async (req, res) => {
       nextPayrollAmount = parseFloat(inPeriod.total) || 0;
       nextPayrollLabel  = `${fmtFr(startStr)} – ${fmtFr(endStr)}`;
 
-      // Frais approuvés APRÈS la dernière période → en attente
       const [[afterPeriod]] = await pool.execute(
         `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
          WHERE user_id = ? AND status = 'approved'
@@ -90,7 +127,6 @@ router.get('/my-stats', async (req, res) => {
       );
       pendingAmount = parseFloat(afterPeriod.total) || 0;
     } else {
-      // Aucune période validée : tous les frais approuvés sont en attente
       const [[allApproved]] = await pool.execute(
         `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
          WHERE user_id = ? AND status = 'approved'`,
@@ -106,7 +142,8 @@ router.get('/my-stats', async (req, res) => {
   }
 });
 
-// POST /api/expenses/recognize — AI extraction from receipt image/PDF
+// POST /api/expenses/recognize — extraction IA depuis un justificatif (base64)
+// Reste en JSON : utilisé uniquement pour la reconnaissance, pas pour le stockage
 router.post('/recognize', async (req, res) => {
   try {
     const { fileData, fileType } = req.body;
@@ -144,79 +181,96 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/expenses
-router.post('/', async (req, res) => {
+// POST /api/expenses — multipart/form-data
+router.post('/', upload.single('receipt'), async (req, res) => {
   try {
-    const { date, amount, reason, vendor, amountHt, vatDetails, receiptFile, receiptFileName, receiptFileType } = req.body;
+    const { date, amount, reason, vendor, amountHt, vatDetails } = req.body;
     if (!date || amount === undefined || !reason) {
+      if (req.file) deleteReceiptFile(req.file.filename);
       return res.status(400).json({ error: 'Date, montant et motif requis' });
     }
+
     const id = crypto.randomUUID();
-    const vatJson = vatDetails ? JSON.stringify(vatDetails) : null;
+    const vatJson = vatDetails ? (typeof vatDetails === 'string' ? vatDetails : JSON.stringify(vatDetails)) : null;
+
+    const receiptFilePath = req.file ? req.file.filename : null;
+    const receiptFileName = req.file ? req.file.originalname : null;
+    const receiptFileType = req.file ? req.file.mimetype : null;
+
     await pool.execute(
-      `INSERT INTO expenses (id, user_id, date, amount, reason, vendor, amount_ht, vat_details, receipt_file, receipt_file_name, receipt_file_type, status)
+      `INSERT INTO expenses (id, user_id, date, amount, reason, vendor, amount_ht, vat_details,
+        receipt_file_path, receipt_file_name, receipt_file_type, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [id, req.user.id, date, amount, reason, vendor || null, amountHt != null ? amountHt : null, vatJson, receiptFile || null, receiptFileName || null, receiptFileType || null]
+      [
+        id, req.user.id, date, amount, reason,
+        vendor || null,
+        amountHt != null && amountHt !== '' ? amountHt : null,
+        vatJson,
+        receiptFilePath, receiptFileName, receiptFileType,
+      ]
     );
+
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.status(201).json(mapExpense(rows[0]));
+
     // Notifier le manager
-    const [[submitter]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
+    const [[submitter]] = await pool.execute(
+      'SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]
+    );
     if (submitter?.manager_id) {
       await notify(submitter.manager_id, 'expense_submitted', 'Note de frais à valider',
         `${submitter.first_name} a soumis une note de frais.`,
         'expense', id, 'expenses', 'action');
     }
   } catch (err) {
-    // Fallback si colonnes vendor/amount_ht/vat_details pas encore migrées
-    if (err.code === 'ER_BAD_FIELD_ERROR') {
-      try {
-        const { date, amount, reason, receiptFile, receiptFileName, receiptFileType } = req.body;
-        const id = crypto.randomUUID();
-        await pool.execute(
-          `INSERT INTO expenses (id, user_id, date, amount, reason, receipt_file, receipt_file_name, receipt_file_type, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-          [id, req.user.id, date, amount, reason, receiptFile || null, receiptFileName || null, receiptFileType || null]
-        );
-        const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
-        return res.status(201).json(mapExpense(rows[0]));
-      } catch (e2) {
-        console.error(e2);
-        return res.status(500).json({ error: 'Erreur serveur' });
-      }
-    }
+    if (req.file) deleteReceiptFile(req.file.filename);
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// PUT /api/expenses/:id — update own pending expense
-router.put('/:id', async (req, res) => {
+// PUT /api/expenses/:id — multipart/form-data
+router.put('/:id', upload.single('receipt'), async (req, res) => {
   try {
     const { id } = req.params;
     const [existing] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
-    if (existing.length === 0) return res.status(404).json({ error: 'Dépense non trouvée' });
+    if (existing.length === 0) {
+      if (req.file) deleteReceiptFile(req.file.filename);
+      return res.status(404).json({ error: 'Dépense non trouvée' });
+    }
 
     const record = existing[0];
     if (record.user_id !== req.user.id) {
+      if (req.file) deleteReceiptFile(req.file.filename);
       return res.status(403).json({ error: 'Accès refusé' });
     }
     if (record.status !== 'pending') {
+      if (req.file) deleteReceiptFile(req.file.filename);
       return res.status(400).json({ error: 'Seules les dépenses en attente peuvent être modifiées' });
     }
 
-    const { date, amount, reason, vendor, amountHt, vatDetails, receiptFile, receiptFileName, receiptFileType } = req.body;
+    const { date, amount, reason, vendor, amountHt, vatDetails } = req.body;
     const updates = [];
     const values = [];
-    if (date !== undefined)            { updates.push('date = ?');              values.push(date); }
-    if (amount !== undefined)          { updates.push('amount = ?');            values.push(amount); }
-    if (reason !== undefined)          { updates.push('reason = ?');            values.push(reason); }
-    if (vendor !== undefined)          { updates.push('vendor = ?');            values.push(vendor || null); }
-    if (amountHt !== undefined)        { updates.push('amount_ht = ?');         values.push(amountHt != null ? amountHt : null); }
-    if (vatDetails !== undefined)      { updates.push('vat_details = ?');       values.push(vatDetails ? JSON.stringify(vatDetails) : null); }
-    if (receiptFile !== undefined)     { updates.push('receipt_file = ?');      values.push(receiptFile || null); }
-    if (receiptFileName !== undefined) { updates.push('receipt_file_name = ?'); values.push(receiptFileName || null); }
-    if (receiptFileType !== undefined) { updates.push('receipt_file_type = ?'); values.push(receiptFileType || null); }
+
+    if (date !== undefined)       { updates.push('date = ?');       values.push(date); }
+    if (amount !== undefined)     { updates.push('amount = ?');     values.push(amount); }
+    if (reason !== undefined)     { updates.push('reason = ?');     values.push(reason); }
+    if (vendor !== undefined)     { updates.push('vendor = ?');     values.push(vendor || null); }
+    if (amountHt !== undefined)   { updates.push('amount_ht = ?'); values.push(amountHt !== '' ? amountHt : null); }
+    if (vatDetails !== undefined) {
+      const vatJson = vatDetails ? (typeof vatDetails === 'string' ? vatDetails : JSON.stringify(vatDetails)) : null;
+      updates.push('vat_details = ?');
+      values.push(vatJson);
+    }
+
+    // Nouveau fichier uploadé → remplacer l'ancien
+    if (req.file) {
+      if (record.receipt_file_path) deleteReceiptFile(record.receipt_file_path);
+      updates.push('receipt_file_path = ?'); values.push(req.file.filename);
+      updates.push('receipt_file_name = ?'); values.push(req.file.originalname);
+      updates.push('receipt_file_type = ?'); values.push(req.file.mimetype);
+    }
 
     if (updates.length > 0) {
       values.push(id);
@@ -226,12 +280,13 @@ router.put('/:id', async (req, res) => {
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.json(mapExpense(rows[0]));
   } catch (err) {
+    if (req.file) deleteReceiptFile(req.file.filename);
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// DELETE /api/expenses/:id — suppression par le propriétaire (pending ou rejected)
+// DELETE /api/expenses/:id
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -247,6 +302,7 @@ router.delete('/:id', async (req, res) => {
     }
 
     await pool.execute('DELETE FROM expenses WHERE id = ?', [id]);
+    deleteReceiptFile(record.receipt_file_path);
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -271,6 +327,7 @@ router.put('/:id/approve', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.json(mapExpense(rows[0]));
+
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
     await notify(existing[0].user_id, 'expense_approved', 'Note de frais approuvée',
@@ -299,6 +356,7 @@ router.put('/:id/reject', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.json(mapExpense(rows[0]));
+
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
     await notify(existing[0].user_id, 'expense_rejected', 'Note de frais refusée',

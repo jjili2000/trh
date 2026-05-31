@@ -15,14 +15,18 @@ export function clearToken(): void {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
+
+  // Ne pas forcer Content-Type pour FormData : le navigateur gère la boundary multipart
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (!res.ok) {
-    // Session expirée ou token invalide → déconnexion automatique
     if (res.status === 401) {
       clearToken();
       window.location.href = '/login';
@@ -42,4 +46,21 @@ export const api = {
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
   delete: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'DELETE', ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }),
+
+  /** Upload multipart (POST avec FormData). */
+  upload: <T>(path: string, formData: FormData) =>
+    request<T>(path, { method: 'POST', body: formData }),
+
+  /** Update multipart (PUT avec FormData). */
+  uploadPut: <T>(path: string, formData: FormData) =>
+    request<T>(path, { method: 'PUT', body: formData }),
 };
+
+/**
+ * Construit l'URL d'un fichier protégé avec le token JWT en query param.
+ * Utilisable directement dans <img src="…"> ou <a href="…">.
+ */
+export function fileUrl(module: 'expenses' | 'documents', filename: string): string {
+  const token = getToken();
+  return `/api/files/${module}/${encodeURIComponent(filename)}${token ? `?token=${token}` : ''}`;
+}

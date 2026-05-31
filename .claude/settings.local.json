@@ -43,7 +43,8 @@
       "Bash(git commit:*)",
       "Bash(npx tsc *)",
       "Bash(git rm *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(mkdir -p \"C:/Users/John-JohnILI/.claude/memory\")"
     ]
   }
 }

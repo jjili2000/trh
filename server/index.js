@@ -18,12 +18,13 @@ const isDev = process.env.NODE_ENV !== 'production';
 app.use(cors({
   origin: isDev ? 'http://localhost:5173' : 'https://trh.neos.live',
 }));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '5mb' }));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', v: '2026-05-19' }));
 
 // API routes
+app.use('/api/files', require('./routes/files'));          // fichiers protégés (pas de middleware auth global — gère son propre JWT)
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./middleware/auth'), require('./routes/users'));
 app.use('/api/activity-types', require('./middleware/auth'), require('./routes/activityTypes'));

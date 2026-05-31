@@ -73,14 +73,14 @@ interface AppContextType {
   rejectAbsenceRequest: (id: string) => Promise<void>;
 
   // Expenses
-  addExpense: (expense: Omit<Expense, 'id' | 'createdAt' | 'status'>) => Promise<void>;
-  updateExpense: (id: string, data: Partial<Expense>) => Promise<void>;
+  addExpense: (formData: FormData) => Promise<void>;
+  updateExpense: (id: string, formData: FormData) => Promise<void>;
   approveExpense: (id: string) => Promise<void>;
   rejectExpense: (id: string) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
 
   // Documents
-  addDocument: (data: { fileName: string; fileType: string; fileData: string }) => Promise<HRDocument>;
+  addDocument: (file: File) => Promise<HRDocument>;
   updateDocument: (id: string, data: Partial<HRDocument>) => Promise<HRDocument>;
   deleteDocument: (id: string) => Promise<void>;
 
@@ -391,14 +391,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Expenses ──────────────────────────────────────────────────────────────────
 
-  const addExpense = async (data: Omit<Expense, 'id' | 'createdAt' | 'status'>) => {
-    await api.post('/expenses', data);
+  const addExpense = async (formData: FormData) => {
+    await api.upload('/expenses', formData);
     const updated = await api.get<Expense[]>('/expenses');
     setExpenses(updated);
   };
 
-  const updateExpense = async (id: string, data: Partial<Expense>) => {
-    await api.put(`/expenses/${id}`, data);
+  const updateExpense = async (id: string, formData: FormData) => {
+    await api.uploadPut(`/expenses/${id}`, formData);
     const updated = await api.get<Expense[]>('/expenses');
     setExpenses(updated);
   };
@@ -422,8 +422,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Documents ─────────────────────────────────────────────────────────────────
 
-  const addDocument = async (data: { fileName: string; fileType: string; fileData: string }): Promise<HRDocument> => {
-    const created = await api.post<HRDocument>('/documents', data);
+  const addDocument = async (file: File): Promise<HRDocument> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const created = await api.upload<HRDocument>('/documents', formData);
     const updated = await api.get<HRDocument[]>('/documents');
     setDocuments(updated);
     return created;

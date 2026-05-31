@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Expense, VatLine } from '../../types';
-import { api } from '../../api/client';
+import { api, fileUrl } from '../../api/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,16 +18,18 @@ interface VatLineForm {
   amount: string;
 }
 
-interface FormData {
+interface ExpenseForm {
   date: string;
   amount: string;       // TTC
   amountHt: string;
   vatLines: VatLineForm[];
   vendor: string;
   reason: string;
-  receiptFile: string;
+  receiptPreview: string;   // data URL local pour l'aperçu uniquement
   receiptFileName: string;
   receiptFileType: string;
+  receiptFileObj: File | null;   // fichier brut à uploader
+  receiptFilePath: string;       // chemin serveur (pour les notes existantes)
 }
 
 interface RecognizeResult {
@@ -54,16 +56,18 @@ const statusLabels = {
 
 const today = new Date().toISOString().slice(0, 10);
 
-const emptyForm: FormData = {
+const emptyForm: ExpenseForm = {
   date: today,
   amount: '',
   amountHt: '',
   vatLines: [],
   vendor: '',
   reason: '',
-  receiptFile: '',
+  receiptPreview: '',
   receiptFileName: '',
   receiptFileType: '',
+  receiptFileObj: null,
+  receiptFilePath: '',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -95,7 +99,7 @@ function compressImage(dataUrl: string, fileType: string): Promise<string> {
   });
 }
 
-function expenseToForm(expense: Expense): FormData {
+function expenseToForm(expense: Expense): ExpenseForm {
   return {
     date: expense.date,
     amount: String(expense.amount),
@@ -105,9 +109,11 @@ function expenseToForm(expense: Expense): FormData {
       : [],
     vendor: expense.vendor ?? '',
     reason: expense.reason,
-    receiptFile: expense.receiptFile ?? '',
+    receiptPreview: '',           // pas de preview local pour une note existante
     receiptFileName: expense.receiptFileName ?? '',
     receiptFileType: expense.receiptFileType ?? '',
+    receiptFileObj: null,
+    receiptFilePath: expense.receiptFilePath ?? '',
   };
 }
 
@@ -132,10 +138,10 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-function ReceiptThumb({ file, fileName, fileType, onClick }: {
-  file: string; fileName: string; fileType: string; onClick?: () => void;
+function ReceiptThumb({ fileName, fileType, onClick }: {
+  fileName: string; fileType: string; onClick?: () => void;
 }) {
-  if (!file) return null;
+  if (!fileName) return null;
   const isPdf = fileType === 'application/pdf';
   return (
     <button
@@ -177,13 +183,14 @@ export default function ExpenseManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [formStep, setFormStep] = useState<FormStep>('upload');
-  const [form, setForm] = useState<FormData>(emptyForm);
+  const [form, setForm] = useState<ExpenseForm>(emptyForm);
   const [formError, setFormError] = useState('');
   const [recognizeError, setRecognizeError] = useState('');
 
   // UI state
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');
   const [previewExpense, setPreviewExpense] = useState<Expense | null>(null);
+  const [localPreview, setLocalPreview] = useState<{ url: string; name: string; type: string } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const fileInputRef   = useRef<HTMLInputElement>(null);
@@ -241,9 +248,9 @@ export default function ExpenseManagement() {
   // ─── File loading ───────────────────────────────────────────────────────────
 
   const loadFile = (file: File) => {
-    const maxSize = 5 * 1024 * 1024;
+    const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      setRecognizeError('Le fichier ne doit pas dépasser 5 Mo.');
+      setRecognizeError('Le fichier ne doit pas dépasser 10 Mo.');
       return;
     }
     setRecognizeError('');
@@ -252,10 +259,17 @@ export default function ExpenseManagement() {
       const raw      = ev.target?.result as string;
       const fileName = file.name;
       const fileType = file.type;
-      // Compression des images avant envoi (réduit la taille de la requête)
-      const fileData = await compressImage(raw, fileType);
-      setForm(f => ({ ...f, receiptFile: fileData, receiptFileName: fileName, receiptFileType: fileType }));
-      startRecognition(fileData, fileType);
+      // Compression pour l'aperçu local et la reconnaissance IA (réduit la taille)
+      const previewData = await compressImage(raw, fileType);
+      setForm(f => ({
+        ...f,
+        receiptPreview: previewData,
+        receiptFileName: fileName,
+        receiptFileType: fileType,
+        receiptFileObj: file,     // fichier brut conservé pour l'upload
+        receiptFilePath: '',      // pas encore de chemin serveur
+      }));
+      startRecognition(previewData, fileType);
     };
     reader.readAsDataURL(file);
   };
@@ -302,35 +316,38 @@ export default function ExpenseManagement() {
     e.preventDefault();
     setFormError('');
     const amount = parseFloat(form.amount);
-    if (!form.date)                       { setFormError('La date est obligatoire.'); return; }
-    if (isNaN(amount) || amount <= 0)     { setFormError('Le montant TTC doit être supérieur à 0.'); return; }
-    if (!form.reason.trim())              { setFormError('Le motif est obligatoire.'); return; }
-    if (!form.receiptFile)                { setFormError('Le justificatif est obligatoire.'); return; }
+    if (!form.date)                             { setFormError('La date est obligatoire.'); return; }
+    if (isNaN(amount) || amount <= 0)           { setFormError('Le montant TTC doit être supérieur à 0.'); return; }
+    if (!form.reason.trim())                    { setFormError('Le motif est obligatoire.'); return; }
+    // Justificatif : soit nouveau fichier, soit fichier existant sur le serveur
+    if (!form.receiptFileObj && !form.receiptFilePath) {
+      setFormError('Le justificatif est obligatoire.');
+      return;
+    }
 
-    const amountHt  = form.amountHt  ? parseFloat(form.amountHt)  : undefined;
     const vatDetails: VatLine[] | undefined = form.vatLines.length > 0
       ? form.vatLines
           .filter(l => l.rate && l.amount)
           .map(l => ({ rate: l.rate, amount: parseFloat(l.amount) }))
       : undefined;
 
-    const expenseData = {
-      userId: currentUser!.id,
-      date: form.date,
-      amount,
-      reason: form.reason.trim(),
-      vendor: form.vendor.trim() || undefined,
-      amountHt,
-      vatDetails,
-      receiptFile: form.receiptFile || undefined,
-      receiptFileName: form.receiptFileName || undefined,
-      receiptFileType: form.receiptFileType || undefined,
-    };
+    // Construction du FormData multipart
+    const fd = new globalThis.FormData();
+    fd.append('date', form.date);
+    fd.append('amount', String(amount));
+    fd.append('reason', form.reason.trim());
+    if (form.vendor.trim()) fd.append('vendor', form.vendor.trim());
+    if (form.amountHt)      fd.append('amountHt', form.amountHt);
+    if (vatDetails)         fd.append('vatDetails', JSON.stringify(vatDetails));
+    if (form.receiptFileObj) {
+      fd.append('receipt', form.receiptFileObj);
+    }
+    // Si pas de nouveau fichier et qu'on édite, le serveur garde l'ancien (aucun champ receipt)
 
     if (editingExpense) {
-      updateExpense(editingExpense.id, { ...expenseData, status: 'pending', validatedBy: undefined, validatedAt: undefined });
+      updateExpense(editingExpense.id, fd);
     } else {
-      addExpense(expenseData);
+      addExpense(fd);
     }
     closeForm();
   };
@@ -466,7 +483,7 @@ export default function ExpenseManagement() {
                             )}
                           </p>
                         )}
-                        {expense.receiptFile && (
+                        {expense.receiptFilePath && (
                           <button
                             onClick={() => setPreviewExpense(expense)}
                             className="mt-2 flex items-center gap-1.5 text-xs text-tennis-green hover:underline"
@@ -587,7 +604,7 @@ export default function ExpenseManagement() {
                               <div className="truncate text-gray-500">{expense.reason}</div>
                             </td>
                             <td className="py-3 pr-4">
-                              {expense.receiptFile ? (
+                              {expense.receiptFilePath ? (
                                 <button
                                   onClick={() => setPreviewExpense(expense)}
                                   className="flex items-center gap-1 text-xs text-tennis-green hover:underline"
@@ -710,18 +727,27 @@ export default function ExpenseManagement() {
           {formStep === 'form' && (
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Receipt thumbnail + change button */}
-              {form.receiptFile && (
+              {form.receiptFileName && (
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
                     <ReceiptThumb
-                      file={form.receiptFile}
                       fileName={form.receiptFileName}
                       fileType={form.receiptFileType}
-                      onClick={() => setPreviewExpense({
-                        id: '', userId: '', date: form.date, amount: 0, reason: form.reason,
-                        receiptFile: form.receiptFile, receiptFileName: form.receiptFileName,
-                        receiptFileType: form.receiptFileType, status: 'pending', createdAt: '',
-                      })}
+                      onClick={() => {
+                        if (form.receiptPreview) {
+                          // Aperçu local (fichier pas encore uploadé)
+                          setLocalPreview({ url: form.receiptPreview, name: form.receiptFileName, type: form.receiptFileType });
+                        } else if (form.receiptFilePath) {
+                          // Fichier déjà sur le serveur
+                          setPreviewExpense({
+                            id: '', userId: '', date: form.date, amount: 0, reason: form.reason,
+                            receiptFilePath: form.receiptFilePath,
+                            receiptFileName: form.receiptFileName,
+                            receiptFileType: form.receiptFileType,
+                            status: 'pending', createdAt: '',
+                          });
+                        }
+                      }}
                     />
                   </div>
                   <button
@@ -887,8 +913,8 @@ export default function ExpenseManagement() {
         </Modal>
       )}
 
-      {/* ── Receipt Preview Modal ─────────────────────────────────────────── */}
-      {previewExpense && previewExpense.receiptFile && (
+      {/* ── Receipt Preview Modal (fichier serveur) ────────────────────────── */}
+      {previewExpense && previewExpense.receiptFilePath && (
         <Modal title="Justificatif" onClose={() => setPreviewExpense(null)}>
           <div className="text-center">
             <p className="text-sm text-gray-500 mb-4">{previewExpense.receiptFileName}</p>
@@ -897,7 +923,7 @@ export default function ExpenseManagement() {
                 <FileText size={48} className="mx-auto text-red-400 mb-3" />
                 <p className="text-sm text-gray-600 mb-4">Fichier PDF</p>
                 <a
-                  href={previewExpense.receiptFile}
+                  href={fileUrl('expenses', previewExpense.receiptFilePath)}
                   download={previewExpense.receiptFileName}
                   className="btn-primary inline-block"
                 >
@@ -906,8 +932,29 @@ export default function ExpenseManagement() {
               </div>
             ) : (
               <img
-                src={previewExpense.receiptFile}
+                src={fileUrl('expenses', previewExpense.receiptFilePath)}
                 alt="Justificatif"
+                className="max-w-full max-h-96 rounded-xl mx-auto object-contain"
+              />
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Local Preview Modal (fichier sélectionné, pas encore uploadé) ──── */}
+      {localPreview && (
+        <Modal title="Aperçu du justificatif" onClose={() => setLocalPreview(null)}>
+          <div className="text-center">
+            <p className="text-sm text-gray-500 mb-4">{localPreview.name}</p>
+            {localPreview.type === 'application/pdf' ? (
+              <div className="p-8 bg-red-50 rounded-xl">
+                <FileText size={48} className="mx-auto text-red-400 mb-3" />
+                <p className="text-sm text-gray-500">Le PDF sera visible après envoi.</p>
+              </div>
+            ) : (
+              <img
+                src={localPreview.url}
+                alt="Aperçu"
                 className="max-w-full max-h-96 rounded-xl mx-auto object-contain"
               />
             )}

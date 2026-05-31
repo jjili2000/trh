@@ -1,5 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const pool = require('../db');
 const { recognizeDocument } = require('../services/recognition');
 const { sendDocumentNotification } = require('../services/email');
@@ -7,12 +10,46 @@ const { notify } = require('../services/notifications');
 
 const router = express.Router();
 
+// ── Stockage fichiers ─────────────────────────────────────────────────────────
+
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'documents');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.bin';
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 Mo
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'application/pdf',
+      'image/jpeg', 'image/png', 'image/webp', 'image/tiff',
+    ];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
+
+/** Supprime le fichier physique d'un document (ignore les erreurs). */
+function deleteDocumentFile(filePath) {
+  if (!filePath) return;
+  const fullPath = path.join(UPLOADS_DIR, path.basename(filePath));
+  try { if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath); } catch {}
+}
+
+// ── Mapping ───────────────────────────────────────────────────────────────────
+
 function mapDocument(row) {
   return {
     id: row.id,
     fileName: row.file_name,
     fileType: row.file_type,
-    fileData: row.file_data,
+    filePath: row.file_path || undefined,
     documentType: row.document_type,
     userId: row.user_id || null,
     detectedEmployeeName: row.detected_employee_name || null,
@@ -38,6 +75,8 @@ async function hasDocAdminAccess(userId, role) {
   } catch { return false; }
 }
 
+// ── Routes ────────────────────────────────────────────────────────────────────
+
 // GET / — admin sees all, user sees own validated docs
 router.get('/', async (req, res) => {
   try {
@@ -58,26 +97,32 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST / — upload + auto-recognize
-router.post('/', async (req, res) => {
+// POST / — upload multipart/form-data + auto-recognize
+router.post('/', upload.single('file'), async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
+      if (req.file) deleteDocumentFile(req.file.filename);
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const { fileName, fileType, fileData } = req.body;
-    if (!fileName || !fileType || !fileData) {
+    if (!req.file) {
       return res.status(400).json({ error: 'Fichier requis' });
     }
 
-    // Auto-recognize
+    const { originalname: fileName, mimetype: fileType, filename: filePath } = req.file;
+
+    // Auto-recognize : on lit le fichier en base64 pour l'envoyer à l'IA
+    const fileBuffer = fs.readFileSync(path.join(UPLOADS_DIR, filePath));
+    const fileData = fileBuffer.toString('base64');
     const recognized = await recognizeDocument(fileData, fileType, fileName);
 
     const id = crypto.randomUUID();
     await pool.execute(
-      `INSERT INTO documents (id, file_name, file_type, file_data, document_type, detected_employee_name, period_start, period_end, notes, status, uploaded_by)
+      `INSERT INTO documents
+         (id, file_name, file_type, file_path, document_type,
+          detected_employee_name, period_start, period_end, notes, status, uploaded_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_validation', ?)`,
       [
-        id, fileName, fileType, fileData,
+        id, fileName, fileType, filePath,
         recognized.documentType,
         recognized.detectedEmployeeName,
         recognized.periodStart || null,
@@ -90,6 +135,7 @@ router.post('/', async (req, res) => {
     const [[row]] = await pool.execute('SELECT * FROM documents WHERE id = ?', [id]);
     res.status(201).json(mapDocument(row));
   } catch (err) {
+    if (req.file) deleteDocumentFile(req.file.filename);
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -124,7 +170,7 @@ router.put('/:id', async (req, res) => {
       ]
     );
 
-    // Send email notification if just validated and user assigned
+    // Email si vient d'être validé
     if (isValidating && userId) {
       try {
         const [[user]] = await pool.execute('SELECT * FROM users WHERE id = ?', [userId]);
@@ -142,11 +188,9 @@ router.put('/:id', async (req, res) => {
       } catch (emailErr) {
         console.error('Email error:', emailErr.message);
       }
-      if (userId) {
-        await notify(userId, 'document_available', 'Nouveau document disponible',
-          `Un document "${documentType || existing.document_type}" est disponible dans votre espace.`,
-          'document', id, 'documents', 'response');
-      }
+      await notify(userId, 'document_available', 'Nouveau document disponible',
+        `Un document "${documentType || existing.document_type}" est disponible dans votre espace.`,
+        'document', id, 'documents', 'response');
     }
 
     const [[row]] = await pool.execute('SELECT * FROM documents WHERE id = ?', [id]);
@@ -164,9 +208,11 @@ router.delete('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { id } = req.params;
-    const [[existing]] = await pool.execute('SELECT id FROM documents WHERE id = ?', [id]);
+    const [[existing]] = await pool.execute('SELECT * FROM documents WHERE id = ?', [id]);
     if (!existing) return res.status(404).json({ error: 'Document non trouvé' });
+
     await pool.execute('DELETE FROM documents WHERE id = ?', [id]);
+    deleteDocumentFile(existing.file_path);
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -174,7 +220,7 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// GET /:id/download — serve file data
+// GET /:id/download — sert le fichier depuis le disque
 router.get('/:id/download', async (req, res) => {
   try {
     const { id, role } = req.user;
@@ -183,10 +229,19 @@ router.get('/:id/download', async (req, res) => {
     if (role === 'user' && (doc.user_id !== id || doc.status !== 'validated')) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const buffer = Buffer.from(doc.file_data, 'base64');
+    if (!doc.file_path) {
+      return res.status(404).json({ error: 'Fichier non disponible' });
+    }
+
+    const safeName = path.basename(doc.file_path);
+    const filePath = path.join(UPLOADS_DIR, safeName);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Fichier non trouvé sur le disque' });
+    }
+
     res.set('Content-Type', doc.file_type);
-    res.set('Content-Disposition', `inline; filename="${doc.file_name}"`);
-    res.send(buffer);
+    res.set('Content-Disposition', `attachment; filename="${doc.file_name}"`);
+    res.sendFile(filePath);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

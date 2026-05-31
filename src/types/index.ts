@@ -85,9 +85,9 @@ export interface Expense {
   vendor?: string;
   amountHt?: number;
   vatDetails?: VatLine[];
-  receiptFile?: string; // base64 data-URL
-  receiptFileName?: string;
-  receiptFileType?: string;
+  receiptFilePath?: string; // nom du fichier sur le serveur (UUID.ext)
+  receiptFileName?: string; // nom d'origine affiché à l'utilisateur
+  receiptFileType?: string; // MIME type
   status: 'pending' | 'approved' | 'rejected';
   validatedBy?: string;
   validatedAt?: string;
@@ -155,7 +155,7 @@ export interface HRDocument {
   id: string;
   fileName: string;
   fileType: string;
-  fileData?: string; // base64, only in detail view
+  filePath?: string; // nom du fichier sur le serveur (UUID.ext)
   documentType: string;
   userId?: string;
   detectedEmployeeName?: string;
