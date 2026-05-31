@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Upload,
   FileText,
@@ -14,6 +14,7 @@ import {
   Loader2,
   Sparkles,
   AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { HRDocument } from '../../types';
@@ -105,6 +106,31 @@ function ValidationModal({ doc, users, queueIndex, queueTotal, onClose, onValida
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // ── Prévisualisation (desktop) ──────────────────────────────────────────────
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewType, setPreviewType] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(true);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    const token = getToken();
+    fetch(`/api/documents/${doc.id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(async res => {
+        if (!res.ok) return;
+        const ct = res.headers.get('content-type') || '';
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewType(ct);
+        setPreviewUrl(objectUrl);
+      })
+      .catch(() => {})
+      .finally(() => setPreviewLoading(false));
+
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [doc.id]);
+
   const handleChange = (field: keyof ValidationFormData, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -126,114 +152,153 @@ function ValidationModal({ doc, users, queueIndex, queueTotal, onClose, onValida
     }
   };
 
+  const isPdf = previewType.includes('pdf');
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              Valider le document{queueTotal && queueTotal > 1 ? ` (${queueIndex! + 1}/${queueTotal})` : ''}
-            </h2>
-            <p className="text-sm text-gray-500 mt-0.5 truncate max-w-xs">{doc.fileName}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X size={20} />
-          </button>
-        </div>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {/* Modale : étroite sur mobile, large sur desktop si prévisualisation disponible */}
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg lg:max-w-5xl flex flex-col lg:flex-row overflow-hidden"
+        style={{ maxHeight: '90vh' }}>
 
-        {doc.detectedEmployeeName && (
-          <div className="mx-6 mt-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-            <span className="font-medium">Employé détecté :</span> {doc.detectedEmployeeName}
+        {/* ── Panneau formulaire (gauche) ──────────────────────────────────── */}
+        <div className="flex flex-col w-full lg:w-[400px] flex-shrink-0 overflow-y-auto">
+          {/* En-tête */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-100">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Valider le document{queueTotal && queueTotal > 1 ? ` (${queueIndex! + 1}/${queueTotal})` : ''}
+              </h2>
+              <p className="text-sm text-gray-500 mt-0.5 truncate max-w-[260px]" title={doc.fileName}>{doc.fileName}</p>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-2">
+              <X size={20} />
+            </button>
           </div>
-        )}
 
-        <div className="p-6 space-y-4">
-          {error && (
-            <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              {error}
+          {doc.detectedEmployeeName && (
+            <div className="mx-6 mt-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+              <span className="font-medium">Employé détecté :</span> {doc.detectedEmployeeName}
             </div>
           )}
 
-          <div>
-            <label className="label">Type de document</label>
-            <div className="relative">
-              <select
-                className="input appearance-none pr-10"
-                value={form.documentType}
-                onChange={e => handleChange('documentType', e.target.value)}
-              >
-                {DOCUMENT_TYPES.map(t => (
-                  <option key={t} value={t}>
-                    {DOCUMENT_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            </div>
-          </div>
+          <div className="p-6 space-y-4 flex-1">
+            {error && (
+              <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {error}
+              </div>
+            )}
 
-          <div>
-            <label className="label">Assigner à un employé</label>
-            <div className="relative">
-              <select
-                className="input appearance-none pr-10"
-                value={form.userId}
-                onChange={e => handleChange('userId', e.target.value)}
-              >
-                <option value="">— Sélectionner un employé —</option>
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>
-                    {u.firstName} {u.lastName}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Début de période</label>
-              <input
-                type="date"
-                className="input"
-                value={form.periodStart}
-                onChange={e => handleChange('periodStart', e.target.value)}
-              />
+              <label className="label">Type de document</label>
+              <div className="relative">
+                <select
+                  className="input appearance-none pr-10"
+                  value={form.documentType}
+                  onChange={e => handleChange('documentType', e.target.value)}
+                >
+                  {DOCUMENT_TYPES.map(t => (
+                    <option key={t} value={t}>{DOCUMENT_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
             </div>
+
             <div>
-              <label className="label">Fin de période</label>
-              <input
-                type="date"
-                className="input"
-                value={form.periodEnd}
-                onChange={e => handleChange('periodEnd', e.target.value)}
-              />
+              <label className="label">Assigner à un employé</label>
+              <div className="relative">
+                <select
+                  className="input appearance-none pr-10"
+                  value={form.userId}
+                  onChange={e => handleChange('userId', e.target.value)}
+                >
+                  <option value="">— Sélectionner un employé —</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Début de période</label>
+                <input type="date" className="input" value={form.periodStart}
+                  onChange={e => handleChange('periodStart', e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Fin de période</label>
+                <input type="date" className="input" value={form.periodEnd}
+                  onChange={e => handleChange('periodEnd', e.target.value)} />
+              </div>
             </div>
           </div>
 
-
+          <div className="flex justify-end gap-3 px-6 pb-6 border-t border-gray-100 pt-4">
+            <button onClick={onClose} className="btn-secondary" disabled={saving}>Annuler</button>
+            <button onClick={() => handleSave(false)} className="btn-secondary" disabled={saving}>Enregistrer</button>
+            <button onClick={() => handleSave(true)} className="btn-primary flex items-center gap-2" disabled={saving}>
+              <CheckCircle size={16} />
+              {saving ? 'Validation…' : 'Valider'}
+            </button>
+          </div>
         </div>
 
-        <div className="flex justify-end gap-3 px-6 pb-6">
-          <button onClick={onClose} className="btn-secondary" disabled={saving}>
-            Annuler
-          </button>
-          <button
-            onClick={() => handleSave(false)}
-            className="btn-secondary"
-            disabled={saving}
-          >
-            Enregistrer
-          </button>
-          <button
-            onClick={() => handleSave(true)}
-            className="btn-primary flex items-center gap-2"
-            disabled={saving}
-          >
-            <CheckCircle size={16} />
-            {saving ? 'Validation…' : 'Valider'}
-          </button>
+        {/* ── Panneau prévisualisation (droite, desktop uniquement) ─────────── */}
+        <div className="hidden lg:flex flex-col flex-1 border-l border-gray-100 bg-gray-50 min-w-0">
+          {/* Barre de titre */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white flex-shrink-0">
+            <span className="text-sm font-medium text-gray-600 flex items-center gap-1.5">
+              <FileText size={14} className="text-gray-400" />
+              Aperçu
+            </span>
+            {previewUrl && (
+              <button
+                onClick={() => window.open(previewUrl, '_blank')}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-tennis-green transition-colors"
+                title="Ouvrir dans un nouvel onglet"
+              >
+                <ExternalLink size={14} />
+                Ouvrir
+              </button>
+            )}
+          </div>
+
+          {/* Contenu */}
+          <div className="flex-1 overflow-hidden relative">
+            {previewLoading ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 size={32} className="animate-spin text-gray-300" />
+              </div>
+            ) : previewUrl ? (
+              isPdf ? (
+                <embed
+                  src={previewUrl}
+                  type="application/pdf"
+                  className="w-full h-full"
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center p-4 overflow-auto">
+                  <img
+                    src={previewUrl}
+                    alt="Aperçu du document"
+                    className="max-w-full max-h-full object-contain rounded-lg shadow cursor-zoom-in"
+                    onClick={() => window.open(previewUrl, '_blank')}
+                    title="Cliquer pour agrandir"
+                  />
+                </div>
+              )
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 gap-2">
+                <FileText size={36} />
+                <p className="text-sm">Aperçu non disponible</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -726,6 +791,7 @@ export default function DocumentManagement() {
       {/* Validation / Edit Modal */}
       {modalDoc && (
         <ValidationModal
+          key={modalDoc.id}
           doc={modalDoc}
           users={users}
           queueIndex={
