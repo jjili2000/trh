@@ -62,6 +62,8 @@ interface ValidationFormData {
 interface ValidationModalProps {
   doc: HRDocument;
   users: { id: string; firstName: string; lastName: string }[];
+  queueIndex?: number;
+  queueTotal?: number;
   onClose: () => void;
   onValidate: (id: string, data: Partial<HRDocument> & { status: 'validated' }) => Promise<void>;
   onSave: (id: string, data: Partial<HRDocument>) => Promise<void>;
@@ -93,7 +95,7 @@ function matchUserByName(
   })?.id ?? '';
 }
 
-function ValidationModal({ doc, users, onClose, onValidate, onSave }: ValidationModalProps) {
+function ValidationModal({ doc, users, queueIndex, queueTotal, onClose, onValidate, onSave }: ValidationModalProps) {
   const [form, setForm] = useState<ValidationFormData>({
     documentType: doc.documentType || 'autre',
     userId: doc.userId || matchUserByName(users, doc.detectedEmployeeName),
@@ -129,7 +131,9 @@ function ValidationModal({ doc, users, onClose, onValidate, onSave }: Validation
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Valider le document</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Valider le document{queueTotal && queueTotal > 1 ? ` (${queueIndex! + 1}/${queueTotal})` : ''}
+            </h2>
             <p className="text-sm text-gray-500 mt-0.5 truncate max-w-xs">{doc.fileName}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -240,11 +244,13 @@ function ValidationModal({ doc, users, onClose, onValidate, onSave }: Validation
 
 interface AnalysisModalProps {
   fileName: string;
+  current?: number;
+  total?: number;
   error?: string;
   onCancel: () => void;
 }
 
-function AnalysisModal({ fileName, error, onCancel }: AnalysisModalProps) {
+function AnalysisModal({ fileName, current, total, error, onCancel }: AnalysisModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
@@ -280,7 +286,9 @@ function AnalysisModal({ fileName, error, onCancel }: AnalysisModalProps) {
                 <Sparkles size={20} className="absolute -top-1 -right-1 text-yellow-400" />
               </div>
               <div>
-                <p className="font-medium text-gray-800">Analyse en cours…</p>
+                <p className="font-medium text-gray-800">
+                  Analyse en cours{total && total > 1 ? ` (${current}/${total})` : ''}…
+                </p>
                 <p className="text-sm text-gray-500 mt-1 truncate max-w-[220px] mx-auto" title={fileName}>
                   {fileName}
                 </p>
@@ -298,11 +306,11 @@ function AnalysisModal({ fileName, error, onCancel }: AnalysisModalProps) {
 }
 
 interface UploadZoneProps {
-  onFileSelected: (file: File) => void;
+  onFilesSelected: (files: File[]) => void;
   uploading: boolean;
 }
 
-function UploadZone({ onFileSelected, uploading }: UploadZoneProps) {
+function UploadZone({ onFilesSelected, uploading }: UploadZoneProps) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -310,15 +318,17 @@ function UploadZone({ onFileSelected, uploading }: UploadZoneProps) {
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) onFileSelected(file);
+      const files = Array.from(e.dataTransfer.files).filter(f =>
+        f.type === 'application/pdf' || f.type.startsWith('image/')
+      );
+      if (files.length) onFilesSelected(files);
     },
-    [onFileSelected]
+    [onFilesSelected]
   );
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) onFileSelected(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) onFilesSelected(files);
     e.target.value = '';
   };
 
@@ -338,6 +348,7 @@ function UploadZone({ onFileSelected, uploading }: UploadZoneProps) {
         ref={inputRef}
         type="file"
         accept=".pdf,image/*"
+        multiple
         className="hidden"
         onChange={handleChange}
       />
@@ -347,9 +358,9 @@ function UploadZone({ onFileSelected, uploading }: UploadZoneProps) {
       ) : (
         <>
           <p className="text-sm font-medium text-gray-700">
-            Glissez un fichier ici ou <span className="text-tennis-green">cliquez pour parcourir</span>
+            Glissez des fichiers ici ou <span className="text-tennis-green">cliquez pour parcourir</span>
           </p>
-          <p className="text-xs text-gray-400 mt-1">PDF ou image (JPG, PNG, etc.)</p>
+          <p className="text-xs text-gray-400 mt-1">PDF ou image (JPG, PNG, etc.) · Plusieurs fichiers acceptés</p>
         </>
       )}
     </div>
@@ -359,7 +370,8 @@ function UploadZone({ onFileSelected, uploading }: UploadZoneProps) {
 export default function DocumentManagement() {
   const { documents, users, addDocument, updateDocument, deleteDocument } = useApp();
 
-  const [validatingDoc, setValidatingDoc] = useState<HRDocument | null>(null);
+  const [validationQueue, setValidationQueue] = useState<HRDocument[]>([]);
+  const validationQueueSizeRef = useRef(0);
   const [editingDoc, setEditingDoc] = useState<HRDocument | null>(null);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -370,22 +382,54 @@ export default function DocumentManagement() {
   // État de la modale d'analyse
   const [analysis, setAnalysis] = useState<{
     fileName: string;
+    current: number;
+    total: number;
     abort: AbortController;
     error?: string;
   } | null>(null);
 
-  const handleFileSelected = async (file: File) => {
+  const handleFilesSelected = async (files: File[]) => {
+    if (!files.length) return;
     const abort = new AbortController();
-    setAnalysis({ fileName: file.name, abort });
-    try {
-      const created = await addDocument(file, abort.signal);
-      setAnalysis(null);
-      setValidatingDoc(created);
-    } catch (err: unknown) {
-      // Annulation volontaire → fermer silencieusement
-      if (abort.signal.aborted) { setAnalysis(null); return; }
-      const msg = err instanceof Error ? err.message : 'Erreur lors de l\'analyse';
-      setAnalysis(prev => prev ? { ...prev, error: msg } : null);
+    const analyzed: HRDocument[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setAnalysis({ fileName: file.name, current: i + 1, total: files.length, abort });
+      try {
+        const created = await addDocument(file, abort.signal);
+        analyzed.push(created);
+      } catch (err: unknown) {
+        // Annulation volontaire → arrêter la boucle et ouvrir la validation pour les fichiers déjà analysés
+        if (abort.signal.aborted) {
+          setAnalysis(null);
+          if (analyzed.length) {
+            validationQueueSizeRef.current = analyzed.length;
+            setValidationQueue(analyzed);
+          }
+          return;
+        }
+        const msg = err instanceof Error ? err.message : 'Erreur lors de l\'analyse';
+        setAnalysis(prev => prev ? { ...prev, error: msg } : null);
+        // Attendre que l'utilisateur ferme la modale d'erreur (abort signal)
+        await new Promise<void>(resolve => {
+          const id = setInterval(() => {
+            if (abort.signal.aborted) { clearInterval(id); resolve(); }
+          }, 100);
+        });
+        setAnalysis(null);
+        if (analyzed.length) {
+          validationQueueSizeRef.current = analyzed.length;
+          setValidationQueue(analyzed);
+        }
+        return;
+      }
+    }
+
+    setAnalysis(null);
+    if (analyzed.length) {
+      validationQueueSizeRef.current = analyzed.length;
+      setValidationQueue(analyzed);
     }
   };
 
@@ -438,7 +482,7 @@ export default function DocumentManagement() {
     return matchSearch && matchType && matchUser;
   });
 
-  const modalDoc = validatingDoc || editingDoc;
+  const modalDoc = validationQueue[0] ?? editingDoc ?? null;
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -454,7 +498,7 @@ export default function DocumentManagement() {
           <Upload size={18} className="text-tennis-green" />
           Téléverser un document
         </h2>
-        <UploadZone onFileSelected={handleFileSelected} uploading={false} />
+        <UploadZone onFilesSelected={handleFilesSelected} uploading={false} />
       </div>
 
       {/* Pending validation */}
@@ -491,7 +535,14 @@ export default function DocumentManagement() {
                     <Download size={16} />
                   </button>
                   <button
-                    onClick={() => setValidatingDoc(doc)}
+                    onClick={() => {
+                      setValidationQueue(q => {
+                        if (q.some(d => d.id === doc.id)) return q;
+                        const next = [...q, doc];
+                        validationQueueSizeRef.current = next.length;
+                        return next;
+                      });
+                    }}
                     className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5"
                   >
                     <CheckCircle size={14} />
@@ -665,6 +716,8 @@ export default function DocumentManagement() {
       {analysis && (
         <AnalysisModal
           fileName={analysis.fileName}
+          current={analysis.current}
+          total={analysis.total}
           error={analysis.error}
           onCancel={cancelAnalysis}
         />
@@ -675,9 +728,22 @@ export default function DocumentManagement() {
         <ValidationModal
           doc={modalDoc}
           users={users}
+          queueIndex={
+            validationQueue.length > 0 && validationQueueSizeRef.current > 1
+              ? validationQueueSizeRef.current - validationQueue.length
+              : undefined
+          }
+          queueTotal={
+            validationQueue.length > 0 && validationQueueSizeRef.current > 1
+              ? validationQueueSizeRef.current
+              : undefined
+          }
           onClose={() => {
-            setValidatingDoc(null);
-            setEditingDoc(null);
+            if (validationQueue.length > 0) {
+              setValidationQueue(prev => prev.slice(1));
+            } else {
+              setEditingDoc(null);
+            }
           }}
           onValidate={handleValidate}
           onSave={handleSave}
