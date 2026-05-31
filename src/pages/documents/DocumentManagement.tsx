@@ -72,17 +72,30 @@ function matchUserByName(
 ): string {
   if (!detectedName) return '';
   const norm = (s: string) =>
-    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    (s ?? '').toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
   const detected = norm(detectedName);
+  console.log('[matchUserByName] detectedName=', detectedName, '→', detected);
+  console.log('[matchUserByName] users=', users.map(u => `${u.firstName} ${u.lastName} (${norm(u.firstName + ' ' + u.lastName)})`));
+
   const match = users.find(u => {
-    const full    = norm(`${u.firstName} ${u.lastName}`);
-    const reverse = norm(`${u.lastName} ${u.firstName}`);
-    return (
-      full === detected ||
-      reverse === detected ||
-      (detected.includes(norm(u.firstName)) && detected.includes(norm(u.lastName)))
-    );
+    const first = norm(u.firstName);
+    const last  = norm(u.lastName);
+    if (!first || !last) return false;
+    const full    = `${first} ${last}`;
+    const reverse = `${last} ${first}`;
+    const result = full === detected || reverse === detected ||
+      (detected.includes(first) && detected.includes(last));
+    if (result) console.log('[matchUserByName] matched:', u.firstName, u.lastName);
+    return result;
   });
+
+  if (!match) console.log('[matchUserByName] no match found');
   return match?.id ?? '';
 }
 
