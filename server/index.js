@@ -18,7 +18,11 @@ const isDev = process.env.NODE_ENV !== 'production';
 app.use(cors({
   origin: isDev ? 'http://localhost:5173' : 'https://trh.neos.live',
 }));
-app.use(express.json({ limit: '5mb' }));
+app.use((req, res, next) => {
+  // La reconnaissance IA reçoit le fichier en base64 → limite plus haute
+  const limit = req.path === '/api/expenses/recognize' ? '20mb' : '5mb';
+  express.json({ limit })(req, res, next);
+});
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', v: '2026-05-19' }));
