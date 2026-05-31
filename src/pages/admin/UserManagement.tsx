@@ -445,6 +445,7 @@ export default function UserManagement() {
                 className="input"
                 value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                autoComplete="off"
                 required
               />
             </div>
@@ -459,6 +460,7 @@ export default function UserManagement() {
                   value={createPassword}
                   onChange={e => setCreatePassword(e.target.value)}
                   placeholder="Au moins 6 caractères"
+                  autoComplete="new-password"
                   required
                 />
               </div>
@@ -579,6 +581,7 @@ export default function UserManagement() {
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   placeholder="Au moins 6 caractères"
+                  autoComplete="new-password"
                   autoFocus
                 />
               </div>
