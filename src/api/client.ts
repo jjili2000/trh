@@ -47,9 +47,9 @@ export const api = {
   delete: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'DELETE', ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }),
 
-  /** Upload multipart (POST avec FormData). */
-  upload: <T>(path: string, formData: FormData) =>
-    request<T>(path, { method: 'POST', body: formData }),
+  /** Upload multipart (POST avec FormData). Passe un AbortSignal pour annuler. */
+  upload: <T>(path: string, formData: FormData, signal?: AbortSignal) =>
+    request<T>(path, { method: 'POST', body: formData, signal }),
 
   /** Update multipart (PUT avec FormData). */
   uploadPut: <T>(path: string, formData: FormData) =>

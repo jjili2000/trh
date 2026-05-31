@@ -80,7 +80,7 @@ interface AppContextType {
   deleteExpense: (id: string) => Promise<void>;
 
   // Documents
-  addDocument: (file: File) => Promise<HRDocument>;
+  addDocument: (file: File, signal?: AbortSignal) => Promise<HRDocument>;
   updateDocument: (id: string, data: Partial<HRDocument>) => Promise<HRDocument>;
   deleteDocument: (id: string) => Promise<void>;
 
@@ -422,10 +422,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Documents ─────────────────────────────────────────────────────────────────
 
-  const addDocument = async (file: File): Promise<HRDocument> => {
+  const addDocument = async (file: File, signal?: AbortSignal): Promise<HRDocument> => {
     const formData = new FormData();
     formData.append('file', file);
-    const created = await api.upload<HRDocument>('/documents', formData);
+    const created = await api.upload<HRDocument>('/documents', formData, signal);
     const updated = await api.get<HRDocument[]>('/documents');
     setDocuments(updated);
     return created;

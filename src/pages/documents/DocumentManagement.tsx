@@ -11,6 +11,9 @@ import {
   X,
   ChevronDown,
   User,
+  Loader2,
+  Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { HRDocument } from '../../types';
@@ -233,6 +236,67 @@ function ValidationModal({ doc, users, onClose, onValidate, onSave }: Validation
   );
 }
 
+// ── Modale d'analyse ──────────────────────────────────────────────────────────
+
+interface AnalysisModalProps {
+  fileName: string;
+  error?: string;
+  onCancel: () => void;
+}
+
+function AnalysisModal({ fileName, error, onCancel }: AnalysisModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        {/* En-tête */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="font-semibold text-gray-900">Analyse du document</h2>
+          <button
+            onClick={onCancel}
+            className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-6 py-8">
+          {error ? (
+            /* État erreur */
+            <div className="text-center space-y-4">
+              <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto">
+                <AlertCircle size={28} className="text-red-400" />
+              </div>
+              <div>
+                <p className="font-medium text-gray-800">Analyse impossible</p>
+                <p className="text-sm text-gray-500 mt-1">{error}</p>
+              </div>
+              <button onClick={onCancel} className="btn-secondary w-full">Fermer</button>
+            </div>
+          ) : (
+            /* État chargement */
+            <div className="text-center space-y-4">
+              <div className="relative w-14 h-14 mx-auto">
+                <Loader2 size={56} className="animate-spin text-tennis-green" />
+                <Sparkles size={20} className="absolute -top-1 -right-1 text-yellow-400" />
+              </div>
+              <div>
+                <p className="font-medium text-gray-800">Analyse en cours…</p>
+                <p className="text-sm text-gray-500 mt-1 truncate max-w-[220px] mx-auto" title={fileName}>
+                  {fileName}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  Identification du type, de l'employé et de la période
+                </p>
+              </div>
+              <button onClick={onCancel} className="btn-secondary w-full">Annuler</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface UploadZoneProps {
   onFileSelected: (file: File) => void;
   uploading: boolean;
@@ -295,8 +359,6 @@ function UploadZone({ onFileSelected, uploading }: UploadZoneProps) {
 export default function DocumentManagement() {
   const { documents, users, addDocument, updateDocument, deleteDocument } = useApp();
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
   const [validatingDoc, setValidatingDoc] = useState<HRDocument | null>(null);
   const [editingDoc, setEditingDoc] = useState<HRDocument | null>(null);
   const [search, setSearch] = useState('');
@@ -305,17 +367,31 @@ export default function DocumentManagement() {
   const [filterUser, setFilterUser] = useState('');
   const [downloading, setDownloading] = useState<string | null>(null);
 
+  // État de la modale d'analyse
+  const [analysis, setAnalysis] = useState<{
+    fileName: string;
+    abort: AbortController;
+    error?: string;
+  } | null>(null);
+
   const handleFileSelected = async (file: File) => {
-    setUploading(true);
-    setUploadError('');
+    const abort = new AbortController();
+    setAnalysis({ fileName: file.name, abort });
     try {
-      const created = await addDocument(file);
+      const created = await addDocument(file, abort.signal);
+      setAnalysis(null);
       setValidatingDoc(created);
     } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : 'Erreur lors du téléversement');
-    } finally {
-      setUploading(false);
+      // Annulation volontaire → fermer silencieusement
+      if (abort.signal.aborted) { setAnalysis(null); return; }
+      const msg = err instanceof Error ? err.message : 'Erreur lors de l\'analyse';
+      setAnalysis(prev => prev ? { ...prev, error: msg } : null);
     }
+  };
+
+  const cancelAnalysis = () => {
+    analysis?.abort.abort();
+    setAnalysis(null);
   };
 
   const handleValidate = async (id: string, data: Partial<HRDocument> & { status: 'validated' }) => {
@@ -378,10 +454,7 @@ export default function DocumentManagement() {
           <Upload size={18} className="text-tennis-green" />
           Téléverser un document
         </h2>
-        <UploadZone onFileSelected={handleFileSelected} uploading={uploading} />
-        {uploadError && (
-          <p className="mt-2 text-sm text-red-600">{uploadError}</p>
-        )}
+        <UploadZone onFileSelected={handleFileSelected} uploading={false} />
       </div>
 
       {/* Pending validation */}
@@ -587,6 +660,15 @@ export default function DocumentManagement() {
           </div>
         )}
       </div>
+
+      {/* Modale d'analyse en cours */}
+      {analysis && (
+        <AnalysisModal
+          fileName={analysis.fileName}
+          error={analysis.error}
+          onCancel={cancelAnalysis}
+        />
+      )}
 
       {/* Validation / Edit Modal */}
       {modalDoc && (
