@@ -24,6 +24,7 @@ function mapEntry(row) {
     startTime: fmtTime(row.start_time),
     endTime:   fmtTime(row.end_time),
     status: row.status,
+    rejectionReason: row.rejection_reason || null,
     validatedBy: row.validated_by || undefined,
     validatedAt: row.validated_at instanceof Date
       ? row.validated_at.toISOString()
@@ -370,9 +371,10 @@ router.put('/:id/reject', async (req, res) => {
       }
     }
 
+    const { rejectionReason } = req.body;
     await pool.execute(
-      `UPDATE time_entries SET status = 'rejected', validated_by = ?, validated_at = NOW() WHERE id = ?`,
-      [req.user.id, id]
+      `UPDATE time_entries SET status = 'rejected', rejection_reason = ?, validated_by = ?, validated_at = NOW() WHERE id = ?`,
+      [rejectionReason || null, req.user.id, id]
     );
     const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
     res.json(mapEntry(rows[0]));
@@ -382,11 +384,14 @@ router.put('/:id/reject', async (req, res) => {
     const validatorName = validator ? validator.first_name : 'Votre responsable';
     const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
     const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const notifBody = rejectionReason
+      ? `Votre saisie du ${dateLabel} a été rejetée par ${validatorName}. Motif : ${rejectionReason}`
+      : `Votre saisie du ${dateLabel} a été rejetée par ${validatorName}.`;
     await notify(
       entry.user_id,
       'time_entry_rejected',
       'Saisie d\'heures rejetée',
-      `Votre saisie du ${dateLabel} a été rejetée par ${validatorName}.`,
+      notifBody,
       'time_entry',
       id,
       'time',

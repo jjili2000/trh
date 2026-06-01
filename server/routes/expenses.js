@@ -64,6 +64,7 @@ function mapExpense(row) {
     // Rétrocompatibilité : anciens justificatifs stockés en base64
     receiptFile: row.receipt_file || undefined,
     status: row.status,
+    rejectionReason: row.rejection_reason || null,
     validatedBy: row.validated_by || undefined,
     validatedAt: row.validated_at instanceof Date
       ? row.validated_at.toISOString()
@@ -246,9 +247,12 @@ router.put('/:id', upload.single('receipt'), async (req, res) => {
       if (req.file) deleteReceiptFile(req.file.filename);
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    if (record.status === 'approved') {
+    if (record.status !== 'pending') {
       if (req.file) deleteReceiptFile(req.file.filename);
-      return res.status(400).json({ error: 'Une dépense approuvée ne peut pas être modifiée' });
+      const msg = record.status === 'approved'
+        ? 'Une dépense approuvée ne peut pas être modifiée'
+        : 'Une dépense rejetée ne peut pas être modifiée';
+      return res.status(400).json({ error: msg });
     }
 
     const { date, amount, reason, vendor, amountHt, vatDetails } = req.body;
@@ -352,18 +356,21 @@ router.put('/:id/reject', async (req, res) => {
     const [existing] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Dépense non trouvée' });
 
+    const { rejectionReason } = req.body;
     await pool.execute(
-      `UPDATE expenses SET status = 'rejected', validated_by = ?, validated_at = NOW() WHERE id = ?`,
-      [req.user.id, id]
+      `UPDATE expenses SET status = 'rejected', rejection_reason = ?, validated_by = ?, validated_at = NOW() WHERE id = ?`,
+      [rejectionReason || null, req.user.id, id]
     );
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.json(mapExpense(rows[0]));
 
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
+    const notifBody = rejectionReason
+      ? `Votre note de frais a été refusée par ${vName}. Motif : ${rejectionReason}`
+      : `Votre note de frais a été refusée par ${vName}.`;
     await notify(existing[0].user_id, 'expense_rejected', 'Note de frais refusée',
-      `Votre note de frais a été refusée par ${vName}.`,
-      'expense', id, 'expenses', 'response');
+      notifBody, 'expense', id, 'expenses', 'response');
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

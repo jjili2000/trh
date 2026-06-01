@@ -8,6 +8,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { Expense, VatLine } from '../../types';
 import { api, fileUrl } from '../../api/client';
+import RejectReasonModal from '../../components/RejectReasonModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -660,6 +661,7 @@ export default function ExpenseManagement() {
 
   // Modale de détail
   const [detailExpense, setDetailExpense] = useState<Expense | null>(null);
+  const [pendingRejectExpenseId, setPendingRejectExpenseId] = useState<string | null>(null);
 
   // UI
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');
@@ -1000,7 +1002,7 @@ export default function ExpenseManagement() {
           onSave={(id, fd) => { updateExpense(id, fd); setDetailExpense(null); }}
           onDelete={(id) => { deleteExpense(id); setDetailExpense(null); }}
           onApprove={isManagerOrAdmin ? (id) => { approveExpense(id); setDetailExpense(null); } : undefined}
-          onReject={isManagerOrAdmin  ? (id) => { rejectExpense(id);  setDetailExpense(null); } : undefined}
+          onReject={isManagerOrAdmin ? (id) => { setPendingRejectExpenseId(id); } : undefined}
         />
       )}
 
@@ -1169,6 +1171,19 @@ export default function ExpenseManagement() {
             <img src={localPreview.url} alt="Aperçu" className="max-w-full rounded-xl mx-auto object-contain" />
           )}
         </Modal>
+      )}
+
+      {/* Modale motif de refus note de frais */}
+      {pendingRejectExpenseId && (
+        <RejectReasonModal
+          title="Refuser la note de frais"
+          onConfirm={async (reason) => {
+            await rejectExpense(pendingRejectExpenseId, reason || undefined);
+            setPendingRejectExpenseId(null);
+            setDetailExpense(null);
+          }}
+          onCancel={() => setPendingRejectExpenseId(null)}
+        />
       )}
     </div>
   );

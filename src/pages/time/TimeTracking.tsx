@@ -7,6 +7,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { TimeEntry } from '../../types';
 import { api } from '../../api/client';
+import RejectReasonModal from '../../components/RejectReasonModal';
 
 const statusLabels: Record<string, string> = {
   pending: 'En attente',
@@ -140,6 +141,8 @@ export default function TimeTracking() {
   // ── Selection ────────────────────────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  // { ids } = refus en attente de motif (null = modal fermée)
+  const [pendingReject, setPendingReject] = useState<{ ids: string[] } | null>(null);
 
   // ── Location state ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -238,11 +241,8 @@ export default function TimeTracking() {
     setBulkLoading(false);
   };
 
-  const handleBulkReject = async () => {
-    setBulkLoading(true);
-    for (const id of selectedIds) await rejectTimeEntry(id);
-    setSelectedIds(new Set());
-    setBulkLoading(false);
+  const handleBulkReject = () => {
+    setPendingReject({ ids: Array.from(selectedIds) });
   };
 
   // ── Sort helper ──────────────────────────────────────────────────────────────
@@ -747,7 +747,7 @@ export default function TimeTracking() {
                                     <Check size={16} />
                                   </button>
                                   <button
-                                    onClick={() => rejectTimeEntry(entry.id)}
+                                    onClick={() => setPendingReject({ ids: [entry.id] })}
                                     className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                     title="Rejeter"
                                   >
@@ -869,6 +869,25 @@ export default function TimeTracking() {
             await bulkAddTimeEntries(entries);
             setShowCalendarEntry(false);
           }}
+        />
+      )}
+
+      {/* Modale motif de refus */}
+      {pendingReject && (
+        <RejectReasonModal
+          title={pendingReject.ids.length > 1
+            ? `Refuser ${pendingReject.ids.length} saisies`
+            : 'Refuser la saisie d\'heures'}
+          onConfirm={async (reason) => {
+            setBulkLoading(true);
+            for (const id of pendingReject.ids) {
+              await rejectTimeEntry(id, reason || undefined);
+            }
+            setSelectedIds(new Set());
+            setBulkLoading(false);
+            setPendingReject(null);
+          }}
+          onCancel={() => setPendingReject(null)}
         />
       )}
     </div>

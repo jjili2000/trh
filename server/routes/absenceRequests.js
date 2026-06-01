@@ -31,6 +31,7 @@ function mapRequest(row) {
     type: row.type,
     reason: row.reason || undefined,
     status: row.status,
+    rejectionReason: row.rejection_reason || null,
     validatedBy: row.validated_by || undefined,
     validatedAt: row.validated_at instanceof Date
       ? row.validated_at.toISOString()
@@ -213,18 +214,21 @@ router.put('/:id/reject', async (req, res) => {
       }
     }
 
+    const { rejectionReason } = req.body;
     await pool.execute(
-      `UPDATE absence_requests SET status = 'rejected', validated_by = ?, validated_at = NOW() WHERE id = ?`,
-      [req.user.id, id]
+      `UPDATE absence_requests SET status = 'rejected', rejection_reason = ?, validated_by = ?, validated_at = NOW() WHERE id = ?`,
+      [rejectionReason || null, req.user.id, id]
     );
     const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     res.json(mapRequest(rows[0]));
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
     const startLabel = new Date(String(record.start_date).slice(0,10) + 'T12:00:00').toLocaleDateString('fr-FR');
+    const notifBody = rejectionReason
+      ? `Votre demande d'absence du ${startLabel} a été refusée par ${vName}. Motif : ${rejectionReason}`
+      : `Votre demande d'absence du ${startLabel} a été refusée par ${vName}.`;
     await notify(record.user_id, 'absence_rejected', 'Absence refusée',
-      `Votre demande d'absence du ${startLabel} a été refusée par ${vName}.`,
-      'absence_request', id, 'absences', 'response');
+      notifBody, 'absence_request', id, 'absences', 'response');
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });

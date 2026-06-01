@@ -52,6 +52,7 @@ export interface TimeEntry {
   startTime?: string; // HH:MM
   endTime?: string;   // HH:MM
   status: 'pending' | 'approved' | 'rejected' | 'paid';
+  rejectionReason?: string | null;
   validatedBy?: string;
   validatedAt?: string;
   createdAt: string;
@@ -66,6 +67,7 @@ export interface AbsenceRequest {
   type: 'vacation' | 'sick' | 'personal' | 'other';
   reason?: string;
   status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string | null;
   validatedBy?: string;
   validatedAt?: string;
   createdAt: string;
@@ -90,6 +92,7 @@ export interface Expense {
   receiptFileType?: string; // MIME type
   receiptFile?: string;     // base64 legacy (avant migration filesystem)
   status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string | null;
   validatedBy?: string;
   validatedAt?: string;
   createdAt: string;

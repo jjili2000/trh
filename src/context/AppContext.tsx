@@ -64,19 +64,19 @@ interface AppContextType {
   deleteTimeEntry: (id: string) => Promise<void>;
   bulkDeleteTimeEntries: (ids: string[]) => Promise<{ deleted: number; locked: number }>;
   approveTimeEntry: (id: string) => Promise<void>;
-  rejectTimeEntry: (id: string) => Promise<void>;
+  rejectTimeEntry: (id: string, rejectionReason?: string) => Promise<void>;
 
   // Absence Requests
   addAbsenceRequest: (req: Omit<AbsenceRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   updateAbsenceRequest: (id: string, data: Partial<AbsenceRequest>) => Promise<void>;
   approveAbsenceRequest: (id: string) => Promise<void>;
-  rejectAbsenceRequest: (id: string) => Promise<void>;
+  rejectAbsenceRequest: (id: string, rejectionReason?: string) => Promise<void>;
 
   // Expenses
   addExpense: (formData: FormData) => Promise<void>;
   updateExpense: (id: string, formData: FormData) => Promise<void>;
   approveExpense: (id: string) => Promise<void>;
-  rejectExpense: (id: string) => Promise<void>;
+  rejectExpense: (id: string, rejectionReason?: string) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
 
   // Documents
@@ -357,8 +357,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeEntries(updated);
   };
 
-  const rejectTimeEntry = async (id: string) => {
-    await api.put(`/time-entries/${id}/reject`, {});
+  const rejectTimeEntry = async (id: string, rejectionReason?: string) => {
+    await api.put(`/time-entries/${id}/reject`, { rejectionReason: rejectionReason || null });
     const updated = await api.get<TimeEntry[]>('/time-entries');
     setTimeEntries(updated);
   };
@@ -383,8 +383,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAbsenceRequests(updated);
   };
 
-  const rejectAbsenceRequest = async (id: string) => {
-    await api.put(`/absence-requests/${id}/reject`, {});
+  const rejectAbsenceRequest = async (id: string, rejectionReason?: string) => {
+    await api.put(`/absence-requests/${id}/reject`, { rejectionReason: rejectionReason || null });
     const updated = await api.get<AbsenceRequest[]>('/absence-requests');
     setAbsenceRequests(updated);
   };
@@ -409,8 +409,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setExpenses(updated);
   };
 
-  const rejectExpense = async (id: string) => {
-    await api.put(`/expenses/${id}/reject`, {});
+  const rejectExpense = async (id: string, rejectionReason?: string) => {
+    await api.put(`/expenses/${id}/reject`, { rejectionReason: rejectionReason || null });
     const updated = await api.get<Expense[]>('/expenses');
     setExpenses(updated);
   };

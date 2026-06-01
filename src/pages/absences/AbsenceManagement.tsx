@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Plus, Check, X, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { AbsenceRequest } from '../../types';
+import RejectReasonModal from '../../components/RejectReasonModal';
 
 const statusLabels = {
   pending: 'En attente',
@@ -98,6 +99,7 @@ export default function AbsenceManagement() {
 
   const [showForm, setShowForm] = useState(false);
   const [editingRequest, setEditingRequest] = useState<AbsenceRequest | null>(null);
+  const [pendingRejectId, setPendingRejectId] = useState<string | null>(null);
 
   useEffect(() => {
     const state = location.state as { openForm?: boolean; showTeam?: boolean } | null;
@@ -358,7 +360,7 @@ export default function AbsenceManagement() {
                                 Approuver
                               </button>
                               <button
-                                onClick={() => rejectAbsenceRequest(req.id)}
+                                onClick={() => setPendingRejectId(req.id)}
                                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
                               >
                                 <X size={13} />
@@ -487,6 +489,18 @@ export default function AbsenceManagement() {
             </div>
           </form>
         </Modal>
+      )}
+
+      {/* Modale motif de refus */}
+      {pendingRejectId && (
+        <RejectReasonModal
+          title="Refuser la demande d'absence"
+          onConfirm={async (reason) => {
+            await rejectAbsenceRequest(pendingRejectId, reason || undefined);
+            setPendingRejectId(null);
+          }}
+          onCancel={() => setPendingRejectId(null)}
+        />
       )}
     </div>
   );
