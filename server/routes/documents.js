@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const archiver = require('archiver');
 const pool = require('../db');
 const { recognizeDocument } = require('../services/recognition');
 const { sendDocumentNotification } = require('../services/email');
@@ -136,6 +137,68 @@ router.post('/', upload.single('file'), async (req, res) => {
     if (req.file) deleteDocumentFile(req.file.filename);
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// POST /download-zip — télécharge plusieurs documents en une archive ZIP
+router.post('/download-zip', async (req, res) => {
+  try {
+    const { id: userId, role } = req.user;
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Aucun document sélectionné' });
+    }
+
+    const placeholders = ids.map(() => '?').join(',');
+    let rows;
+    if (role === 'admin') {
+      [rows] = await pool.execute(
+        `SELECT * FROM documents WHERE id IN (${placeholders})`, ids
+      );
+    } else {
+      [rows] = await pool.execute(
+        `SELECT * FROM documents WHERE id IN (${placeholders}) AND user_id = ? AND status = 'validated'`,
+        [...ids, userId]
+      );
+    }
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Aucun document accessible trouvé' });
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="documents.zip"');
+
+    const archive = archiver('zip', { zlib: { level: 6 } });
+    archive.on('error', err => {
+      console.error('Archiver error:', err);
+      if (!res.headersSent) res.status(500).end();
+    });
+    archive.pipe(res);
+
+    // Dédoublonnage des noms de fichiers dans l'archive
+    const usedNames = new Map();
+    for (const doc of rows) {
+      if (!doc.file_path) continue;
+      const filePath = path.join(UPLOADS_DIR, path.basename(doc.file_path));
+      if (!fs.existsSync(filePath)) continue;
+
+      let name = doc.file_name;
+      if (usedNames.has(name)) {
+        const count = usedNames.get(name) + 1;
+        usedNames.set(name, count);
+        const ext = path.extname(name);
+        name = `${path.basename(name, ext)} (${count})${ext}`;
+      } else {
+        usedNames.set(name, 1);
+      }
+      archive.file(filePath, { name });
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
