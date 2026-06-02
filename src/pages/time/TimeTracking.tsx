@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, ReactNode, FormEvent } from 'reac
 import { useLocation } from 'react-router-dom';
 import {
   Plus, Check, X, Clock, ChevronDown, ChevronUp, Pencil, Calendar,
-  Filter, ChevronsUpDown, ChevronUp as SortAsc, ChevronDown as SortDesc, Trash2,
+  Filter, ChevronsUpDown, ChevronUp as SortAsc, ChevronDown as SortDesc, Trash2, Bookmark,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { TimeEntry } from '../../types';
@@ -129,12 +129,39 @@ export default function TimeTracking() {
   }, []);
 
   // ── Team filters & sort ──────────────────────────────────────────────────────
-  const [showFilters, setShowFilters] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<string>('pending');
-  const [filterUserId, setFilterUserId] = useState('');
-  const [filterActivityId, setFilterActivityId] = useState('');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
+  const FILTER_KEY = 'trh_team_time_filter';
+
+  const loadSavedFilter = () => {
+    try {
+      const raw = localStorage.getItem(FILTER_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as {
+        filterStatus: string; filterUserId: string;
+        filterActivityId: string; filterDateFrom: string; filterDateTo: string;
+      };
+    } catch { return null; }
+  };
+
+  const saved = loadSavedFilter();
+  const [filterStatus,     setFilterStatus]     = useState<string>(saved?.filterStatus     ?? '');
+  const [filterUserId,     setFilterUserId]     = useState(saved?.filterUserId     ?? '');
+  const [filterActivityId, setFilterActivityId] = useState(saved?.filterActivityId ?? '');
+  const [filterDateFrom,   setFilterDateFrom]   = useState(saved?.filterDateFrom   ?? '');
+  const [filterDateTo,     setFilterDateTo]     = useState(saved?.filterDateTo     ?? '');
+  const [filterSaved,      setFilterSaved]      = useState(false); // feedback visuel après sauvegarde
+
+  const saveFilter = () => {
+    localStorage.setItem(FILTER_KEY, JSON.stringify({
+      filterStatus, filterUserId, filterActivityId, filterDateFrom, filterDateTo,
+    }));
+    setFilterSaved(true);
+    setTimeout(() => setFilterSaved(false), 1500);
+  };
+
+  const resetFilter = () => {
+    setFilterStatus(''); setFilterUserId(''); setFilterActivityId('');
+    setFilterDateFrom(''); setFilterDateTo(''); setSelectedIds(new Set());
+  };
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -557,24 +584,9 @@ export default function TimeTracking() {
           {expandedSection === 'team' && (
             <div className="mt-4">
 
-              {/* Filter bar toggle */}
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  onClick={() => setShowFilters(v => !v)}
-                  className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${showFilters ? 'bg-tennis-green/10 border-tennis-green/30 text-tennis-green' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}
-                >
-                  <Filter size={14} />
-                  Filtres
-                  {(filterStatus !== 'pending' || filterUserId || filterActivityId || filterDateFrom || filterDateTo) && (
-                    <span className="w-2 h-2 rounded-full bg-tennis-green" />
-                  )}
-                </button>
-                <span className="text-xs text-gray-400">{filteredTeamEntries.length} résultat(s)</span>
-              </div>
-
-              {/* Filters panel */}
-              {showFilters && (
-                <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {/* Filter bar — toujours visible */}
+              <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Statut</label>
                     <select className="input text-sm py-1.5" value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setSelectedIds(new Set()); }}>
@@ -610,16 +622,34 @@ export default function TimeTracking() {
                     <label className="text-xs text-gray-500 mb-1 block">Au</label>
                     <input type="date" className="input text-sm py-1.5" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
                   </div>
-                  <div className="col-span-full flex justify-end">
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">
+                    <Filter size={12} className="inline mr-1" />
+                    {filteredTeamEntries.length} résultat(s)
+                  </span>
+                  <div className="flex items-center gap-3">
                     <button
-                      onClick={() => { setFilterStatus('pending'); setFilterUserId(''); setFilterActivityId(''); setFilterDateFrom(''); setFilterDateTo(''); setSelectedIds(new Set()); }}
-                      className="text-xs text-gray-400 hover:text-gray-600 underline"
+                      onClick={resetFilter}
+                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                     >
-                      Réinitialiser les filtres
+                      Réinitialiser
+                    </button>
+                    <button
+                      onClick={saveFilter}
+                      className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                        filterSaved
+                          ? 'bg-tennis-green/10 border-tennis-green/30 text-tennis-green'
+                          : 'border-gray-200 text-gray-500 hover:border-tennis-green hover:text-tennis-green'
+                      }`}
+                      title="Mémoriser ce filtre pour les prochaines visites"
+                    >
+                      <Bookmark size={12} />
+                      {filterSaved ? 'Filtre enregistré !' : 'Enregistrer ce filtre'}
                     </button>
                   </div>
                 </div>
-              )}
+              </div>
 
               {/* Bulk action bar */}
               {selectedIds.size > 0 && (
