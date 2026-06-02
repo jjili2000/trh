@@ -129,7 +129,7 @@ export default function TimeTracking() {
   }, []);
 
   // ── Team filters & sort ──────────────────────────────────────────────────────
-  const FILTERS_KEY = 'trh_team_time_filters';
+  const FILTERS_KEY = `trh_team_time_filters_${currentUser?.id ?? 'anon'}`;
 
   type SavedFilter = {
     name: string;
