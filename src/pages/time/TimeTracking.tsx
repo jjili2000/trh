@@ -148,7 +148,8 @@ export default function TimeTracking() {
   const [filterActivityId, setFilterActivityId] = useState(saved?.filterActivityId ?? '');
   const [filterDateFrom,   setFilterDateFrom]   = useState(saved?.filterDateFrom   ?? '');
   const [filterDateTo,     setFilterDateTo]     = useState(saved?.filterDateTo     ?? '');
-  const [filterSaved,      setFilterSaved]      = useState(false); // feedback visuel après sauvegarde
+  const [filterSaved,    setFilterSaved]    = useState(false); // feedback visuel après sauvegarde
+  const hasSavedFilter = !!localStorage.getItem(FILTER_KEY);
 
   const saveFilter = () => {
     localStorage.setItem(FILTER_KEY, JSON.stringify({
@@ -156,6 +157,17 @@ export default function TimeTracking() {
     }));
     setFilterSaved(true);
     setTimeout(() => setFilterSaved(false), 1500);
+  };
+
+  const applySavedFilter = () => {
+    const f = loadSavedFilter();
+    if (!f) return;
+    setFilterStatus(f.filterStatus ?? '');
+    setFilterUserId(f.filterUserId ?? '');
+    setFilterActivityId(f.filterActivityId ?? '');
+    setFilterDateFrom(f.filterDateFrom ?? '');
+    setFilterDateTo(f.filterDateTo ?? '');
+    setSelectedIds(new Set());
   };
 
   const resetFilter = () => {
@@ -635,6 +647,16 @@ export default function TimeTracking() {
                     >
                       Réinitialiser
                     </button>
+                    {hasSavedFilter && (
+                      <button
+                        onClick={applySavedFilter}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-tennis-green hover:text-tennis-green transition-colors"
+                        title="Restaurer le filtre mémorisé"
+                      >
+                        <Bookmark size={12} />
+                        Appliquer le filtre enregistré
+                      </button>
+                    )}
                     <button
                       onClick={saveFilter}
                       className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
@@ -644,8 +666,8 @@ export default function TimeTracking() {
                       }`}
                       title="Mémoriser ce filtre pour les prochaines visites"
                     >
-                      <Bookmark size={12} />
-                      {filterSaved ? 'Filtre enregistré !' : 'Enregistrer ce filtre'}
+                      <Bookmark size={12} fill={filterSaved ? 'currentColor' : 'none'} />
+                      {filterSaved ? 'Enregistré !' : 'Enregistrer ce filtre'}
                     </button>
                   </div>
                 </div>
