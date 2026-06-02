@@ -129,50 +129,70 @@ export default function TimeTracking() {
   }, []);
 
   // ── Team filters & sort ──────────────────────────────────────────────────────
-  const FILTER_KEY = 'trh_team_time_filter';
+  const FILTERS_KEY = 'trh_team_time_filters';
 
-  const loadSavedFilter = () => {
-    try {
-      const raw = localStorage.getItem(FILTER_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw) as {
-        filterStatus: string; filterUserId: string;
-        filterActivityId: string; filterDateFrom: string; filterDateTo: string;
-      };
-    } catch { return null; }
+  type SavedFilter = {
+    name: string;
+    filterStatus: string; filterUserId: string;
+    filterActivityId: string; filterDateFrom: string; filterDateTo: string;
   };
 
-  const saved = loadSavedFilter();
-  const [filterStatus,     setFilterStatus]     = useState<string>(saved?.filterStatus     ?? '');
-  const [filterUserId,     setFilterUserId]     = useState(saved?.filterUserId     ?? '');
-  const [filterActivityId, setFilterActivityId] = useState(saved?.filterActivityId ?? '');
-  const [filterDateFrom,   setFilterDateFrom]   = useState(saved?.filterDateFrom   ?? '');
-  const [filterDateTo,     setFilterDateTo]     = useState(saved?.filterDateTo     ?? '');
-  const [filterSaved,    setFilterSaved]    = useState(false); // feedback visuel après sauvegarde
-  const hasSavedFilter = !!localStorage.getItem(FILTER_KEY);
+  const loadSavedFilters = (): SavedFilter[] => {
+    try {
+      const raw = localStorage.getItem(FILTERS_KEY);
+      if (!raw) return [];
+      return JSON.parse(raw) as SavedFilter[];
+    } catch { return []; }
+  };
 
-  const saveFilter = () => {
-    localStorage.setItem(FILTER_KEY, JSON.stringify({
-      filterStatus, filterUserId, filterActivityId, filterDateFrom, filterDateTo,
-    }));
+  const [filterStatus,     setFilterStatus]     = useState<string>('');
+  const [filterUserId,     setFilterUserId]     = useState('');
+  const [filterActivityId, setFilterActivityId] = useState('');
+  const [filterDateFrom,   setFilterDateFrom]   = useState('');
+  const [filterDateTo,     setFilterDateTo]     = useState('');
+  const [savedFilters,     setSavedFilters]     = useState<SavedFilter[]>(() => loadSavedFilters());
+  const [selectedFilterName, setSelectedFilterName] = useState('');
+  const [showSaveInput,    setShowSaveInput]    = useState(false);
+  const [saveFilterName,   setSaveFilterName]   = useState('');
+  const [filterSaved,      setFilterSaved]      = useState(false);
+
+  const saveCurrentFilter = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const newFilter: SavedFilter = { name: trimmed, filterStatus, filterUserId, filterActivityId, filterDateFrom, filterDateTo };
+    const updated = [...savedFilters.filter(f => f.name !== trimmed), newFilter];
+    localStorage.setItem(FILTERS_KEY, JSON.stringify(updated));
+    setSavedFilters(updated);
+    setSelectedFilterName(trimmed);
+    setShowSaveInput(false);
+    setSaveFilterName('');
     setFilterSaved(true);
     setTimeout(() => setFilterSaved(false), 1500);
   };
 
-  const applySavedFilter = () => {
-    const f = loadSavedFilter();
+  const applyNamedFilter = (name: string) => {
+    const f = savedFilters.find(sf => sf.name === name);
     if (!f) return;
     setFilterStatus(f.filterStatus ?? '');
     setFilterUserId(f.filterUserId ?? '');
     setFilterActivityId(f.filterActivityId ?? '');
     setFilterDateFrom(f.filterDateFrom ?? '');
     setFilterDateTo(f.filterDateTo ?? '');
+    setSelectedFilterName(name);
     setSelectedIds(new Set());
+  };
+
+  const deleteFilter = (name: string) => {
+    const updated = savedFilters.filter(f => f.name !== name);
+    localStorage.setItem(FILTERS_KEY, JSON.stringify(updated));
+    setSavedFilters(updated);
+    if (selectedFilterName === name) setSelectedFilterName('');
   };
 
   const resetFilter = () => {
     setFilterStatus(''); setFilterUserId(''); setFilterActivityId('');
     setFilterDateFrom(''); setFilterDateTo(''); setSelectedIds(new Set());
+    setSelectedFilterName('');
   };
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -642,40 +662,82 @@ export default function TimeTracking() {
                     <input type="date" className="input text-sm py-1.5" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
                   <span className="text-xs text-gray-400">
                     <Filter size={12} className="inline mr-1" />
                     {filteredTeamEntries.length} résultat(s)
                   </span>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={resetFilter}
                       className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                     >
                       Réinitialiser
                     </button>
-                    {hasSavedFilter && (
+                    {/* Combobox filtres enregistrés */}
+                    {savedFilters.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={selectedFilterName}
+                          onChange={e => applyNamedFilter(e.target.value)}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white focus:outline-none focus:border-tennis-green max-w-[180px]"
+                        >
+                          <option value="">— Filtres enregistrés —</option>
+                          {savedFilters.map(f => (
+                            <option key={f.name} value={f.name}>{f.name}</option>
+                          ))}
+                        </select>
+                        {selectedFilterName && (
+                          <button
+                            onClick={() => deleteFilter(selectedFilterName)}
+                            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                            title={`Supprimer le filtre "${selectedFilterName}"`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {/* Enregistrement */}
+                    {showSaveInput ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={saveFilterName}
+                          onChange={e => setSaveFilterName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveCurrentFilter(saveFilterName); if (e.key === 'Escape') { setShowSaveInput(false); setSaveFilterName(''); } }}
+                          placeholder="Nom du filtre…"
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-tennis-green w-36"
+                        />
+                        <button
+                          onClick={() => saveCurrentFilter(saveFilterName)}
+                          disabled={!saveFilterName.trim()}
+                          className="text-xs px-2 py-1.5 rounded-lg bg-tennis-green text-white disabled:opacity-40 hover:bg-tennis-green/90 transition-colors"
+                        >
+                          OK
+                        </button>
+                        <button
+                          onClick={() => { setShowSaveInput(false); setSaveFilterName(''); }}
+                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ) : (
                       <button
-                        onClick={applySavedFilter}
-                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-tennis-green hover:text-tennis-green transition-colors"
-                        title="Restaurer le filtre mémorisé"
+                        onClick={() => setShowSaveInput(true)}
+                        className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                          filterSaved
+                            ? 'bg-tennis-green/10 border-tennis-green/30 text-tennis-green'
+                            : 'border-gray-200 text-gray-500 hover:border-tennis-green hover:text-tennis-green'
+                        }`}
+                        title="Mémoriser ce filtre"
                       >
-                        <Bookmark size={12} />
-                        Appliquer le filtre enregistré
+                        <Bookmark size={12} fill={filterSaved ? 'currentColor' : 'none'} />
+                        {filterSaved ? 'Enregistré !' : 'Enregistrer ce filtre'}
                       </button>
                     )}
-                    <button
-                      onClick={saveFilter}
-                      className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                        filterSaved
-                          ? 'bg-tennis-green/10 border-tennis-green/30 text-tennis-green'
-                          : 'border-gray-200 text-gray-500 hover:border-tennis-green hover:text-tennis-green'
-                      }`}
-                      title="Mémoriser ce filtre pour les prochaines visites"
-                    >
-                      <Bookmark size={12} fill={filterSaved ? 'currentColor' : 'none'} />
-                      {filterSaved ? 'Enregistré !' : 'Enregistrer ce filtre'}
-                    </button>
                   </div>
                 </div>
               </div>
