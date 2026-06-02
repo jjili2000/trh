@@ -279,6 +279,12 @@ export default function AbsenceManagement() {
                         {req.reason && (
                           <p className="text-sm text-gray-400 mt-1 italic">« {req.reason} »</p>
                         )}
+                        {req.status === 'rejected' && req.rejectionReason && (
+                          <p className="text-xs text-red-500 mt-1 flex items-start gap-1">
+                            <span className="font-medium shrink-0">Motif du refus :</span>
+                            <span>{req.rejectionReason}</span>
+                          </p>
+                        )}
                       </div>
                       {req.status === 'pending' && (
                         <button
@@ -348,6 +354,12 @@ export default function AbsenceManagement() {
                             </p>
                             {req.reason && (
                               <p className="text-sm text-gray-400 ml-8 mt-1 italic">« {req.reason} »</p>
+                            )}
+                            {req.status === 'rejected' && req.rejectionReason && (
+                              <p className="text-xs text-red-500 ml-8 mt-1 flex items-start gap-1">
+                                <span className="font-medium shrink-0">Motif du refus :</span>
+                                <span>{req.rejectionReason}</span>
+                              </p>
                             )}
                           </div>
                           {req.status === 'pending' && (

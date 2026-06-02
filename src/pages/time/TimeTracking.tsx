@@ -542,7 +542,14 @@ export default function TimeTracking() {
                           </td>
                           <td className="py-3 pr-4 text-gray-500 max-w-xs truncate">{entry.description ?? '—'}</td>
                           <td className="py-3 pr-4">
-                            <span className={`badge-${entry.status}`}>{statusLabels[entry.status]}</span>
+                            <div>
+                              <span className={`badge-${entry.status}`}>{statusLabels[entry.status]}</span>
+                              {entry.status === 'rejected' && entry.rejectionReason && (
+                                <p className="text-xs text-red-500 mt-1 max-w-[160px]" title={entry.rejectionReason}>
+                                  {entry.rejectionReason}
+                                </p>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -786,7 +793,14 @@ export default function TimeTracking() {
                               {entry.description ?? '—'}
                             </td>
                             <td className="py-3 pr-4">
-                              <span className={`badge-${entry.status}`}>{statusLabels[entry.status]}</span>
+                              <div>
+                                <span className={`badge-${entry.status}`}>{statusLabels[entry.status]}</span>
+                                {entry.status === 'rejected' && entry.rejectionReason && (
+                                  <p className="text-xs text-red-500 mt-1 max-w-[160px]" title={entry.rejectionReason}>
+                                    {entry.rejectionReason}
+                                  </p>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 text-right">
                               {isPending && (

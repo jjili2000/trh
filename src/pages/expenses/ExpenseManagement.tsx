@@ -566,6 +566,12 @@ function ExpenseDetailModal({
                   <dd className="text-gray-800">{validatedByUser.firstName} {validatedByUser.lastName}{expense.validatedAt && <span className="text-gray-400 ml-1">· {formatDate(expense.validatedAt.slice(0, 10))}</span>}</dd>
                 </div>
               )}
+              {expense.status === 'rejected' && expense.rejectionReason && (
+                <div className="flex gap-2">
+                  <dt className="w-28 text-gray-400 flex-shrink-0">Motif du refus</dt>
+                  <dd className="text-red-600 font-medium">{expense.rejectionReason}</dd>
+                </div>
+              )}
             </dl>
 
             {/* Justificatif */}
@@ -889,6 +895,11 @@ export default function ExpenseManagement() {
                           <span className="truncate text-gray-500">{expense.reason}</span>
                         </div>
                         <p className="text-xs text-gray-400 mt-0.5">{formatDate(expense.date)}</p>
+                        {expense.status === 'rejected' && expense.rejectionReason && (
+                          <p className="text-xs text-red-500 mt-1">
+                            <span className="font-medium">Motif :</span> {expense.rejectionReason}
+                          </p>
+                        )}
                       </div>
                       <div className="flex-shrink-0 flex items-center gap-1.5 text-gray-300 group-hover:text-gray-400 transition-colors">
                         {expense.status !== 'approved'
@@ -971,12 +982,19 @@ export default function ExpenseManagement() {
                               <div className="truncate text-gray-500">{expense.reason}</div>
                             </td>
                             <td className="py-3 pr-4">
-                              <div className="flex items-center gap-2">
-                                <span className={`badge-${expense.status}`}>{statusLabels[expense.status]}</span>
-                                {expense.receiptFilePath && (
-                                  <span className="text-gray-300">
-                                    {expense.receiptFileType === 'application/pdf' ? <FileText size={12} /> : <Image size={12} />}
-                                  </span>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`badge-${expense.status}`}>{statusLabels[expense.status]}</span>
+                                  {expense.receiptFilePath && (
+                                    <span className="text-gray-300">
+                                      {expense.receiptFileType === 'application/pdf' ? <FileText size={12} /> : <Image size={12} />}
+                                    </span>
+                                  )}
+                                </div>
+                                {expense.status === 'rejected' && expense.rejectionReason && (
+                                  <p className="text-xs text-red-500 mt-1 max-w-[160px]" title={expense.rejectionReason}>
+                                    {expense.rejectionReason}
+                                  </p>
                                 )}
                               </div>
                             </td>
