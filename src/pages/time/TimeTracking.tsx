@@ -999,6 +999,10 @@ function CalendarEntryModal({
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const allIncluded = rows.length > 0 && rows.every(r => r.included);
+  const someIncluded = rows.some(r => r.included);
+  const toggleAll = () => setRows(prev => prev.map(r => ({ ...r, included: !allIncluded })));
+
   // Ref pour capturer la valeur courante d'activityTypes au moment où la Promise se résout
   const activityTypesRef = useRef(activityTypes);
   useEffect(() => { activityTypesRef.current = activityTypes; });
@@ -1097,7 +1101,15 @@ function CalendarEntryModal({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100">
-                    <th className="py-2 pr-3 w-8" />
+                    <th className="py-2 pr-3 w-8">
+                      <input
+                        type="checkbox"
+                        checked={allIncluded}
+                        ref={el => { if (el) el.indeterminate = someIncluded && !allIncluded; }}
+                        onChange={toggleAll}
+                        className="rounded border-gray-300 text-tennis-green"
+                      />
+                    </th>
                     <th className="text-left py-2 pr-4 text-gray-500 font-medium">Jour</th>
                     <th className="text-left py-2 pr-4 text-gray-500 font-medium">Cours</th>
                     <th className="text-left py-2 pr-4 text-gray-500 font-medium w-24">Heures</th>
