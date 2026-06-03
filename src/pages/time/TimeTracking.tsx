@@ -197,6 +197,64 @@ export default function TimeTracking() {
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
+  // ── My entries filters ───────────────────────────────────────────────────────
+  const MY_FILTERS_KEY = `trh_my_time_filters_${currentUser?.id ?? 'anon'}`;
+
+  const loadMyFilters = (): SavedFilter[] => {
+    try {
+      const raw = localStorage.getItem(MY_FILTERS_KEY);
+      if (!raw) return [];
+      return JSON.parse(raw) as SavedFilter[];
+    } catch { return []; }
+  };
+
+  const [myFilterStatus,     setMyFilterStatus]     = useState('');
+  const [myFilterActivityId, setMyFilterActivityId] = useState('');
+  const [myFilterDateFrom,   setMyFilterDateFrom]   = useState('');
+  const [myFilterDateTo,     setMyFilterDateTo]     = useState('');
+  const [mySavedFilters,     setMySavedFilters]     = useState<SavedFilter[]>(() => loadMyFilters());
+  const [mySelectedFilterName, setMySelectedFilterName] = useState('');
+  const [myShowSaveInput,    setMyShowSaveInput]    = useState(false);
+  const [mySaveFilterName,   setMySaveFilterName]   = useState('');
+  const [myFilterSaved,      setMyFilterSaved]      = useState(false);
+
+  const saveMyFilter = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const newFilter: SavedFilter = { name: trimmed, filterStatus: myFilterStatus, filterUserId: '', filterActivityId: myFilterActivityId, filterDateFrom: myFilterDateFrom, filterDateTo: myFilterDateTo };
+    const updated = [...mySavedFilters.filter(f => f.name !== trimmed), newFilter];
+    localStorage.setItem(MY_FILTERS_KEY, JSON.stringify(updated));
+    setMySavedFilters(updated);
+    setMySelectedFilterName(trimmed);
+    setMyShowSaveInput(false);
+    setMySaveFilterName('');
+    setMyFilterSaved(true);
+    setTimeout(() => setMyFilterSaved(false), 1500);
+  };
+
+  const applyMyNamedFilter = (name: string) => {
+    const f = mySavedFilters.find(sf => sf.name === name);
+    if (!f) return;
+    setMyFilterStatus(f.filterStatus ?? '');
+    setMyFilterActivityId(f.filterActivityId ?? '');
+    setMyFilterDateFrom(f.filterDateFrom ?? '');
+    setMyFilterDateTo(f.filterDateTo ?? '');
+    setMySelectedFilterName(name);
+  };
+
+  const deleteMyFilter = (name: string) => {
+    const updated = mySavedFilters.filter(f => f.name !== name);
+    localStorage.setItem(MY_FILTERS_KEY, JSON.stringify(updated));
+    setMySavedFilters(updated);
+    if (mySelectedFilterName === name) setMySelectedFilterName('');
+  };
+
+  const resetMyFilter = () => {
+    setMyFilterStatus(''); setMyFilterActivityId('');
+    setMyFilterDateFrom(''); setMyFilterDateTo('');
+    setMySelectedFilterName('');
+  };
+
   // ── Selection ────────────────────────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -223,9 +281,18 @@ export default function TimeTracking() {
   const isManagerOrAdmin = isAdmin || subordinateIds.length > 0;
 
   // ── My entries ───────────────────────────────────────────────────────────────
-  const myEntries = timeEntries
+  const allMyEntries = timeEntries
     .filter(e => e.userId === currentUser?.id)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const myEntries = useMemo(() => {
+    let list = [...allMyEntries];
+    if (myFilterStatus)     list = list.filter(e => e.status === myFilterStatus);
+    if (myFilterActivityId) list = list.filter(e => e.activityTypeId === myFilterActivityId);
+    if (myFilterDateFrom)   list = list.filter(e => e.date >= myFilterDateFrom);
+    if (myFilterDateTo)     list = list.filter(e => e.date <= myFilterDateTo);
+    return list;
+  }, [allMyEntries, myFilterStatus, myFilterActivityId, myFilterDateFrom, myFilterDateTo]);
 
   const teamEntries = timeEntries.filter(e => subordinateIds.includes(e.userId));
   const pendingTeamEntries = teamEntries.filter(e => e.status === 'pending');
@@ -350,7 +417,7 @@ export default function TimeTracking() {
       const newEnd   = timeToMins(form.endTime);
       if (newEnd <= newStart) { setFormError("L'heure de fin doit être postérieure à l'heure de début."); return; }
 
-      const conflicts = myEntries.filter(e => {
+      const conflicts = allMyEntries.filter(e => {
         if (e.id === editingEntry?.id) return false;   // on exclut l'entrée en cours de modif
         if (e.date !== form.date) return false;
         if (!e.startTime || !e.endTime) return false;  // pas de créneau → pas de contrôle
@@ -390,7 +457,7 @@ export default function TimeTracking() {
   const getUser = (userId: string) => users.find(u => u.id === userId);
   const getActivityType = (atId: string) => activityTypes.find(a => a.id === atId);
 
-  const totalHoursThisMonth = myEntries
+  const totalHoursThisMonth = allMyEntries
     .filter(e => { const d = new Date(e.date); const now = new Date(); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })
     .reduce((sum, e) => sum + e.hours, 0);
 
@@ -440,11 +507,11 @@ export default function TimeTracking() {
           <p className="text-sm text-gray-500 mt-1">Ce mois-ci</p>
         </div>
         <div className="card text-center">
-          <p className="text-3xl font-bold text-yellow-500">{myEntries.filter(e => e.status === 'pending').length}</p>
+          <p className="text-3xl font-bold text-yellow-500">{allMyEntries.filter(e => e.status === 'pending').length}</p>
           <p className="text-sm text-gray-500 mt-1">En attente</p>
         </div>
         <div className="card text-center">
-          <p className="text-3xl font-bold text-green-500">{myEntries.filter(e => e.status === 'approved').length}</p>
+          <p className="text-3xl font-bold text-green-500">{allMyEntries.filter(e => e.status === 'approved').length}</p>
           <p className="text-sm text-gray-500 mt-1">Approuvées</p>
         </div>
       </div>
@@ -474,6 +541,106 @@ export default function TimeTracking() {
 
         {expandedSection === 'mine' && (
           <div className="mt-4">
+
+            {/* Filter bar — Mes saisies */}
+            <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Statut</label>
+                  <select className="input text-sm py-1.5" value={myFilterStatus} onChange={e => setMyFilterStatus(e.target.value)}>
+                    <option value="">Tous</option>
+                    <option value="pending">En attente</option>
+                    <option value="approved">Approuvé</option>
+                    <option value="rejected">Rejeté</option>
+                    <option value="paid">Payé</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Type d'activité</label>
+                  <select className="input text-sm py-1.5" value={myFilterActivityId} onChange={e => setMyFilterActivityId(e.target.value)}>
+                    <option value="">Tous</option>
+                    {activityTypes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Du</label>
+                  <input type="date" className="input text-sm py-1.5" value={myFilterDateFrom} onChange={e => setMyFilterDateFrom(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Au</label>
+                  <input type="date" className="input text-sm py-1.5" value={myFilterDateTo} onChange={e => setMyFilterDateTo(e.target.value)} />
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <span className="text-xs text-gray-400">
+                  <Filter size={12} className="inline mr-1" />
+                  {myEntries.length} résultat(s)
+                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button onClick={resetMyFilter} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                    Réinitialiser
+                  </button>
+                  {mySavedFilters.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={mySelectedFilterName}
+                        onChange={e => applyMyNamedFilter(e.target.value)}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white focus:outline-none focus:border-tennis-green max-w-[180px]"
+                      >
+                        <option value="">— Filtres enregistrés —</option>
+                        {mySavedFilters.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                      </select>
+                      {mySelectedFilterName && (
+                        <button
+                          onClick={() => deleteMyFilter(mySelectedFilterName)}
+                          className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                          title={`Supprimer le filtre "${mySelectedFilterName}"`}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {myShowSaveInput ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={mySaveFilterName}
+                        onChange={e => setMySaveFilterName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveMyFilter(mySaveFilterName); if (e.key === 'Escape') { setMyShowSaveInput(false); setMySaveFilterName(''); } }}
+                        placeholder="Nom du filtre…"
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-tennis-green w-36"
+                      />
+                      <button
+                        onClick={() => saveMyFilter(mySaveFilterName)}
+                        disabled={!mySaveFilterName.trim()}
+                        className="text-xs px-2 py-1.5 rounded-lg bg-tennis-green text-white disabled:opacity-40 hover:bg-tennis-green/90 transition-colors"
+                      >
+                        OK
+                      </button>
+                      <button onClick={() => { setMyShowSaveInput(false); setMySaveFilterName(''); }} className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setMyShowSaveInput(true)}
+                      className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                        myFilterSaved
+                          ? 'bg-tennis-green/10 border-tennis-green/30 text-tennis-green'
+                          : 'border-gray-200 text-gray-500 hover:border-tennis-green hover:text-tennis-green'
+                      }`}
+                      title="Mémoriser ce filtre"
+                    >
+                      <Bookmark size={12} fill={myFilterSaved ? 'currentColor' : 'none'} />
+                      {myFilterSaved ? 'Enregistré !' : 'Enregistrer ce filtre'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Barre d'erreur delete */}
             {deleteError && (
               <div className="mb-3 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm flex items-start gap-2">
