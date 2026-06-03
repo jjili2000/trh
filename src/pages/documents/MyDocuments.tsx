@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import JSZip from 'jszip';
 import {
   FileText, Download, Search, ChevronDown, Calendar, Tag,
   Eye, X, ExternalLink, Loader2, CheckSquare, Square, Package,
@@ -56,19 +57,35 @@ async function downloadSingle(docId: string, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-async function downloadZip(ids: string[]) {
-  const token = getToken();
-  const res = await fetch('/api/documents/download-zip', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ ids }),
-  });
-  if (!res.ok) throw new Error('Erreur lors du téléchargement');
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
+async function downloadZip(docs: HRDocument[]) {
+  const zip = new JSZip();
+  const usedNames = new Map<string, number>();
+
+  await Promise.all(docs.map(async doc => {
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/documents/${doc.id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+
+      // Dédoublonnage des noms dans l'archive
+      let name = doc.fileName;
+      if (usedNames.has(name)) {
+        const count = (usedNames.get(name) ?? 0) + 1;
+        usedNames.set(name, count);
+        const ext = name.lastIndexOf('.') !== -1 ? name.slice(name.lastIndexOf('.')) : '';
+        name = `${name.slice(0, name.lastIndexOf('.') !== -1 ? name.lastIndexOf('.') : name.length)} (${count})${ext}`;
+      } else {
+        usedNames.set(name, 1);
+      }
+      zip.file(name, blob);
+    } catch { /* fichier ignoré */ }
+  }));
+
+  const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  const url = URL.createObjectURL(zipBlob);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'documents.zip';
@@ -268,7 +285,8 @@ export default function MyDocuments() {
     setZipping(true);
     setDownloadError('');
     try {
-      await downloadZip(Array.from(selected));
+      const docsToZip = myDocs.filter(d => selected.has(d.id));
+      await downloadZip(docsToZip);
       setSelected(new Set());
     } catch (err: unknown) {
       setDownloadError(err instanceof Error ? err.message : 'Erreur lors du téléchargement');
