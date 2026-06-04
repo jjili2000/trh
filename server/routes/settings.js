@@ -8,6 +8,7 @@ function mapSettings(row) {
     clubName: row.club_name,
     calendarStartHour: row.calendar_start_hour ?? 8,
     calendarEndHour:   row.calendar_end_hour   ?? 21,
+    appUrl: row.app_url || null,
   };
 }
 
@@ -29,20 +30,22 @@ router.put('/', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const { clubName, calendarStartHour, calendarEndHour } = req.body;
+    const { clubName, calendarStartHour, calendarEndHour, appUrl } = req.body;
     if (!clubName) {
       return res.status(400).json({ error: 'Nom du club requis' });
     }
     const startH = (calendarStartHour !== undefined) ? Number(calendarStartHour) : null;
     const endH   = (calendarEndHour   !== undefined) ? Number(calendarEndHour)   : null;
+    const url    = appUrl !== undefined ? (appUrl || null) : null;
     await pool.execute(
-      `INSERT INTO app_settings (id, club_name, calendar_start_hour, calendar_end_hour)
-       VALUES (1, ?, COALESCE(?, 8), COALESCE(?, 21))
+      `INSERT INTO app_settings (id, club_name, calendar_start_hour, calendar_end_hour, app_url)
+       VALUES (1, ?, COALESCE(?, 8), COALESCE(?, 21), ?)
        ON DUPLICATE KEY UPDATE
          club_name = VALUES(club_name),
          calendar_start_hour = COALESCE(?, calendar_start_hour),
-         calendar_end_hour   = COALESCE(?, calendar_end_hour)`,
-      [clubName, startH, endH, startH, endH]
+         calendar_end_hour   = COALESCE(?, calendar_end_hour),
+         app_url = COALESCE(VALUES(app_url), app_url)`,
+      [clubName, startH, endH, url, startH, endH]
     );
     const [rows] = await pool.execute('SELECT * FROM app_settings WHERE id = 1');
     res.json(mapSettings(rows[0]));

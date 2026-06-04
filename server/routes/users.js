@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const pool = require('../db');
+const { sendWelcomeEmail } = require('../services/email');
 
 const router = express.Router();
 
@@ -131,6 +132,20 @@ router.post('/', async (req, res) => {
 
     const [rows] = await pool.execute('SELECT * FROM users WHERE id = ?', [id]);
     res.status(201).json(mapUser(rows[0], modules));
+
+    // Envoi du mail de bienvenue (non bloquant)
+    try {
+      const [[settings]] = await pool.execute('SELECT club_name, app_url FROM app_settings WHERE id = 1');
+      await sendWelcomeEmail({
+        toEmail: email,
+        toName: firstName,
+        password,
+        clubName: settings?.club_name,
+        appUrl: settings?.app_url || process.env.APP_URL || null,
+      });
+    } catch (emailErr) {
+      console.error('Welcome email error:', emailErr.message);
+    }
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ error: 'Email déjà utilisé' });

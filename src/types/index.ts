@@ -103,6 +103,7 @@ export interface AppSettings {
   clubLogo?: string;
   calendarStartHour?: number;
   calendarEndHour?: number;
+  appUrl?: string;
 }
 
 // ─── Seasons ──────────────────────────────────────────────────────────────────
