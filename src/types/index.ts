@@ -12,6 +12,7 @@ export interface User {
   departmentId?: string | null;
   moduleAccess?: string[];
   blocked?: boolean;
+  lastLoginAt?: string | null;
   createdAt: string;
 }
 

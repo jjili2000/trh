@@ -315,6 +315,9 @@ export default function UserManagement() {
                 <th className="text-left px-6 py-3 font-semibold text-gray-600">Type d'utilisateur</th>
                 <th className="text-left px-6 py-3 font-semibold text-gray-600">Responsable</th>
                 {currentUser?.role === 'admin' && (
+                  <th className="text-left px-6 py-3 font-semibold text-gray-600">Dernière connexion</th>
+                )}
+                {currentUser?.role === 'admin' && (
                   <th className="text-right px-6 py-3 font-semibold text-gray-600">Actions</th>
                 )}
               </tr>
@@ -359,6 +362,17 @@ export default function UserManagement() {
                     <td className="px-6 py-4 text-gray-600">
                       {manager ? `${manager.firstName} ${manager.lastName}` : '—'}
                     </td>
+                    {currentUser?.role === 'admin' && (
+                      <td className="px-6 py-4 text-gray-500 whitespace-nowrap text-sm">
+                        {user.lastLoginAt
+                          ? new Date(user.lastLoginAt).toLocaleString('fr-FR', {
+                              day: '2-digit', month: '2-digit', year: 'numeric',
+                              hour: '2-digit', minute: '2-digit',
+                            })
+                          : <span className="text-gray-300 text-xs">Jamais connecté</span>
+                        }
+                      </td>
+                    )}
                     {currentUser?.role === 'admin' && (
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">

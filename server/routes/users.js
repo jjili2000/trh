@@ -52,6 +52,9 @@ function mapUser(row, modules) {
     createdAt: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
+    lastLoginAt: row.last_login_at instanceof Date
+      ? row.last_login_at.toISOString()
+      : row.last_login_at || null,
   };
 }
 

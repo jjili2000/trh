@@ -73,6 +73,9 @@ router.post('/login', async (req, res) => {
       expiresIn: '24h',
     });
 
+    // Enregistrement de la date/heure de dernière connexion
+    await pool.execute('UPDATE users SET last_login_at = NOW() WHERE id = ?', [dbUser.id]);
+
     const modules = await getUserModules(dbUser.id, dbUser.role);
     res.json({ token, user: mapUser(dbUser, modules) });
   } catch (err) {
