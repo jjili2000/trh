@@ -15,7 +15,9 @@ import {
   Sparkles,
   AlertCircle,
   ExternalLink,
+  Package,
 } from 'lucide-react';
+import JSZip from 'jszip';
 import { useApp } from '../../context/AppContext';
 import { HRDocument } from '../../types';
 import { getToken } from '../../api/client';
@@ -444,6 +446,12 @@ export default function DocumentManagement() {
   const [filterUser, setFilterUser] = useState('');
   const [downloading, setDownloading] = useState<string | null>(null);
 
+  // ── Sélection multiple ───────────────────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [zipping, setZipping] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   // État de la modale d'analyse
   const [analysis, setAnalysis] = useState<{
     fileName: string;
@@ -514,6 +522,69 @@ export default function DocumentManagement() {
   const handleDelete = async (id: string) => {
     if (!confirm('Supprimer ce document ?')) return;
     await deleteDocument(id);
+    setSelected(prev => { const s = new Set(prev); s.delete(id); return s; });
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const s = new Set(prev);
+      s.has(id) ? s.delete(id) : s.add(id);
+      return s;
+    });
+  };
+
+  const handleBulkDownload = async () => {
+    if (selected.size === 0) return;
+    setZipping(true);
+    try {
+      const zip = new JSZip();
+      const usedNames = new Map<string, number>();
+      const allDocs = [...pending, ...validated];
+      const docsToZip = allDocs.filter(d => selected.has(d.id));
+
+      await Promise.all(docsToZip.map(async doc => {
+        try {
+          const token = getToken();
+          const res = await fetch(`/api/documents/${doc.id}/download`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) return;
+          const blob = await res.blob();
+          let name = doc.fileName;
+          if (usedNames.has(name)) {
+            const count = (usedNames.get(name) ?? 0) + 1;
+            usedNames.set(name, count);
+            const dot = name.lastIndexOf('.');
+            const ext = dot !== -1 ? name.slice(dot) : '';
+            name = `${name.slice(0, dot !== -1 ? dot : name.length)} (${count})${ext}`;
+          } else {
+            usedNames.set(name, 1);
+          }
+          zip.file(name, blob);
+        } catch { /* fichier ignoré */ }
+      }));
+
+      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'documents.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setZipping(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true);
+    try {
+      await Promise.all(Array.from(selected).map(id => deleteDocument(id)));
+      setSelected(new Set());
+    } finally {
+      setBulkDeleting(false);
+      setConfirmDeleteOpen(false);
+    }
   };
 
   const handleDownload = async (doc: HRDocument) => {
@@ -549,6 +620,7 @@ export default function DocumentManagement() {
 
   const modalDoc = validationQueue[0] ?? editingDoc ?? null;
 
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
       {/* Header */}
@@ -566,6 +638,36 @@ export default function DocumentManagement() {
         <UploadZone onFilesSelected={handleFilesSelected} uploading={false} />
       </div>
 
+      {/* Barre d'actions groupées */}
+      {selected.size > 0 && (
+        <div className="mb-4 flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+          <span className="text-sm text-blue-800 font-medium flex-1">
+            {selected.size} document{selected.size > 1 ? 's' : ''} sélectionné{selected.size > 1 ? 's' : ''}
+          </span>
+          <button
+            onClick={handleBulkDownload}
+            disabled={zipping}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-tennis-green text-white text-sm rounded-lg hover:bg-tennis-green/90 disabled:opacity-60 transition-colors"
+          >
+            {zipping ? <Loader2 size={14} className="animate-spin" /> : <Package size={14} />}
+            {zipping ? 'Préparation…' : 'Télécharger en ZIP'}
+          </button>
+          <button
+            onClick={() => setConfirmDeleteOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors"
+          >
+            <Trash2 size={14} />
+            Supprimer
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            Annuler
+          </button>
+        </div>
+      )}
+
       {/* Pending validation */}
       {pending.length > 0 && (
         <div className="card mb-6">
@@ -580,8 +682,16 @@ export default function DocumentManagement() {
             {pending.map(doc => (
               <div
                 key={doc.id}
-                className="flex items-center gap-4 p-4 bg-amber-50 border border-amber-100 rounded-xl"
+                className={`flex items-center gap-4 p-4 border rounded-xl transition-colors ${
+                  selected.has(doc.id) ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-100'
+                }`}
               >
+                <input
+                  type="checkbox"
+                  checked={selected.has(doc.id)}
+                  onChange={() => toggleSelect(doc.id)}
+                  className="rounded border-gray-300 text-tennis-green flex-shrink-0"
+                />
                 <FileText size={20} className="text-amber-500 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-800 truncate">{doc.fileName}</p>
@@ -699,6 +809,22 @@ export default function DocumentManagement() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
+                  <th className="py-2 pr-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={validated.length > 0 && validated.every(d => selected.has(d.id))}
+                      ref={el => { if (el) el.indeterminate = validated.some(d => selected.has(d.id)) && !validated.every(d => selected.has(d.id)); }}
+                      onChange={() => {
+                        const allVal = validated.every(d => selected.has(d.id));
+                        setSelected(prev => {
+                          const s = new Set(prev);
+                          validated.forEach(d => allVal ? s.delete(d.id) : s.add(d.id));
+                          return s;
+                        });
+                      }}
+                      className="rounded border-gray-300 text-tennis-green"
+                    />
+                  </th>
                   <th className="text-left py-2 pr-4 font-medium text-gray-500">Fichier</th>
                   <th className="text-left py-2 pr-4 font-medium text-gray-500">Type</th>
                   <th className="text-left py-2 pr-4 font-medium text-gray-500">Employé</th>
@@ -709,7 +835,15 @@ export default function DocumentManagement() {
               </thead>
               <tbody>
                 {validated.map(doc => (
-                  <tr key={doc.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                  <tr key={doc.id} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50 ${selected.has(doc.id) ? 'bg-blue-50/50' : ''}`}>
+                    <td className="py-3 pr-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(doc.id)}
+                        onChange={() => toggleSelect(doc.id)}
+                        className="rounded border-gray-300 text-tennis-green"
+                      />
+                    </td>
                     <td className="py-3 pr-4">
                       <div className="flex items-center gap-2">
                         <FileText size={16} className="text-gray-400 flex-shrink-0" />
@@ -776,6 +910,42 @@ export default function DocumentManagement() {
           </div>
         )}
       </div>
+
+      {/* Modale de confirmation suppression groupée */}
+      {confirmDeleteOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 size={20} className="text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Supprimer {selected.size} document{selected.size > 1 ? 's' : ''} ?</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Cette action est irréversible. Les fichiers seront définitivement supprimés et ne seront plus accessibles aux employés concernés.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmDeleteOpen(false)}
+                disabled={bulkDeleting}
+                className="btn-secondary"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-xl hover:bg-red-600 disabled:opacity-60 transition-colors"
+              >
+                {bulkDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {bulkDeleting ? 'Suppression…' : 'Supprimer définitivement'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modale d'analyse en cours */}
       {analysis && (
