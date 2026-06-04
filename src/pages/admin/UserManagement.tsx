@@ -392,8 +392,8 @@ export default function UserManagement() {
                               {user.blocked ? <CheckCircle size={15} /> : <Ban size={15} />}
                             </button>
                           )}
-                          {/* Delete */}
-                          {user.id !== currentUser?.id && (
+                          {/* Delete — interdit sur les comptes admin */}
+                          {user.id !== currentUser?.id && user.role !== 'admin' && (
                             <button
                               onClick={() => setDeleteConfirm(user.id)}
                               className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"

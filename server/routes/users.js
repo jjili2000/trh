@@ -286,6 +286,10 @@ router.delete('/:id', async (req, res) => {
     if (id === req.user.id) {
       return res.status(400).json({ error: 'Impossible de supprimer votre propre compte' });
     }
+    const [[target]] = await pool.execute('SELECT role FROM users WHERE id = ?', [id]);
+    if (target?.role === 'admin') {
+      return res.status(403).json({ error: 'Impossible de supprimer un compte administrateur' });
+    }
     const [result] = await pool.execute('DELETE FROM users WHERE id = ?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Utilisateur non trouvé' });
     res.json({ success: true });
