@@ -118,12 +118,18 @@ router.post('/', async (req, res) => {
     if (!firstName || !lastName || !email || !password || !role) {
       return res.status(400).json({ error: 'Champs requis manquants' });
     }
+    const normalizedEmail = email.trim().toLowerCase();
+    // Vérification explicite avant insert (message plus précis que ER_DUP_ENTRY)
+    const [[existing]] = await pool.execute('SELECT id FROM users WHERE LOWER(email) = ?', [normalizedEmail]);
+    if (existing) {
+      return res.status(409).json({ error: 'Cette adresse e-mail est déjà utilisée.' });
+    }
     const id = crypto.randomUUID();
     const hash = await bcrypt.hash(password, 10);
     await pool.execute(
       `INSERT INTO users (id, first_name, last_name, email, password, role, manager_id, position, department_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, firstName, lastName, email, hash, role || 'user', managerId || null, position || null, departmentId || null]
+      [id, firstName, lastName, normalizedEmail, hash, role || 'user', managerId || null, position || null, departmentId || null]
     );
 
     // Set module access (default if not provided)
@@ -169,7 +175,17 @@ router.put('/:id', async (req, res) => {
 
     if (firstName    !== undefined) { updates.push('first_name = ?');    values.push(firstName); }
     if (lastName     !== undefined) { updates.push('last_name = ?');     values.push(lastName); }
-    if (email        !== undefined) { updates.push('email = ?');         values.push(email); }
+    if (email        !== undefined) {
+      const normalizedEmail = email.trim().toLowerCase();
+      // Vérifier unicité (exclure l'utilisateur lui-même)
+      const [[dup]] = await pool.execute(
+        'SELECT id FROM users WHERE LOWER(email) = ? AND id != ?',
+        [normalizedEmail, id]
+      );
+      if (dup) return res.status(409).json({ error: 'Cette adresse e-mail est déjà utilisée.' });
+      updates.push('email = ?');
+      values.push(normalizedEmail);
+    }
     if (role         !== undefined) { updates.push('role = ?');          values.push(role); }
     if (managerId    !== undefined) { updates.push('manager_id = ?');    values.push(managerId || null); }
     if (position     !== undefined) { updates.push('position = ?');      values.push(position || null); }

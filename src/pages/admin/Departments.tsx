@@ -117,7 +117,8 @@ export default function Departments() {
       setNewUserError('Le mot de passe doit contenir au moins 6 caractères.');
       return;
     }
-    const emailExists = users.some(u => u.email === newUserForm.email.trim());
+    const emailNorm = newUserForm.email.trim().toLowerCase();
+    const emailExists = users.some(u => u.email.toLowerCase() === emailNorm);
     if (emailExists) {
       setNewUserError('Cet email est déjà utilisé.');
       return;
@@ -135,14 +136,14 @@ export default function Departments() {
       });
       // Fetch fresh list to get the new user's id (addUser doesn't return it)
       const freshUsers = await api.get<User[]>('/users');
-      const newUser = freshUsers.find(u => u.email === newUserForm.email.trim());
+      const newUser = freshUsers.find(u => u.email.toLowerCase() === emailNorm);
       if (newUser) {
         setForm(f => ({ ...f, directorId: newUser.id }));
       }
       setShowNewUser(false);
       setNewUserForm(emptyUserForm);
-    } catch {
-      setNewUserError("Erreur lors de la création de l'utilisateur.");
+    } catch (err: unknown) {
+      setNewUserError(err instanceof Error ? err.message : "Erreur lors de la création de l'utilisateur.");
     } finally {
       setCreatingUser(false);
     }

@@ -134,7 +134,9 @@ export default function UserManagement() {
     }));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const [formSaving, setFormSaving] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setFormError('');
 
@@ -148,40 +150,47 @@ export default function UserManagement() {
       return;
     }
 
-    const emailExists = users.some(u => u.email === form.email && u.id !== editingUser?.id);
+    const emailNorm = form.email.trim().toLowerCase();
+    const emailExists = users.some(u => u.email.toLowerCase() === emailNorm && u.id !== editingUser?.id);
     if (emailExists) {
       setFormError('Cet email est déjà utilisé.');
       return;
     }
 
-    if (editingUser) {
-      const payload: Partial<UserType> = {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        role: form.role,
-        managerId: form.managerId || undefined,
-        position: form.position || undefined,
-        departmentId: form.departmentId || null,
-        moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
-      };
-      updateUser(editingUser.id, payload);
-    } else {
-      const payload: Omit<UserType, 'id' | 'createdAt'> = {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
-        password: createPassword,
-        role: form.role,
-        managerId: form.managerId || undefined,
-        position: form.position || undefined,
-        departmentId: form.departmentId || null,
-        moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
-      };
-      addUser(payload);
+    setFormSaving(true);
+    try {
+      if (editingUser) {
+        const payload: Partial<UserType> = {
+          firstName: form.firstName,
+          lastName: form.lastName,
+          email: form.email.trim(),
+          role: form.role,
+          managerId: form.managerId || undefined,
+          position: form.position || undefined,
+          departmentId: form.departmentId || null,
+          moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
+        };
+        await updateUser(editingUser.id, payload);
+      } else {
+        const payload: Omit<UserType, 'id' | 'createdAt'> = {
+          firstName: form.firstName,
+          lastName: form.lastName,
+          email: form.email.trim(),
+          password: createPassword,
+          role: form.role,
+          managerId: form.managerId || undefined,
+          position: form.position || undefined,
+          departmentId: form.departmentId || null,
+          moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
+        };
+        await addUser(payload);
+      }
+      setShowModal(false);
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde.');
+    } finally {
+      setFormSaving(false);
     }
-
-    setShowModal(false);
   };
 
   const openResetPassword = (user: UserType) => {
@@ -545,11 +554,11 @@ export default function UserManagement() {
             )}
 
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">
+              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary" disabled={formSaving}>
                 Annuler
               </button>
-              <button type="submit" className="btn-primary">
-                {editingUser ? 'Enregistrer' : 'Ajouter'}
+              <button type="submit" className="btn-primary" disabled={formSaving}>
+                {formSaving ? 'Enregistrement…' : editingUser ? 'Enregistrer' : 'Ajouter'}
               </button>
             </div>
           </form>
