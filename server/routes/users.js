@@ -141,14 +141,25 @@ router.post('/', async (req, res) => {
 
     // Envoi du mail de bienvenue (non bloquant)
     try {
-      const [[settings]] = await pool.execute('SELECT club_name, app_url FROM app_settings WHERE id = 1');
+      // Requête résiliente : app_url peut ne pas exister si la migration n'a pas été jouée
+      let clubName, appUrl;
+      try {
+        const [[settings]] = await pool.execute('SELECT club_name, app_url FROM app_settings WHERE id = 1');
+        clubName = settings?.club_name;
+        appUrl   = settings?.app_url || process.env.APP_URL || null;
+      } catch {
+        const [[settings]] = await pool.execute('SELECT club_name FROM app_settings WHERE id = 1');
+        clubName = settings?.club_name;
+        appUrl   = process.env.APP_URL || null;
+      }
       await sendWelcomeEmail({
-        toEmail: email,
+        toEmail: normalizedEmail,
         toName: firstName,
         password,
-        clubName: settings?.club_name,
-        appUrl: settings?.app_url || process.env.APP_URL || null,
+        clubName,
+        appUrl,
       });
+      console.log(`Welcome email sent to ${normalizedEmail}`);
     } catch (emailErr) {
       console.error('Welcome email error:', emailErr.message);
     }

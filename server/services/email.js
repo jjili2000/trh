@@ -117,7 +117,7 @@ async function sendNotificationEmail({ toEmail, toName, title, body, clubName })
 
 async function sendWelcomeEmail({ toEmail, toName, password, clubName, appUrl }) {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.log('Welcome email skipped: SMTP not configured');
+    console.warn('[email] Welcome email skipped: SMTP_USER or SMTP_PASS not set in environment');
     return;
   }
 
