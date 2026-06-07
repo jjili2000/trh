@@ -194,18 +194,23 @@ router.post('/', upload.single('receipt'), async (req, res) => {
       return res.status(400).json({ error: 'Date, montant et motif requis' });
     }
 
-    // Détection de doublon (même utilisateur, même date, même montant TTC, non rejetée)
+    // Détection de doublon (même utilisateur, même date, même montant TTC, même prestataire, non rejetée)
     if (!req.body.forceSubmit) {
+      const vendorVal = vendor ? vendor.trim().toLowerCase() : null;
       const [dupes] = await pool.execute(
-        `SELECT id, date, amount, vendor FROM expenses
-         WHERE user_id = ? AND date = ? AND amount = ? AND status != 'rejected'`,
-        [req.user.id, date, parseFloat(amount)]
+        `SELECT id FROM expenses
+         WHERE user_id = ? AND date = ? AND amount = ? AND status != 'rejected'
+           AND (
+             (? IS NULL AND (vendor IS NULL OR vendor = ''))
+             OR LOWER(TRIM(vendor)) = ?
+           )`,
+        [req.user.id, date, parseFloat(amount), vendorVal, vendorVal]
       );
       if (dupes.length > 0) {
         if (req.file) deleteReceiptFile(req.file.filename);
         return res.status(409).json({
           error: 'duplicate',
-          message: 'Une note de frais similaire existe déjà pour cette date et ce montant.',
+          message: 'Une note de frais identique (même date, montant et prestataire) existe déjà.',
         });
       }
     }
