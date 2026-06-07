@@ -185,7 +185,12 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/expenses — multipart/form-data
-router.post('/', upload.single('receipt'), async (req, res) => {
+router.post('/', (req, res, next) => {
+  console.log('[expenses POST] Received — content-type:', req.headers['content-type']);
+  console.log('[expenses POST] content-length:', req.headers['content-length']);
+  next();
+}, upload.single('receipt'), async (req, res) => {
+  console.log('[expenses POST] Multer OK — file:', req.file ? `${req.file.originalname} (${req.file.size} bytes)` : 'none');
   try {
     const { date, amount, reason, vendor, amountHt, vatDetails } = req.body;
     if (!date || amount === undefined || !reason) {
@@ -375,6 +380,19 @@ router.put('/:id/reject', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
+});
+
+// Gestionnaire d'erreur multer / route (4 params = error handler Express)
+router.use((err, req, res, next) => {
+  console.error('[expenses ERROR]', err.code, err.message);
+  if (req.file) deleteReceiptFile(req.file.filename);
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: 'Fichier trop volumineux (max 10 Mo)' });
+  }
+  if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return res.status(400).json({ error: 'Champ de fichier inattendu' });
+  }
+  res.status(500).json({ error: `Erreur serveur : ${err.message}` });
 });
 
 module.exports = router;
