@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import {
   Plus, Check, X, Receipt, ChevronDown, ChevronUp, FileText,
   Image, Upload, Camera, Loader2, Sparkles, Trash2, PlusCircle,
-  Clock, CalendarCheck, Edit2, Lock, ExternalLink, AlertCircle,
+  Clock, Edit2, Lock, ExternalLink, AlertCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Expense, VatLine } from '../../types';
@@ -50,7 +50,7 @@ interface MyStats {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const statusLabels = {
-  pending: 'En attente',
+  pending: 'Soumise — en attente d\'approbation',
   approved: 'Approuvé',
   rejected: 'Rejeté',
 };
@@ -900,35 +900,26 @@ export default function ExpenseManagement() {
 
       {/* Stats */}
       <div className={`grid grid-cols-1 gap-4 mb-6 ${isManagerOrAdmin ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
-        <div className="card text-center">
-          <p className="text-3xl font-bold text-yellow-500">{myExpenses.filter(e => e.status === 'pending').length}</p>
-          <p className="text-sm text-gray-500 mt-1">En attente</p>
+        <div className="card">
+          <p className="text-2xl font-bold text-yellow-500">{myExpenses.filter(e => e.status === 'pending').length}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Soumises — en attente d'approbation</p>
+          {myExpenses.filter(e => e.status === 'pending').length > 0 && (
+            <p className="text-xs text-yellow-500 font-medium mt-1">
+              {formatCurrency(myExpenses.filter(e => e.status === 'pending').reduce((s, e) => s + e.amount, 0))}
+            </p>
+          )}
         </div>
         <div className="card text-center">
-          <p className="text-3xl font-bold text-green-500">{myExpenses.filter(e => e.status === 'approved').length}</p>
-          <p className="text-sm text-gray-500 mt-1">Approuvées</p>
+          <p className="text-2xl font-bold text-green-500">{myExpenses.filter(e => e.status === 'approved').length}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Approuvées</p>
         </div>
-        <div className="card flex flex-col divide-y divide-gray-100">
-          <div className="flex items-center gap-3 pb-3">
-            <div className="w-8 h-8 rounded-lg bg-yellow-50 flex items-center justify-center flex-shrink-0">
-              <Clock size={16} className="text-yellow-500" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg font-bold text-yellow-500 leading-tight">{formatCurrency(myStats.pendingAmount)}</p>
-              <p className="text-xs text-gray-400">En attente de remboursement</p>
-            </div>
+        <div className="card flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-yellow-50 flex items-center justify-center flex-shrink-0">
+            <Clock size={16} className="text-yellow-500" />
           </div>
-          <div className="flex items-center gap-3 pt-3">
-            <div className="w-8 h-8 rounded-lg bg-tennis-green/10 flex items-center justify-center flex-shrink-0">
-              <CalendarCheck size={16} className="text-tennis-green" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg font-bold text-tennis-green leading-tight">{formatCurrency(myStats.nextPayrollAmount)}</p>
-              <p className="text-xs text-gray-400">
-                Prochaine paie
-                {myStats.nextPayrollLabel && <span className="ml-1 text-gray-300">· {myStats.nextPayrollLabel}</span>}
-              </p>
-            </div>
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-yellow-500 leading-tight">{formatCurrency(myStats.pendingAmount)}</p>
+            <p className="text-xs text-gray-400">Approuvées — remboursement à venir</p>
           </div>
         </div>
 
@@ -967,42 +958,30 @@ export default function ExpenseManagement() {
                 <p>Aucune note de frais. Cliquez sur "Nouvelle note" pour soumettre.</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="divide-y divide-gray-50">
                 {myExpenses.map(expense => (
                   <button
                     key={expense.id}
                     onClick={() => setDetailExpense(expense)}
-                    className="w-full text-left border border-gray-100 rounded-xl p-4 hover:bg-gray-50 hover:border-gray-200 transition-colors group"
+                    className="w-full text-left py-2.5 px-1 hover:bg-gray-50 transition-colors group flex items-center gap-3"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-base font-bold text-tennis-green">{formatCurrency(expense.amount)}</span>
-                          <span className={`badge-${expense.status}`}>{statusLabels[expense.status]}</span>
-                          {expense.receiptFilePath && (
-                            <span className="text-gray-300">
-                              {expense.receiptFileType === 'application/pdf' ? <FileText size={12} /> : <Image size={12} />}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          {expense.vendor && <span className="font-medium truncate">{expense.vendor}</span>}
-                          {expense.vendor && <span className="text-gray-300">·</span>}
-                          <span className="truncate text-gray-500">{expense.reason}</span>
-                        </div>
-                        <p className="text-xs text-gray-400 mt-0.5">{formatDate(expense.date)}</p>
-                        {expense.status === 'rejected' && expense.rejectionReason && (
-                          <p className="text-xs text-red-500 mt-1">
-                            <span className="font-medium">Motif :</span> {expense.rejectionReason}
-                          </p>
-                        )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-tennis-green text-sm">{formatCurrency(expense.amount)}</span>
+                        <span className={`badge-${expense.status} text-xs`}>{statusLabels[expense.status]}</span>
+                        {expense.vendor && <span className="text-xs font-medium text-gray-700 truncate">{expense.vendor}</span>}
+                        {expense.vendor && <span className="text-gray-300 text-xs">·</span>}
+                        <span className="text-xs text-gray-500 truncate">{expense.reason}</span>
+                        <span className="text-xs text-gray-400 ml-auto flex-shrink-0">{formatDate(expense.date)}</span>
                       </div>
-                      <div className="flex-shrink-0 flex items-center gap-1.5 text-gray-300 group-hover:text-gray-400 transition-colors">
-                        {expense.status !== 'approved'
-                          ? <Edit2 size={15} />
-                          : <Lock size={14} />
-                        }
-                      </div>
+                      {expense.status === 'rejected' && expense.rejectionReason && (
+                        <p className="text-xs text-red-500 mt-0.5 truncate">
+                          <span className="font-medium">Motif :</span> {expense.rejectionReason}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex-shrink-0 text-gray-300 group-hover:text-gray-400 transition-colors">
+                      {expense.status !== 'approved' ? <Edit2 size={13} /> : <Lock size={13} />}
                     </div>
                   </button>
                 ))}
