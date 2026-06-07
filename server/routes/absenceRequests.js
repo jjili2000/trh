@@ -75,8 +75,10 @@ router.get('/', async (req, res) => {
 
 // POST /api/absence-requests
 router.post('/', async (req, res) => {
+  let id, startDate;
   try {
-    const { startDate, endDate, durationDays, type, reason } = req.body;
+    ({ startDate } = req.body);
+    const { endDate, durationDays, type, reason } = req.body;
     if (!startDate || !endDate || !type) {
       return res.status(400).json({ error: 'Dates et type requis' });
     }
@@ -88,7 +90,7 @@ router.post('/', async (req, res) => {
           return Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1;
         })();
 
-    const id = crypto.randomUUID();
+    id = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO absence_requests (id, user_id, start_date, end_date, duration_days, type, reason, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
@@ -96,20 +98,12 @@ router.post('/', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
     res.status(201).json(mapRequest(rows[0]));
-    // Notifier le manager
-    const [[submitter]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
-    if (submitter?.manager_id) {
-      const startLabel = new Date(startDate + 'T12:00:00').toLocaleDateString('fr-FR');
-      await notify(submitter.manager_id, 'absence_submitted', 'Absence à valider',
-        `${submitter.first_name} a soumis une demande d'absence à partir du ${startLabel}.`,
-        'absence_request', id, 'absences', 'action');
-    }
   } catch (err) {
     // Si la colonne n'existe pas encore (migration non jouée), fallback sans duration_days
     if (err.code === 'ER_BAD_FIELD_ERROR') {
       try {
-        const id = crypto.randomUUID();
-        const { startDate, endDate, type, reason } = req.body;
+        id = crypto.randomUUID();
+        const { endDate, type, reason } = req.body;
         await pool.execute(
           `INSERT INTO absence_requests (id, user_id, start_date, end_date, type, reason, status)
            VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
@@ -123,7 +117,21 @@ router.post('/', async (req, res) => {
       }
     }
     console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
+
+  // Notifier le manager
+  try {
+    const [[submitter]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
+    if (submitter?.manager_id) {
+      const startLabel = new Date(startDate + 'T12:00:00').toLocaleDateString('fr-FR');
+      await notify(submitter.manager_id, 'absence_submitted', 'Absence à valider',
+        `${submitter.first_name} a soumis une demande d'absence à partir du ${startLabel}.`,
+        'absence_request', id, 'absences', 'action');
+    }
+  } catch (notifErr) {
+    console.error('[absence-requests POST] notification error:', notifErr.message);
   }
 });
 
@@ -166,12 +174,13 @@ router.put('/:id', async (req, res) => {
 
 // PUT /api/absence-requests/:id/approve
 router.put('/:id/approve', async (req, res) => {
+  let record, reqId;
   try {
-    const { id } = req.params;
-    const [existing] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
+    reqId = req.params.id;
+    const [existing] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [reqId]);
     if (existing.length === 0) return res.status(404).json({ error: 'Demande non trouvée' });
 
-    const record = existing[0];
+    record = existing[0];
 
     if (req.user.role !== 'admin') {
       const managerOk = await isManagerOf(req.user.id, record.user_id);
@@ -182,30 +191,37 @@ router.put('/:id/approve', async (req, res) => {
 
     await pool.execute(
       `UPDATE absence_requests SET status = 'approved', validated_by = ?, validated_at = NOW() WHERE id = ?`,
-      [req.user.id, id]
+      [req.user.id, reqId]
     );
-    const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
+    const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [reqId]);
     res.json(mapRequest(rows[0]));
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
+
+  try {
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
     const startLabel = new Date(String(record.start_date).slice(0,10) + 'T12:00:00').toLocaleDateString('fr-FR');
     await notify(record.user_id, 'absence_approved', 'Absence approuvée',
       `Votre demande d'absence du ${startLabel} a été approuvée par ${vName}.`,
-      'absence_request', id, 'absences', 'response');
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+      'absence_request', reqId, 'absences', 'response');
+  } catch (notifErr) {
+    console.error('[absence-requests approve] notification error:', notifErr.message);
   }
 });
 
 // PUT /api/absence-requests/:id/reject
 router.put('/:id/reject', async (req, res) => {
+  let record, reqId, rejectionReason;
   try {
-    const { id } = req.params;
-    const [existing] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
+    reqId = req.params.id;
+    const [existing] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [reqId]);
     if (existing.length === 0) return res.status(404).json({ error: 'Demande non trouvée' });
 
-    const record = existing[0];
+    record = existing[0];
 
     if (req.user.role !== 'admin') {
       const managerOk = await isManagerOf(req.user.id, record.user_id);
@@ -214,13 +230,20 @@ router.put('/:id/reject', async (req, res) => {
       }
     }
 
-    const { rejectionReason } = req.body;
+    ({ rejectionReason } = req.body);
     await pool.execute(
       `UPDATE absence_requests SET status = 'rejected', rejection_reason = ?, validated_by = ?, validated_at = NOW() WHERE id = ?`,
-      [rejectionReason || null, req.user.id, id]
+      [rejectionReason || null, req.user.id, reqId]
     );
-    const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [id]);
+    const [rows] = await pool.execute('SELECT * FROM absence_requests WHERE id = ?', [reqId]);
     res.json(mapRequest(rows[0]));
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
+
+  try {
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
     const startLabel = new Date(String(record.start_date).slice(0,10) + 'T12:00:00').toLocaleDateString('fr-FR');
@@ -228,10 +251,9 @@ router.put('/:id/reject', async (req, res) => {
       ? `Votre demande d'absence du ${startLabel} a été refusée par ${vName}. Motif : ${rejectionReason}`
       : `Votre demande d'absence du ${startLabel} a été refusée par ${vName}.`;
     await notify(record.user_id, 'absence_rejected', 'Absence refusée',
-      notifBody, 'absence_request', id, 'absences', 'response');
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+      notifBody, 'absence_request', reqId, 'absences', 'response');
+  } catch (notifErr) {
+    console.error('[absence-requests reject] notification error:', notifErr.message);
   }
 });
 

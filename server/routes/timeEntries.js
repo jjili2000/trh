@@ -160,6 +160,7 @@ router.get('/calendar-suggestions', async (req, res) => {
 
 // POST /api/time-entries/bulk
 router.post('/bulk', async (req, res) => {
+  const createdIds = [];
   try {
     const { entries } = req.body;
     if (!Array.isArray(entries) || entries.length === 0) {
@@ -169,7 +170,6 @@ router.post('/bulk', async (req, res) => {
       return res.status(400).json({ error: 'Maximum 50 entrées' });
     }
 
-    const createdIds = [];
     for (const entry of entries) {
       const { date, hours, activityTypeId, description } = entry;
       if (!date || hours === undefined) {
@@ -190,8 +190,14 @@ router.post('/bulk', async (req, res) => {
       createdIds
     );
     res.status(201).json(rows.map(mapEntry));
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
 
-    // Notifier le manager — une seule notification groupée
+  // Notifier le manager — une seule notification groupée, dans un bloc séparé
+  try {
     const [[user]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
     if (user && user.manager_id) {
       const n = createdIds.length;
@@ -206,9 +212,8 @@ router.post('/bulk', async (req, res) => {
         'action'
       );
     }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+  } catch (notifErr) {
+    console.error('[time-entries bulk POST] notification error:', notifErr.message);
   }
 });
 
@@ -237,12 +242,14 @@ router.get('/', async (req, res) => {
 
 // POST /api/time-entries
 router.post('/', async (req, res) => {
+  let id, date;
   try {
-    const { date, hours, activityTypeId, description, startTime, endTime } = req.body;
+    ({ date } = req.body);
+    const { hours, activityTypeId, description, startTime, endTime } = req.body;
     if (!date || hours === undefined) {
       return res.status(400).json({ error: 'Date et heures requis' });
     }
-    const id = crypto.randomUUID();
+    id = crypto.randomUUID();
     await pool.execute(
       `INSERT INTO time_entries (id, user_id, date, hours, activity_type_id, description, status, start_time, end_time)
        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
@@ -250,8 +257,14 @@ router.post('/', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
     res.status(201).json(mapEntry(rows[0]));
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
 
-    // Notifier le manager
+  // Notifier le manager
+  try {
     const [[user]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
     if (user && user.manager_id) {
       const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -266,9 +279,8 @@ router.post('/', async (req, res) => {
         'action'
       );
     }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+  } catch (notifErr) {
+    console.error('[time-entries POST] notification error:', notifErr.message);
   }
 });
 
@@ -312,12 +324,13 @@ router.put('/:id', async (req, res) => {
 
 // PUT /api/time-entries/:id/approve
 router.put('/:id/approve', async (req, res) => {
+  let entry, entryId;
   try {
-    const { id } = req.params;
-    const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
+    entryId = req.params.id;
+    const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [entryId]);
     if (existing.length === 0) return res.status(404).json({ error: 'Entrée non trouvée' });
 
-    const entry = existing[0];
+    entry = existing[0];
 
     if (req.user.role !== 'admin') {
       // Only the direct manager of this user can approve
@@ -329,12 +342,18 @@ router.put('/:id/approve', async (req, res) => {
 
     await pool.execute(
       `UPDATE time_entries SET status = 'approved', validated_by = ?, validated_at = NOW() WHERE id = ?`,
-      [req.user.id, id]
+      [req.user.id, entryId]
     );
-    const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
+    const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [entryId]);
     res.json(mapEntry(rows[0]));
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
 
-    // Notifier l'employé
+  // Notifier l'employé
+  try {
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const validatorName = validator ? validator.first_name : 'Votre responsable';
     const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
@@ -345,24 +364,24 @@ router.put('/:id/approve', async (req, res) => {
       'Saisie d\'heures validée',
       `Votre saisie du ${dateLabel} a été validée par ${validatorName}.`,
       'time_entry',
-      id,
+      entryId,
       'time',
       'response'
     );
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+  } catch (notifErr) {
+    console.error('[time-entries approve] notification error:', notifErr.message);
   }
 });
 
 // PUT /api/time-entries/:id/reject
 router.put('/:id/reject', async (req, res) => {
+  let entry, entryId, rejectionReason;
   try {
-    const { id } = req.params;
-    const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
+    entryId = req.params.id;
+    const [existing] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [entryId]);
     if (existing.length === 0) return res.status(404).json({ error: 'Entrée non trouvée' });
 
-    const entry = existing[0];
+    entry = existing[0];
 
     if (req.user.role !== 'admin') {
       const managerOk = await isManagerOf(req.user.id, entry.user_id);
@@ -371,15 +390,21 @@ router.put('/:id/reject', async (req, res) => {
       }
     }
 
-    const { rejectionReason } = req.body;
+    ({ rejectionReason } = req.body);
     await pool.execute(
       `UPDATE time_entries SET status = 'rejected', rejection_reason = ?, validated_by = ?, validated_at = NOW() WHERE id = ?`,
-      [rejectionReason || null, req.user.id, id]
+      [rejectionReason || null, req.user.id, entryId]
     );
-    const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [id]);
+    const [rows] = await pool.execute('SELECT * FROM time_entries WHERE id = ?', [entryId]);
     res.json(mapEntry(rows[0]));
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
 
-    // Notifier l'employé
+  // Notifier l'employé
+  try {
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const validatorName = validator ? validator.first_name : 'Votre responsable';
     const entryDate = (entry.date instanceof Date ? entry.date.toISOString().slice(0, 10) : String(entry.date).slice(0, 10));
@@ -393,13 +418,12 @@ router.put('/:id/reject', async (req, res) => {
       'Saisie d\'heures rejetée',
       notifBody,
       'time_entry',
-      id,
+      entryId,
       'time',
       'response'
     );
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+  } catch (notifErr) {
+    console.error('[time-entries reject] notification error:', notifErr.message);
   }
 });
 

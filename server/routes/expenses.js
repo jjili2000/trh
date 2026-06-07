@@ -185,12 +185,8 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/expenses — multipart/form-data
-router.post('/', (req, res, next) => {
-  console.log('[expenses POST] Received — content-type:', req.headers['content-type']);
-  console.log('[expenses POST] content-length:', req.headers['content-length']);
-  next();
-}, upload.single('receipt'), async (req, res) => {
-  console.log('[expenses POST] Multer OK — file:', req.file ? `${req.file.originalname} (${req.file.size} bytes)` : 'none');
+router.post('/', upload.single('receipt'), async (req, res) => {
+  let id;
   try {
     const { date, amount, reason, vendor, amountHt, vatDetails } = req.body;
     if (!date || amount === undefined || !reason) {
@@ -198,7 +194,7 @@ router.post('/', (req, res, next) => {
       return res.status(400).json({ error: 'Date, montant et motif requis' });
     }
 
-    const id = crypto.randomUUID();
+    id = crypto.randomUUID();
     const vatJson = vatDetails ? (typeof vatDetails === 'string' ? vatDetails : JSON.stringify(vatDetails)) : null;
 
     const receiptFilePath = req.file ? req.file.filename : null;
@@ -220,8 +216,15 @@ router.post('/', (req, res, next) => {
 
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.status(201).json(mapExpense(rows[0]));
+  } catch (err) {
+    if (req.file) deleteReceiptFile(req.file.filename);
+    console.error('[expenses POST]', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
 
-    // Notifier le manager
+  // Notification manager — dans un bloc séparé pour ne jamais interférer avec la réponse déjà envoyée
+  try {
     const [[submitter]] = await pool.execute(
       'SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]
     );
@@ -230,10 +233,8 @@ router.post('/', (req, res, next) => {
         `${submitter.first_name} a soumis une note de frais.`,
         'expense', id, 'expenses', 'action');
     }
-  } catch (err) {
-    if (req.file) deleteReceiptFile(req.file.filename);
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+  } catch (notifErr) {
+    console.error('[expenses POST] notification error:', notifErr.message);
   }
 });
 
@@ -338,47 +339,57 @@ router.put('/:id/approve', async (req, res) => {
     );
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.json(mapExpense(rows[0]));
-
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
+  try {
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
     await notify(existing[0].user_id, 'expense_approved', 'Note de frais approuvée',
       `Votre note de frais a été approuvée par ${vName}.`,
-      'expense', id, 'expenses', 'response');
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+      'expense', existing[0].id, 'expenses', 'response');
+  } catch (notifErr) {
+    console.error('[expenses approve] notification error:', notifErr.message);
   }
 });
 
 // PUT /api/expenses/:id/reject
 router.put('/:id/reject', async (req, res) => {
+  let existing0, expId, rejectionReason;
   try {
     if (req.user.role !== 'admin') {
       const ok = await canValidateExpenses(req.user.id);
       if (!ok) return res.status(403).json({ error: 'Accès refusé' });
     }
     const { id } = req.params;
+    expId = id;
     const [existing] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Dépense non trouvée' });
-
-    const { rejectionReason } = req.body;
+    existing0 = existing[0];
+    rejectionReason = req.body.rejectionReason;
     await pool.execute(
       `UPDATE expenses SET status = 'rejected', rejection_reason = ?, validated_by = ?, validated_at = NOW() WHERE id = ?`,
       [rejectionReason || null, req.user.id, id]
     );
     const [rows] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     res.json(mapExpense(rows[0]));
-
+  } catch (err) {
+    console.error(err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
+  try {
     const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
     const notifBody = rejectionReason
       ? `Votre note de frais a été refusée par ${vName}. Motif : ${rejectionReason}`
       : `Votre note de frais a été refusée par ${vName}.`;
-    await notify(existing[0].user_id, 'expense_rejected', 'Note de frais refusée',
-      notifBody, 'expense', id, 'expenses', 'response');
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    await notify(existing0.user_id, 'expense_rejected', 'Note de frais refusée',
+      notifBody, 'expense', expId, 'expenses', 'response');
+  } catch (notifErr) {
+    console.error('[expenses reject] notification error:', notifErr.message);
   }
 });
 
