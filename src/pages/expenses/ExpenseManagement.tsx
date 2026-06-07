@@ -102,6 +102,22 @@ function compressImage(dataUrl: string, fileType: string): Promise<string> {
   });
 }
 
+/**
+ * Convertit une data-URL en File uploadable.
+ * Utilisé pour envoyer la version compressée plutôt que le fichier original.
+ */
+function dataUrlToFile(dataUrl: string, fileName: string): File {
+  const [header, base64] = dataUrl.split(',');
+  const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  // Normalise l'extension selon le mime de la version compressée
+  const ext = mime === 'image/jpeg' ? '.jpg' : fileName.slice(fileName.lastIndexOf('.'));
+  const baseName = fileName.lastIndexOf('.') !== -1 ? fileName.slice(0, fileName.lastIndexOf('.')) : fileName;
+  return new File([bytes], `${baseName}${ext}`, { type: mime });
+}
+
 /** Construit une data-URL à partir du champ base64 legacy. */
 function legacyReceiptPreview(expense: Expense): string {
   if (!expense.receiptFile) return '';
@@ -267,7 +283,12 @@ function ExpenseDetailModal({
     if (form.vendor.trim()) fd.append('vendor', form.vendor.trim());
     if (form.amountHt)      fd.append('amountHt', form.amountHt);
     if (vatDetails)         fd.append('vatDetails', JSON.stringify(vatDetails));
-    if (form.receiptFileObj) fd.append('receipt', form.receiptFileObj);
+    if (form.receiptFileObj) {
+      const fileToUpload = (form.receiptPreview && form.receiptFileType?.startsWith('image/'))
+        ? dataUrlToFile(form.receiptPreview, form.receiptFileName)
+        : form.receiptFileObj;
+      fd.append('receipt', fileToUpload);
+    }
 
     onSave(expense.id, fd);
     onClose();
@@ -808,7 +829,9 @@ export default function ExpenseManagement() {
   const updateVatLineNew = (i: number, field: keyof VatLineForm, value: string) =>
     setNewForm(f => ({ ...f, vatLines: f.vatLines.map((l, idx) => idx === i ? { ...l, [field]: value } : l) }));
 
-  const handleNewSubmit = (e: FormEvent) => {
+  const [newFormSubmitting, setNewFormSubmitting] = useState(false);
+
+  const handleNewSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setNewFormError('');
     const amount = parseFloat(newForm.amount);
@@ -830,8 +853,15 @@ export default function ExpenseManagement() {
     if (vatDetails)            fd.append('vatDetails', JSON.stringify(vatDetails));
     if (newForm.receiptFileObj) fd.append('receipt', newForm.receiptFileObj);
 
-    addExpense(fd);
-    closeNewForm();
+    setNewFormSubmitting(true);
+    try {
+      await addExpense(fd);
+      closeNewForm();
+    } catch (err: unknown) {
+      setNewFormError(err instanceof Error ? err.message : 'Erreur lors de l\'envoi. Veuillez réessayer.');
+    } finally {
+      setNewFormSubmitting(false);
+    }
   };
 
   const getUser = (userId: string) => users.find(u => u.id === userId);
@@ -1271,7 +1301,10 @@ export default function ExpenseManagement() {
 
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={closeNewForm} className="btn-secondary">Annuler</button>
-                <button type="submit" className="btn-primary">Soumettre</button>
+                <button type="submit" className="btn-primary flex items-center gap-2" disabled={newFormSubmitting}>
+                  {newFormSubmitting && <Loader2 size={14} className="animate-spin" />}
+                  {newFormSubmitting ? 'Envoi…' : 'Soumettre'}
+                </button>
               </div>
             </form>
           )}
