@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import {
   Plus, Check, X, Receipt, ChevronDown, ChevronUp, FileText,
   Image, Upload, Camera, Loader2, Sparkles, Trash2, PlusCircle,
-  Clock, CalendarCheck, Edit2, Lock, ExternalLink,
+  Clock, CalendarCheck, Edit2, Lock, ExternalLink, AlertCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Expense, VatLine } from '../../types';
@@ -830,6 +830,30 @@ export default function ExpenseManagement() {
     setNewForm(f => ({ ...f, vatLines: f.vatLines.map((l, idx) => idx === i ? { ...l, [field]: value } : l) }));
 
   const [newFormSubmitting, setNewFormSubmitting] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
+  // FormData mis en attente en cas de doublon détecté
+  const pendingFdRef = useRef<FormData | null>(null);
+
+  const submitExpense = async (fd: FormData) => {
+    setNewFormSubmitting(true);
+    try {
+      await addExpense(fd);
+      setDuplicateWarning(false);
+      pendingFdRef.current = null;
+      closeNewForm();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('duplicate') || msg.includes('similaire')) {
+        // Doublon détecté : on garde le FormData et on affiche l'avertissement
+        pendingFdRef.current = fd;
+        setDuplicateWarning(true);
+      } else {
+        setNewFormError(msg || 'Erreur lors de l\'envoi. Veuillez réessayer.');
+      }
+    } finally {
+      setNewFormSubmitting(false);
+    }
+  };
 
   const handleNewSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -853,15 +877,7 @@ export default function ExpenseManagement() {
     if (vatDetails)            fd.append('vatDetails', JSON.stringify(vatDetails));
     if (newForm.receiptFileObj) fd.append('receipt', newForm.receiptFileObj);
 
-    setNewFormSubmitting(true);
-    try {
-      await addExpense(fd);
-      closeNewForm();
-    } catch (err: unknown) {
-      setNewFormError(err instanceof Error ? err.message : 'Erreur lors de l\'envoi. Veuillez réessayer.');
-    } finally {
-      setNewFormSubmitting(false);
-    }
+    await submitExpense(fd);
   };
 
   const getUser = (userId: string) => users.find(u => u.id === userId);
@@ -1323,6 +1339,45 @@ export default function ExpenseManagement() {
             <img src={localPreview.url} alt="Aperçu" className="max-w-full rounded-xl mx-auto object-contain" />
           )}
         </Modal>
+      )}
+
+      {/* Avertissement doublon */}
+      {duplicateWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <AlertCircle size={20} className="text-amber-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Doublon détecté</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Une note de frais avec la même date et le même montant existe déjà. Voulez-vous quand même la soumettre ?
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setDuplicateWarning(false); pendingFdRef.current = null; }}
+                className="btn-secondary"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => {
+                  if (!pendingFdRef.current) return;
+                  pendingFdRef.current.append('forceSubmit', 'true');
+                  submitExpense(pendingFdRef.current);
+                }}
+                disabled={newFormSubmitting}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-medium rounded-xl hover:bg-amber-600 disabled:opacity-60 transition-colors"
+              >
+                {newFormSubmitting && <Loader2 size={14} className="animate-spin" />}
+                Soumettre quand même
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modale motif de refus note de frais */}

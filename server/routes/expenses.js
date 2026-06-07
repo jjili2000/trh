@@ -194,6 +194,22 @@ router.post('/', upload.single('receipt'), async (req, res) => {
       return res.status(400).json({ error: 'Date, montant et motif requis' });
     }
 
+    // Détection de doublon (même utilisateur, même date, même montant TTC, non rejetée)
+    if (!req.body.forceSubmit) {
+      const [dupes] = await pool.execute(
+        `SELECT id, date, amount, vendor FROM expenses
+         WHERE user_id = ? AND date = ? AND amount = ? AND status != 'rejected'`,
+        [req.user.id, date, parseFloat(amount)]
+      );
+      if (dupes.length > 0) {
+        if (req.file) deleteReceiptFile(req.file.filename);
+        return res.status(409).json({
+          error: 'duplicate',
+          message: 'Une note de frais similaire existe déjà pour cette date et ce montant.',
+        });
+      }
+    }
+
     id = crypto.randomUUID();
     const vatJson = vatDetails ? (typeof vatDetails === 'string' ? vatDetails : JSON.stringify(vatDetails)) : null;
 
