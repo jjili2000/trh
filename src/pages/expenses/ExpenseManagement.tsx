@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, ReactNode, FormEvent, ChangeEvent } from 'react';
+import { useState, useEffect, useRef, useMemo, ReactNode, FormEvent, ChangeEvent } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Plus, Check, X, Receipt, ChevronDown, ChevronUp, FileText,
   Image, Upload, Camera, Loader2, Sparkles, Trash2, PlusCircle,
-  Clock, Edit2, Lock, ExternalLink, AlertCircle,
+  Clock, Edit2, Lock, ExternalLink, AlertCircle, Filter,
+  ChevronUp as SortAsc, ChevronDown as SortDesc,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Expense, VatLine } from '../../types';
@@ -880,6 +881,57 @@ export default function ExpenseManagement() {
     await submitExpense(fd);
   };
 
+  // ── Filtres / tri / sélection "Mes notes" ───────────────────────────────────
+  const [myFilterStatus,   setMyFilterStatus]   = useState('');
+  const [myFilterDateFrom, setMyFilterDateFrom] = useState('');
+  const [myFilterDateTo,   setMyFilterDateTo]   = useState('');
+  type MySortField = 'date' | 'amount' | 'status';
+  const [mySortField, setMySortField] = useState<MySortField>('date');
+  const [mySortDir,   setMySortDir]   = useState<'asc' | 'desc'>('desc');
+  const [mySelectedIds, setMySelectedIds] = useState<Set<string>>(new Set());
+  const [myBulkDeleting, setMyBulkDeleting] = useState(false);
+
+  const toggleMySort = (field: MySortField) => {
+    if (mySortField === field) setMySortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setMySortField(field); setMySortDir('desc'); }
+  };
+
+  const filteredMyExpenses = useMemo(() => {
+    let list = [...myExpenses];
+    if (myFilterStatus)   list = list.filter(e => e.status === myFilterStatus);
+    if (myFilterDateFrom) list = list.filter(e => e.date >= myFilterDateFrom);
+    if (myFilterDateTo)   list = list.filter(e => e.date <= myFilterDateTo);
+    list.sort((a, b) => {
+      let cmp = 0;
+      if (mySortField === 'date')   cmp = a.date.localeCompare(b.date);
+      if (mySortField === 'amount') cmp = a.amount - b.amount;
+      if (mySortField === 'status') cmp = a.status.localeCompare(b.status);
+      return mySortDir === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  }, [myExpenses, myFilterStatus, myFilterDateFrom, myFilterDateTo, mySortField, mySortDir]);
+
+  const selectablePendingIds = filteredMyExpenses.filter(e => e.status === 'pending').map(e => e.id);
+  const allPendingSelected = selectablePendingIds.length > 0 && selectablePendingIds.every(id => mySelectedIds.has(id));
+  const somePendingSelected = selectablePendingIds.some(id => mySelectedIds.has(id));
+
+  const toggleMySelect = (id: string) =>
+    setMySelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const toggleAllPending = () =>
+    setMySelectedIds(allPendingSelected ? new Set() : new Set(selectablePendingIds));
+
+  const handleMyBulkDelete = async () => {
+    if (mySelectedIds.size === 0) return;
+    setMyBulkDeleting(true);
+    try {
+      await Promise.all(Array.from(mySelectedIds).map(id => deleteExpense(id)));
+      setMySelectedIds(new Set());
+    } finally {
+      setMyBulkDeleting(false);
+    }
+  };
+
   const getUser = (userId: string) => users.find(u => u.id === userId);
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -952,39 +1004,133 @@ export default function ExpenseManagement() {
 
         {expandedSection === 'mine' && (
           <div className="mt-4">
+            {/* Filtres */}
+            <div className="flex flex-wrap items-end gap-3 mb-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Statut</label>
+                <select className="input text-sm py-1.5" value={myFilterStatus} onChange={e => setMyFilterStatus(e.target.value)}>
+                  <option value="">Tous</option>
+                  <option value="pending">En attente</option>
+                  <option value="approved">Approuvé</option>
+                  <option value="rejected">Rejeté</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Du</label>
+                <input type="date" className="input text-sm py-1.5" value={myFilterDateFrom} onChange={e => setMyFilterDateFrom(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Au</label>
+                <input type="date" className="input text-sm py-1.5" value={myFilterDateTo} onChange={e => setMyFilterDateTo(e.target.value)} />
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-gray-400"><Filter size={12} className="inline mr-1" />{filteredMyExpenses.length} résultat(s)</span>
+                {(myFilterStatus || myFilterDateFrom || myFilterDateTo) && (
+                  <button onClick={() => { setMyFilterStatus(''); setMyFilterDateFrom(''); setMyFilterDateTo(''); }} className="text-xs text-gray-400 hover:text-gray-600">
+                    Réinitialiser
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Barre sélection multiple */}
+            {mySelectedIds.size > 0 && (
+              <div className="mb-3 flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-xl">
+                <span className="text-sm text-red-800 font-medium flex-1">{mySelectedIds.size} note(s) sélectionnée(s)</span>
+                <button
+                  onClick={handleMyBulkDelete}
+                  disabled={myBulkDeleting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 disabled:opacity-60 transition-colors"
+                >
+                  {myBulkDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  {myBulkDeleting ? 'Suppression…' : 'Supprimer'}
+                </button>
+                <button onClick={() => setMySelectedIds(new Set())} className="text-sm text-red-400 hover:text-red-600">Annuler</button>
+              </div>
+            )}
+
             {myExpenses.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 <Receipt size={32} className="mx-auto mb-2 opacity-40" />
                 <p>Aucune note de frais. Cliquez sur "Nouvelle note" pour soumettre.</p>
               </div>
+            ) : filteredMyExpenses.length === 0 ? (
+              <div className="text-center py-6 text-gray-400 text-sm">Aucun résultat pour ces filtres.</div>
             ) : (
-              <div className="divide-y divide-gray-50">
-                {myExpenses.map(expense => (
-                  <button
-                    key={expense.id}
-                    onClick={() => setDetailExpense(expense)}
-                    className="w-full text-left py-2.5 px-1 hover:bg-gray-50 transition-colors group flex items-center gap-3"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-tennis-green text-sm">{formatCurrency(expense.amount)}</span>
-                        <span className={`badge-${expense.status} text-xs`}>{statusLabels[expense.status]}</span>
-                        {expense.vendor && <span className="text-xs font-medium text-gray-700 truncate">{expense.vendor}</span>}
-                        {expense.vendor && <span className="text-gray-300 text-xs">·</span>}
-                        <span className="text-xs text-gray-500 truncate">{expense.reason}</span>
-                        <span className="text-xs text-gray-400 ml-auto flex-shrink-0">{formatDate(expense.date)}</span>
-                      </div>
-                      {expense.status === 'rejected' && expense.rejectionReason && (
-                        <p className="text-xs text-red-500 mt-0.5 truncate">
-                          <span className="font-medium">Motif :</span> {expense.rejectionReason}
-                        </p>
+              <div className="overflow-x-auto -mx-6 px-6">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      {/* Checkbox sélection (notes pending uniquement) */}
+                      {selectablePendingIds.length > 0 && (
+                        <th className="py-2 pr-3 w-8">
+                          <input
+                            type="checkbox"
+                            checked={allPendingSelected}
+                            ref={el => { if (el) el.indeterminate = somePendingSelected && !allPendingSelected; }}
+                            onChange={toggleAllPending}
+                            className="rounded border-gray-300 text-tennis-green"
+                          />
+                        </th>
                       )}
-                    </div>
-                    <div className="flex-shrink-0 text-gray-300 group-hover:text-gray-400 transition-colors">
-                      {expense.status !== 'approved' ? <Edit2 size={13} /> : <Lock size={13} />}
-                    </div>
-                  </button>
-                ))}
+                      <th className="text-left py-2 pr-4 font-medium text-gray-500 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleMySort('date')}>
+                        Date {mySortField === 'date' ? (mySortDir === 'asc' ? <SortAsc size={12} className="inline" /> : <SortDesc size={12} className="inline" />) : null}
+                      </th>
+                      <th className="text-left py-2 pr-4 font-medium text-gray-500">Prestataire</th>
+                      <th className="text-left py-2 pr-4 font-medium text-gray-500">Motif</th>
+                      <th className="text-left py-2 pr-4 font-medium text-gray-500 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleMySort('amount')}>
+                        Montant TTC {mySortField === 'amount' ? (mySortDir === 'asc' ? <SortAsc size={12} className="inline" /> : <SortDesc size={12} className="inline" />) : null}
+                      </th>
+                      <th className="text-left py-2 pr-4 font-medium text-gray-500 cursor-pointer select-none" onClick={() => toggleMySort('status')}>
+                        Statut {mySortField === 'status' ? (mySortDir === 'asc' ? <SortAsc size={12} className="inline" /> : <SortDesc size={12} className="inline" />) : null}
+                      </th>
+                      <th className="py-2 w-8" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredMyExpenses.map(expense => {
+                      const isPending = expense.status === 'pending';
+                      const isSelected = mySelectedIds.has(expense.id);
+                      return (
+                        <tr key={expense.id} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-red-50/40' : ''}`}>
+                          {selectablePendingIds.length > 0 && (
+                            <td className="py-2.5 pr-3">
+                              {isPending && (
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleMySelect(expense.id)}
+                                  className="rounded border-gray-300 text-tennis-green"
+                                />
+                              )}
+                            </td>
+                          )}
+                          <td className="py-2.5 pr-4 whitespace-nowrap text-gray-700">{formatDate(expense.date)}</td>
+                          <td className="py-2.5 pr-4 text-gray-600 max-w-[120px] truncate">{expense.vendor || <span className="text-gray-300">—</span>}</td>
+                          <td className="py-2.5 pr-4 text-gray-600 max-w-[180px] truncate">{expense.reason}</td>
+                          <td className="py-2.5 pr-4 font-semibold text-tennis-green whitespace-nowrap">{formatCurrency(expense.amount)}</td>
+                          <td className="py-2.5 pr-4">
+                            <div>
+                              <span className={`badge-${expense.status} text-xs`}>{statusLabels[expense.status]}</span>
+                              {expense.status === 'rejected' && expense.rejectionReason && (
+                                <p className="text-xs text-red-500 mt-0.5 max-w-[160px] truncate" title={expense.rejectionReason}>{expense.rejectionReason}</p>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              onClick={() => setDetailExpense(expense)}
+                              className="p-1.5 text-gray-300 hover:text-tennis-green hover:bg-tennis-green/10 rounded-lg transition-colors"
+                              title={isPending ? 'Modifier' : 'Consulter'}
+                            >
+                              {isPending ? <Edit2 size={13} /> : <Lock size={13} />}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
