@@ -288,6 +288,46 @@ function ExpenseDetailModal({
     }
   };
 
+  // ── Panneau latéral prévisualisation ─────────────────────────────────────
+
+  const sidePreviewUrl  = form.receiptPreview || (currentFilePath ? fileUrl('expenses', currentFilePath) : null);
+  const sidePreviewType = form.receiptFileType || currentFileType || '';
+  const isPdf = sidePreviewType === 'application/pdf';
+
+  const sidePanel: ReactNode | undefined = sidePreviewUrl ? (
+    <>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white flex-shrink-0">
+        <span className="text-sm font-medium text-gray-600 flex items-center gap-1.5">
+          <FileText size={14} className="text-gray-400" />
+          Justificatif
+        </span>
+        <button
+          onClick={() => window.open(sidePreviewUrl, '_blank')}
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-tennis-green transition-colors"
+          title="Ouvrir dans un nouvel onglet"
+        >
+          <ExternalLink size={14} />
+          Ouvrir
+        </button>
+      </div>
+      <div className="flex-1 overflow-hidden relative">
+        {isPdf ? (
+          <embed src={sidePreviewUrl} type="application/pdf" className="w-full h-full" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center p-4 overflow-auto">
+            <img
+              src={sidePreviewUrl}
+              alt="Aperçu du justificatif"
+              className="max-w-full max-h-full object-contain rounded-lg shadow cursor-zoom-in"
+              onClick={() => window.open(sidePreviewUrl, '_blank')}
+              title="Cliquer pour agrandir"
+            />
+          </div>
+        )}
+      </div>
+    </>
+  ) : undefined;
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   const addVatLine    = () => setForm(f => ({ ...f, vatLines: [...f.vatLines, { rate: '20', amount: '' }] }));
@@ -383,7 +423,7 @@ function ExpenseDetailModal({
 
   return (
     <>
-      <Modal title={modalTitle} onClose={onClose} footer={footer}>
+      <Modal title={modalTitle} onClose={onClose} footer={footer} sidePanel={sidePanel}>
         {/* Inputs cachés pour les fichiers */}
         {isEditable && (
           <>
