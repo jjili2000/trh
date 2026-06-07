@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import {
   Plus, Check, X, Receipt, ChevronDown, ChevronUp, FileText,
   Image, Upload, Camera, Loader2, Sparkles, Trash2, PlusCircle,
-  Clock, Edit2, Lock, ExternalLink, AlertCircle, Filter,
+  Edit2, Lock, ExternalLink, AlertCircle, Filter,
   ChevronUp as SortAsc, ChevronDown as SortDesc,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -951,7 +951,7 @@ export default function ExpenseManagement() {
       </div>
 
       {/* Stats */}
-      <div className={`grid grid-cols-1 gap-4 mb-6 ${isManagerOrAdmin ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
+      <div className={`grid grid-cols-1 gap-4 mb-6 ${isManagerOrAdmin ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
         <div className="card">
           <p className="text-2xl font-bold text-yellow-500">{myExpenses.filter(e => e.status === 'pending').length}</p>
           <p className="text-sm text-gray-500 mt-0.5">Soumises — en attente d'approbation</p>
@@ -961,18 +961,12 @@ export default function ExpenseManagement() {
             </p>
           )}
         </div>
-        <div className="card text-center">
+        <div className="card">
           <p className="text-2xl font-bold text-green-500">{myExpenses.filter(e => e.status === 'approved').length}</p>
-          <p className="text-sm text-gray-500 mt-0.5">Approuvées</p>
-        </div>
-        <div className="card flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-yellow-50 flex items-center justify-center flex-shrink-0">
-            <Clock size={16} className="text-yellow-500" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-lg font-bold text-yellow-500 leading-tight">{formatCurrency(myStats.pendingAmount)}</p>
-            <p className="text-xs text-gray-400">Approuvées — remboursement à venir</p>
-          </div>
+          <p className="text-sm text-gray-500 mt-0.5">Approuvées — remboursement à venir</p>
+          {myExpenses.filter(e => e.status === 'approved').length > 0 && (
+            <p className="text-xs text-green-600 font-medium mt-1">{formatCurrency(myStats.pendingAmount)}</p>
+          )}
         </div>
 
         {isManagerOrAdmin && (
@@ -1078,7 +1072,7 @@ export default function ExpenseManagement() {
                       </th>
                       <th className="text-left py-2 pr-4 font-medium text-gray-500">Prestataire</th>
                       <th className="text-left py-2 pr-4 font-medium text-gray-500">Motif</th>
-                      <th className="text-left py-2 pr-4 font-medium text-gray-500 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleMySort('amount')}>
+                      <th className="text-right py-2 pr-4 font-medium text-gray-500 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleMySort('amount')}>
                         Montant TTC {mySortField === 'amount' ? (mySortDir === 'asc' ? <SortAsc size={12} className="inline" /> : <SortDesc size={12} className="inline" />) : null}
                       </th>
                       <th className="text-left py-2 pr-4 font-medium text-gray-500 cursor-pointer select-none" onClick={() => toggleMySort('status')}>
@@ -1108,7 +1102,7 @@ export default function ExpenseManagement() {
                           <td className="py-2.5 pr-4 whitespace-nowrap text-gray-700">{formatDate(expense.date)}</td>
                           <td className="py-2.5 pr-4 text-gray-600 max-w-[120px] truncate">{expense.vendor || <span className="text-gray-300">—</span>}</td>
                           <td className="py-2.5 pr-4 text-gray-600 max-w-[180px] truncate">{expense.reason}</td>
-                          <td className="py-2.5 pr-4 font-semibold text-tennis-green whitespace-nowrap">{formatCurrency(expense.amount)}</td>
+                          <td className="py-2.5 pr-4 font-semibold text-tennis-green whitespace-nowrap text-right">{formatCurrency(expense.amount)}</td>
                           <td className="py-2.5 pr-4">
                             <div>
                               <span className={`badge-${expense.status} text-xs`}>{statusLabels[expense.status]}</span>
