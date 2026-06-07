@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import {
   Plus, Check, X, Receipt, ChevronDown, ChevronUp, FileText,
   Image, Upload, Camera, Loader2, Sparkles, Trash2, PlusCircle,
-  Clock, CalendarCheck, Edit2, Lock,
+  Clock, CalendarCheck, Edit2, Lock, ExternalLink,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Expense, VatLine } from '../../types';
@@ -132,26 +132,35 @@ function expenseToForm(expense: Expense): ExpenseForm {
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function Modal({
-  title, onClose, children, footer,
+  title, onClose, children, footer, sidePanel,
 }: {
-  title: string; onClose: () => void; children: ReactNode; footer?: ReactNode;
+  title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; sidePanel?: ReactNode;
 }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-          <h2 className="font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
-            <X size={18} />
-          </button>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full flex overflow-hidden max-h-[90vh] ${sidePanel ? 'max-w-5xl flex-row' : 'max-w-lg flex-col'}`}>
+        {/* Panneau principal */}
+        <div className={`flex flex-col ${sidePanel ? 'w-[440px] flex-shrink-0' : 'w-full'}`}>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <h2 className="font-semibold text-gray-900">{title}</h2>
+            <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="p-6 overflow-y-auto flex-1">{children}</div>
+          {footer && (
+            <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 flex items-center justify-between gap-3">
+              {footer}
+            </div>
+          )}
         </div>
-        <div className="p-6 overflow-y-auto flex-1">{children}</div>
-        {footer && (
-          <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 flex items-center justify-between gap-3">
-            {footer}
+        {/* Panneau latéral prévisualisation (desktop uniquement) */}
+        {sidePanel && (
+          <div className="hidden lg:flex flex-col flex-1 border-l border-gray-100 bg-gray-50 min-w-0">
+            {sidePanel}
           </div>
         )}
       </div>
@@ -664,6 +673,7 @@ export default function ExpenseManagement() {
   const [newForm, setNewForm] = useState<ExpenseForm>(emptyForm);
   const [newFormError, setNewFormError] = useState('');
   const [recognizeError, setRecognizeError] = useState('');
+  const [dragging, setDragging] = useState(false);
 
   // Modale de détail
   const [detailExpense, setDetailExpense] = useState<Expense | null>(null);
@@ -1029,6 +1039,39 @@ export default function ExpenseManagement() {
         <Modal
           title="Nouvelle note de frais"
           onClose={closeNewForm}
+          sidePanel={newFormStep === 'form' && newForm.receiptPreview ? (
+            <>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white flex-shrink-0">
+                <span className="text-sm font-medium text-gray-600 flex items-center gap-1.5">
+                  <FileText size={14} className="text-gray-400" />
+                  Justificatif
+                </span>
+                <button
+                  onClick={() => window.open(newForm.receiptPreview, '_blank')}
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-tennis-green transition-colors"
+                  title="Ouvrir dans un nouvel onglet"
+                >
+                  <ExternalLink size={14} />
+                  Ouvrir
+                </button>
+              </div>
+              <div className="flex-1 overflow-hidden relative">
+                {newForm.receiptFileType === 'application/pdf' ? (
+                  <embed src={newForm.receiptPreview} type="application/pdf" className="w-full h-full" />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center p-4 overflow-auto">
+                    <img
+                      src={newForm.receiptPreview}
+                      alt="Aperçu du justificatif"
+                      className="max-w-full max-h-full object-contain rounded-lg shadow cursor-zoom-in"
+                      onClick={() => window.open(newForm.receiptPreview, '_blank')}
+                      title="Cliquer pour agrandir"
+                    />
+                  </div>
+                )}
+              </div>
+            </>
+          ) : undefined}
         >
           {/* Inputs fichier cachés */}
           <input ref={newFileInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleNewFileInput} />
@@ -1042,11 +1085,29 @@ export default function ExpenseManagement() {
               </p>
               <div
                 onClick={() => newFileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-300 rounded-2xl p-10 text-center cursor-pointer hover:border-tennis-green hover:bg-tennis-green/5 transition-colors"
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
+                onDrop={e => {
+                  e.preventDefault();
+                  setDragging(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) loadNewFile(file);
+                }}
+                className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-colors ${
+                  dragging
+                    ? 'border-tennis-green bg-tennis-green/10 scale-[1.01]'
+                    : 'border-gray-300 hover:border-tennis-green hover:bg-tennis-green/5'
+                }`}
               >
-                <Upload size={36} className="mx-auto mb-3 text-gray-300" />
-                <p className="text-sm font-medium text-gray-600">Cliquez pour sélectionner un fichier</p>
-                <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG — max 10 Mo</p>
+                <Upload size={36} className={`mx-auto mb-3 transition-colors ${dragging ? 'text-tennis-green' : 'text-gray-300'}`} />
+                {dragging ? (
+                  <p className="text-sm font-medium text-tennis-green">Déposez le fichier ici</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-gray-600">Glissez un fichier ici ou <span className="text-tennis-green">cliquez pour parcourir</span></p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG — max 10 Mo</p>
+                  </>
+                )}
               </div>
               <button
                 type="button"
