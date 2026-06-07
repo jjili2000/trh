@@ -20,6 +20,14 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '5mb' }));
 
+// Log toutes les requêtes POST (debug temporaire)
+app.use((req, res, next) => {
+  if (req.method === 'POST') {
+    console.log(`[app] POST ${req.path} | content-type: ${req.headers['content-type']?.slice(0,40)} | content-length: ${req.headers['content-length']}`);
+  }
+  next();
+});
+
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', v: '2026-05-19' }));
 
