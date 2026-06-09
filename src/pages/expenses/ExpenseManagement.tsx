@@ -582,8 +582,8 @@ function ExpenseDetailModal({
           <div className="space-y-4">
 
             {/* Montant + statut */}
-            <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
-              <div className="flex-1">
+            <div className="flex flex-wrap items-start gap-3 p-4 bg-gray-50 rounded-xl">
+              <div className="flex-1 min-w-0">
                 <p className="text-2xl font-bold text-tennis-green">{formatCurrency(expense.amount)}</p>
                 {expense.amountHt != null && (
                   <p className="text-sm text-gray-500 mt-0.5">
@@ -596,7 +596,7 @@ function ExpenseDetailModal({
                   </p>
                 )}
               </div>
-              <span className={`badge-${expense.status} text-sm px-3 py-1`}>{statusLabels[expense.status]}</span>
+              <span className={`badge-${expense.status} text-sm px-3 py-1 whitespace-nowrap`}>{statusLabels[expense.status]}</span>
             </div>
 
             {/* Détails */}

@@ -911,14 +911,14 @@ export default function TimeTracking() {
 
               {/* Bulk action bar */}
               {selectedIds.size > 0 && (
-                <div className="mb-3 flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                  <span className="text-sm text-blue-800 font-medium flex-1">
+                <div className="mb-3 flex flex-wrap items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <span className="text-sm text-blue-800 font-medium flex-1 min-w-[8rem]">
                     {selectedIds.size} saisie(s) sélectionnée(s)
                   </span>
                   <button
                     onClick={handleBulkApprove}
                     disabled={bulkLoading}
-                    className="flex items-center gap-1.5 px-4 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors whitespace-nowrap"
                   >
                     <Check size={14} />
                     Approuver
@@ -926,12 +926,12 @@ export default function TimeTracking() {
                   <button
                     onClick={handleBulkReject}
                     disabled={bulkLoading}
-                    className="flex items-center gap-1.5 px-4 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 disabled:opacity-60 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 disabled:opacity-60 transition-colors whitespace-nowrap"
                   >
                     <X size={14} />
                     Rejeter
                   </button>
-                  <button onClick={() => setSelectedIds(new Set())} className="text-xs text-blue-500 hover:underline">
+                  <button onClick={() => setSelectedIds(new Set())} className="text-xs text-blue-500 hover:underline whitespace-nowrap">
                     Désélectionner
                   </button>
                 </div>

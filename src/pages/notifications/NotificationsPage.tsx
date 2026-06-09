@@ -71,7 +71,7 @@ export default function NotificationsPage() {
           <Bell size={22} className="text-gray-600" />
           <h1 className="text-2xl font-bold text-gray-800">Notifications</h1>
           {unreadCount > 0 && (
-            <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
+            <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 whitespace-nowrap">
               {unreadCount} non lue{unreadCount > 1 ? 's' : ''}
             </span>
           )}
