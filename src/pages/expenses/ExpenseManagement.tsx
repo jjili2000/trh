@@ -755,7 +755,8 @@ export default function ExpenseManagement() {
   }, [location.state]);
 
   const isAdmin = currentUser?.role === 'admin';
-  const isManagerOrAdmin = isAdmin || expenses.some(e => e.userId !== currentUser?.id);
+  const isTreasurer = currentUser?.role === 'treasurer';
+  const isManagerOrAdmin = isAdmin || isTreasurer || expenses.some(e => e.userId !== currentUser?.id);
 
   const myExpenses = expenses
     .filter(e => e.userId === currentUser?.id)

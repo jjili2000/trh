@@ -6,17 +6,17 @@ import { api } from '../../api/client';
 
 const typeLabels: Record<string, string> = {
   admin: 'Administrateur',
+  treasurer: 'Trésorier',
   user: 'Utilisateur',
   // legacy
   manager: 'Utilisateur',
-  treasurer: 'Utilisateur',
 };
 
 const typeBadgeColors: Record<string, string> = {
   admin: 'bg-purple-100 text-purple-700',
+  treasurer: 'bg-amber-100 text-amber-700',
   user: 'bg-gray-100 text-gray-600',
   manager: 'bg-gray-100 text-gray-600',
-  treasurer: 'bg-gray-100 text-gray-600',
 };
 
 const ALL_MODULES = [
@@ -114,7 +114,7 @@ export default function UserManagement() {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      role: (user.role === 'admin' ? 'admin' : 'user') as UserRole,
+      role: (['admin', 'treasurer'].includes(user.role) ? user.role : 'user') as UserRole,
       managerId: user.managerId ?? '',
       position: user.position ?? '',
       departmentId: user.departmentId ?? '',
@@ -527,6 +527,7 @@ export default function UserManagement() {
                 onChange={e => setForm(f => ({ ...f, role: e.target.value as UserRole }))}
               >
                 <option value="user">Utilisateur</option>
+                <option value="treasurer">Trésorier</option>
                 <option value="admin">Administrateur</option>
               </select>
             </div>

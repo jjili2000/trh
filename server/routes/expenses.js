@@ -75,6 +75,9 @@ function mapExpense(row) {
   };
 }
 
+/** Trésorier ou admin : accès complet aux notes de frais */
+const isExpenseValidator = (role) => role === 'admin' || role === 'treasurer';
+
 // Returns true if the current user's position is listed in the expenses validation config
 async function canValidateExpenses(userId) {
   try {
@@ -164,7 +167,7 @@ router.post('/recognize', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     let rows;
-    if (req.user.role === 'admin') {
+    if (isExpenseValidator(req.user.role)) {
       [rows] = await pool.execute('SELECT * FROM expenses ORDER BY date DESC, created_at DESC');
     } else {
       const isValidator = await canValidateExpenses(req.user.id);
@@ -244,14 +247,25 @@ router.post('/', upload.single('receipt'), async (req, res) => {
     return;
   }
 
-  // Notification manager — dans un bloc séparé pour ne jamais interférer avec la réponse déjà envoyée
+  // Notification trésorier(s) — bloc séparé pour ne jamais interférer avec la réponse déjà envoyée
   try {
     const [[submitter]] = await pool.execute(
-      'SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]
+      'SELECT first_name FROM users WHERE id = ?', [req.user.id]
     );
-    if (submitter?.manager_id) {
-      await notify(submitter.manager_id, 'expense_submitted', 'Note de frais à valider',
-        `${submitter.first_name} a soumis une note de frais.`,
+    const firstName = submitter?.first_name ?? 'Un collaborateur';
+
+    // Notifier les trésoriers ; à défaut, les admins
+    let [validators] = await pool.execute(
+      "SELECT id FROM users WHERE role = 'treasurer' AND (blocked IS NULL OR blocked = 0)"
+    );
+    if (validators.length === 0) {
+      [validators] = await pool.execute(
+        "SELECT id FROM users WHERE role = 'admin' AND (blocked IS NULL OR blocked = 0)"
+      );
+    }
+    for (const v of validators) {
+      await notify(v.id, 'expense_submitted', 'Note de frais à valider',
+        `${firstName} a soumis une note de frais.`,
         'expense', id, 'expenses', 'action');
     }
   } catch (notifErr) {
@@ -327,7 +341,7 @@ router.delete('/:id', async (req, res) => {
     if (existing.length === 0) return res.status(404).json({ error: 'Dépense non trouvée' });
 
     const record = existing[0];
-    if (record.user_id !== req.user.id && req.user.role !== 'admin') {
+    if (record.user_id !== req.user.id && !isExpenseValidator(req.user.role)) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     if (record.status === 'approved') {
@@ -346,7 +360,7 @@ router.delete('/:id', async (req, res) => {
 // PUT /api/expenses/:id/approve
 router.put('/:id/approve', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
+    if (!isExpenseValidator(req.user.role)) {
       const ok = await canValidateExpenses(req.user.id);
       if (!ok) return res.status(403).json({ error: 'Accès refusé' });
     }
@@ -380,7 +394,7 @@ router.put('/:id/approve', async (req, res) => {
 router.put('/:id/reject', async (req, res) => {
   let existing0, expId, rejectionReason;
   try {
-    if (req.user.role !== 'admin') {
+    if (!isExpenseValidator(req.user.role)) {
       const ok = await canValidateExpenses(req.user.id);
       if (!ok) return res.status(403).json({ error: 'Accès refusé' });
     }
