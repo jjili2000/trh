@@ -77,6 +77,8 @@ export default function TimeTracking() {
     bulkDeleteTimeEntries,
     approveTimeEntry,
     rejectTimeEntry,
+    bulkApproveTimeEntries,
+    bulkRejectTimeEntries,
   } = useApp();
 
   // ── My entries form ──────────────────────────────────────────────────────────
@@ -362,9 +364,12 @@ export default function TimeTracking() {
 
   const handleBulkApprove = async () => {
     setBulkLoading(true);
-    for (const id of selectedIds) await approveTimeEntry(id);
-    setSelectedIds(new Set());
-    setBulkLoading(false);
+    try {
+      await bulkApproveTimeEntries(Array.from(selectedIds));
+      setSelectedIds(new Set());
+    } finally {
+      setBulkLoading(false);
+    }
   };
 
   const handleBulkReject = () => {
@@ -1175,12 +1180,17 @@ export default function TimeTracking() {
             : 'Refuser la saisie d\'heures'}
           onConfirm={async (reason) => {
             setBulkLoading(true);
-            for (const id of pendingReject.ids) {
-              await rejectTimeEntry(id, reason || undefined);
+            try {
+              if (pendingReject.ids.length > 1) {
+                await bulkRejectTimeEntries(pendingReject.ids, reason || undefined);
+              } else {
+                await rejectTimeEntry(pendingReject.ids[0], reason || undefined);
+              }
+              setSelectedIds(new Set());
+              setPendingReject(null);
+            } finally {
+              setBulkLoading(false);
             }
-            setSelectedIds(new Set());
-            setBulkLoading(false);
-            setPendingReject(null);
           }}
           onCancel={() => setPendingReject(null)}
         />

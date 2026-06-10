@@ -322,6 +322,137 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// PUT /api/time-entries/bulk/approve — approbation groupée (1 notif par utilisateur)
+router.put('/bulk/approve', async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids requis' });
+  }
+
+  let approved = [];
+  try {
+    // Récupérer toutes les entrées concernées
+    const placeholders = ids.map(() => '?').join(', ');
+    const [existing] = await pool.execute(
+      `SELECT * FROM time_entries WHERE id IN (${placeholders})`, ids
+    );
+
+    // Vérifier droits sur chacune
+    for (const entry of existing) {
+      if (req.user.role !== 'admin') {
+        const ok = await isManagerOf(req.user.id, entry.user_id);
+        if (!ok) return res.status(403).json({ error: 'Accès refusé sur certaines entrées' });
+      }
+    }
+
+    // Mise à jour batch
+    await pool.execute(
+      `UPDATE time_entries SET status = 'approved', validated_by = ?, validated_at = NOW() WHERE id IN (${placeholders})`,
+      [req.user.id, ...ids]
+    );
+    const [rows] = await pool.execute(
+      `SELECT * FROM time_entries WHERE id IN (${placeholders})`, ids
+    );
+    approved = rows;
+    res.json(rows.map(mapEntry));
+  } catch (err) {
+    console.error('[time-entries bulk approve]', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
+
+  // Une seule notification par utilisateur concerné
+  try {
+    const [[validator]] = await pool.execute('SELECT first_name FROM users WHERE id = ?', [req.user.id]);
+    const validatorName = validator?.first_name ?? 'Votre responsable';
+
+    // Regrouper par user_id
+    const byUser = {};
+    for (const e of approved) {
+      if (!byUser[e.user_id]) byUser[e.user_id] = [];
+      byUser[e.user_id].push(e);
+    }
+
+    for (const [userId, entries] of Object.entries(byUser)) {
+      const n = entries.length;
+      const body = n === 1
+        ? (() => {
+            const d = entries[0].date instanceof Date ? entries[0].date.toISOString().slice(0, 10) : String(entries[0].date).slice(0, 10);
+            const label = new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+            return `Votre saisie du ${label} a été validée par ${validatorName}.`;
+          })()
+        : `${n} saisies d'heures ont été validées par ${validatorName}.`;
+      await notify(userId, 'time_entry_approved', 'Saisies d\'heures validées', body, 'time_entry', null, 'time', 'response');
+    }
+  } catch (notifErr) {
+    console.error('[time-entries bulk approve] notification error:', notifErr.message);
+  }
+});
+
+// PUT /api/time-entries/bulk/reject — rejet groupé (1 notif par utilisateur)
+router.put('/bulk/reject', async (req, res) => {
+  const { ids, rejectionReason } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids requis' });
+  }
+
+  let rejected = [];
+  try {
+    const placeholders = ids.map(() => '?').join(', ');
+    const [existing] = await pool.execute(
+      `SELECT * FROM time_entries WHERE id IN (${placeholders})`, ids
+    );
+
+    for (const entry of existing) {
+      if (req.user.role !== 'admin') {
+        const ok = await isManagerOf(req.user.id, entry.user_id);
+        if (!ok) return res.status(403).json({ error: 'Accès refusé sur certaines entrées' });
+      }
+    }
+
+    await pool.execute(
+      `UPDATE time_entries SET status = 'rejected', rejection_reason = ?, validated_by = ?, validated_at = NOW() WHERE id IN (${placeholders})`,
+      [rejectionReason || null, req.user.id, ...ids]
+    );
+    const [rows] = await pool.execute(
+      `SELECT * FROM time_entries WHERE id IN (${placeholders})`, ids
+    );
+    rejected = rows;
+    res.json(rows.map(mapEntry));
+  } catch (err) {
+    console.error('[time-entries bulk reject]', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+    return;
+  }
+
+  // Une seule notification par utilisateur concerné
+  try {
+    const [[validator]] = await pool.execute('SELECT first_name FROM users WHERE id = ?', [req.user.id]);
+    const validatorName = validator?.first_name ?? 'Votre responsable';
+
+    const byUser = {};
+    for (const e of rejected) {
+      if (!byUser[e.user_id]) byUser[e.user_id] = [];
+      byUser[e.user_id].push(e);
+    }
+
+    for (const [userId, entries] of Object.entries(byUser)) {
+      const n = entries.length;
+      const motif = rejectionReason ? ` Motif : ${rejectionReason}` : '';
+      const body = n === 1
+        ? (() => {
+            const d = entries[0].date instanceof Date ? entries[0].date.toISOString().slice(0, 10) : String(entries[0].date).slice(0, 10);
+            const label = new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+            return `Votre saisie du ${label} a été rejetée par ${validatorName}.${motif}`;
+          })()
+        : `${n} saisies d'heures ont été rejetées par ${validatorName}.${motif}`;
+      await notify(userId, 'time_entry_rejected', 'Saisies d\'heures rejetées', body, 'time_entry', null, 'time', 'response');
+    }
+  } catch (notifErr) {
+    console.error('[time-entries bulk reject] notification error:', notifErr.message);
+  }
+});
+
 // PUT /api/time-entries/:id/approve
 router.put('/:id/approve', async (req, res) => {
   let entry, entryId;

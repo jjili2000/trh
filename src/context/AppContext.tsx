@@ -65,6 +65,8 @@ interface AppContextType {
   bulkDeleteTimeEntries: (ids: string[]) => Promise<{ deleted: number; locked: number }>;
   approveTimeEntry: (id: string) => Promise<void>;
   rejectTimeEntry: (id: string, rejectionReason?: string) => Promise<void>;
+  bulkApproveTimeEntries: (ids: string[]) => Promise<void>;
+  bulkRejectTimeEntries: (ids: string[], rejectionReason?: string) => Promise<void>;
 
   // Absence Requests
   addAbsenceRequest: (req: Omit<AbsenceRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
@@ -363,6 +365,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeEntries(updated);
   };
 
+  const bulkApproveTimeEntries = async (ids: string[]) => {
+    await api.put('/time-entries/bulk/approve', { ids });
+    const updated = await api.get<TimeEntry[]>('/time-entries');
+    setTimeEntries(updated);
+  };
+
+  const bulkRejectTimeEntries = async (ids: string[], rejectionReason?: string) => {
+    await api.put('/time-entries/bulk/reject', { ids, rejectionReason: rejectionReason || null });
+    const updated = await api.get<TimeEntry[]>('/time-entries');
+    setTimeEntries(updated);
+  };
+
   // ── Absence Requests ──────────────────────────────────────────────────────────
 
   const addAbsenceRequest = async (data: Omit<AbsenceRequest, 'id' | 'createdAt' | 'status'>) => {
@@ -496,6 +510,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         bulkDeleteTimeEntries,
         approveTimeEntry,
         rejectTimeEntry,
+        bulkApproveTimeEntries,
+        bulkRejectTimeEntries,
         addAbsenceRequest,
         updateAbsenceRequest,
         approveAbsenceRequest,
