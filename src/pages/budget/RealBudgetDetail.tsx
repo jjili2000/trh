@@ -56,7 +56,12 @@ interface AddLineForm {
   type: BudgetLineType;
   label: string;
   forecastAmount: string;
+  detailDate: string;
+  paymentMethod: string;
+  qty: string;
 }
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export default function RealBudgetDetail() {
   const { id } = useParams<{ id: string }>();
@@ -84,7 +89,10 @@ export default function RealBudgetDetail() {
 
   // Add line form
   const [showAddLine, setShowAddLine] = useState(false);
-  const [addLineForm, setAddLineForm] = useState<AddLineForm>({ type: 'income', label: '', forecastAmount: '' });
+  const [addLineForm, setAddLineForm] = useState<AddLineForm>({
+    type: 'income', label: '', forecastAmount: '',
+    detailDate: todayIso(), paymentMethod: 'Virement', qty: '1',
+  });
   const [savingLine, setSavingLine] = useState(false);
 
   // Access form
@@ -154,16 +162,48 @@ export default function RealBudgetDetail() {
   };
 
   const handleAddLine = async () => {
-    if (!addLineForm.label) return;
+    if (!addLineForm.label || !addLineForm.detailDate) return;
+    const forecastAmt = parseFloat(addLineForm.forecastAmount) || 0;
+    const qty = parseFloat(addLineForm.qty) || 1;
+    const unitPrice = forecastAmt / qty;
     setSavingLine(true);
     try {
+      // 1 — Créer la ligne
       const line = await api.post<RealBudgetLine>(`/budgets/real/${id}/lines`, {
         type: addLineForm.type,
         label: addLineForm.label,
-        forecastAmount: parseFloat(addLineForm.forecastAmount) || 0,
+        forecastAmount: forecastAmt,
       });
-      setBudget(prev => prev ? { ...prev, lines: [...(prev.lines || []), line] } : prev);
-      setAddLineForm({ type: 'income', label: '', forecastAmount: '' });
+
+      // 2 — Créer automatiquement le détail correspondant
+      let createdLine: RealBudgetLine = line;
+      if (forecastAmt > 0) {
+        try {
+          const detail = await api.post<BudgetLineDetail>(
+            `/budgets/real/${id}/lines/${line.id}/details`,
+            {
+              detailDate: addLineForm.detailDate,
+              label: addLineForm.label,
+              paymentMethod: addLineForm.paymentMethod,
+              qty,
+              unitPrice,
+              amount: forecastAmt,
+            }
+          );
+          createdLine = { ...line, details: [detail] };
+        } catch {
+          // Détail non créé — la ligne existe quand même, l'utilisateur pourra ajouter manuellement
+        }
+      }
+
+      setBudget(prev => prev ? { ...prev, lines: [...(prev.lines || []), createdLine] } : prev);
+      if (createdLine.details?.length) {
+        setExpandedLines(prev => new Set([...prev, createdLine.id]));
+      }
+      setAddLineForm({
+        type: 'income', label: '', forecastAmount: '',
+        detailDate: todayIso(), paymentMethod: 'Virement', qty: '1',
+      });
       setShowAddLine(false);
     } catch {
       setError('Erreur lors de l\'ajout de la ligne');
@@ -603,45 +643,82 @@ export default function RealBudgetDetail() {
             </button>
           </div>
           {showAddLine && (
-            <div className="flex gap-2 items-end flex-wrap">
-              <div>
-                <label className="label text-xs">Type</label>
-                <select
-                  className="input text-sm"
-                  value={addLineForm.type}
-                  onChange={e => setAddLineForm(prev => ({ ...prev, type: e.target.value as BudgetLineType }))}
+            <div className="space-y-3">
+              <div className="flex gap-2 items-end flex-wrap">
+                <div>
+                  <label className="label text-xs">Type</label>
+                  <select
+                    className="input text-sm"
+                    value={addLineForm.type}
+                    onChange={e => setAddLineForm(prev => ({ ...prev, type: e.target.value as BudgetLineType }))}
+                  >
+                    <option value="income">Recette</option>
+                    <option value="expense">Dépense</option>
+                  </select>
+                </div>
+                <div className="flex-1 min-w-[160px]">
+                  <label className="label text-xs">Libellé *</label>
+                  <input
+                    className="input text-sm"
+                    value={addLineForm.label}
+                    onChange={e => setAddLineForm(prev => ({ ...prev, label: e.target.value }))}
+                    placeholder="Libellé"
+                  />
+                </div>
+                <div className="w-32">
+                  <label className="label text-xs">Montant réalisé (€) *</label>
+                  <input
+                    type="number"
+                    className="input text-sm"
+                    value={addLineForm.forecastAmount}
+                    onChange={e => setAddLineForm(prev => ({ ...prev, forecastAmount: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 items-end flex-wrap">
+                <div className="w-36">
+                  <label className="label text-xs">Date *</label>
+                  <input
+                    type="date"
+                    className="input text-sm"
+                    value={addLineForm.detailDate}
+                    onChange={e => setAddLineForm(prev => ({ ...prev, detailDate: e.target.value }))}
+                  />
+                </div>
+                <div className="w-36">
+                  <label className="label text-xs">Mode de paiement</label>
+                  <select
+                    className="input text-sm"
+                    value={addLineForm.paymentMethod}
+                    onChange={e => setAddLineForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  >
+                    {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="w-20">
+                  <label className="label text-xs">Quantité</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="input text-sm"
+                    value={addLineForm.qty}
+                    onChange={e => setAddLineForm(prev => ({ ...prev, qty: e.target.value }))}
+                  />
+                </div>
+                <button
+                  className="btn-primary text-sm flex items-center gap-1"
+                  onClick={handleAddLine}
+                  disabled={savingLine || !addLineForm.label || !addLineForm.detailDate}
                 >
-                  <option value="income">Recette</option>
-                  <option value="expense">Dépense</option>
-                </select>
+                  <Plus size={14} />
+                  {savingLine ? '…' : 'Ajouter'}
+                </button>
               </div>
-              <div className="flex-1 min-w-[160px]">
-                <label className="label text-xs">Libellé</label>
-                <input
-                  className="input text-sm"
-                  value={addLineForm.label}
-                  onChange={e => setAddLineForm(prev => ({ ...prev, label: e.target.value }))}
-                  placeholder="Libellé"
-                />
-              </div>
-              <div className="w-32">
-                <label className="label text-xs">Montant prévu €</label>
-                <input
-                  type="number"
-                  className="input text-sm"
-                  value={addLineForm.forecastAmount}
-                  onChange={e => setAddLineForm(prev => ({ ...prev, forecastAmount: e.target.value }))}
-                  placeholder="0.00"
-                />
-              </div>
-              <button
-                className="btn-primary text-sm flex items-center gap-1"
-                onClick={handleAddLine}
-                disabled={savingLine}
-              >
-                <Plus size={14} />
-                {savingLine ? '…' : 'Ajouter'}
-              </button>
+              <p className="text-xs text-gray-400">
+                Un détail sera créé automatiquement avec le montant saisi.
+              </p>
             </div>
           )}
         </div>
