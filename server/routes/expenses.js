@@ -253,20 +253,38 @@ router.post('/', upload.single('receipt'), async (req, res) => {
       'SELECT first_name FROM users WHERE id = ?', [req.user.id]
     );
     const firstName = submitter?.first_name ?? 'Un collaborateur';
+    const body = `${firstName} a soumis une note de frais.`;
 
-    // Notifier les trésoriers ; à défaut, les admins
-    let [validators] = await pool.execute(
+    const [treasurers] = await pool.execute(
       "SELECT id FROM users WHERE role = 'treasurer' AND (blocked IS NULL OR blocked = 0)"
     );
-    if (validators.length === 0) {
-      [validators] = await pool.execute(
+
+    if (treasurers.length > 0) {
+      // Des trésoriers existent → notifier uniquement les trésoriers
+      // + les admins qui ont eux-mêmes au moins un subordonné (responsables)
+      const [recipients] = await pool.execute(`
+        SELECT DISTINCT u.id FROM users u
+        WHERE (u.blocked IS NULL OR u.blocked = 0)
+          AND (
+            u.role = 'treasurer'
+            OR (u.role = 'admin' AND EXISTS (
+              SELECT 1 FROM users sub WHERE sub.manager_id = u.id
+            ))
+          )
+      `);
+      for (const r of recipients) {
+        await notify(r.id, 'expense_submitted', 'Note de frais à valider',
+          body, 'expense', id, 'expenses', 'action');
+      }
+    } else {
+      // Aucun trésorier défini → fallback sur tous les admins
+      const [admins] = await pool.execute(
         "SELECT id FROM users WHERE role = 'admin' AND (blocked IS NULL OR blocked = 0)"
       );
-    }
-    for (const v of validators) {
-      await notify(v.id, 'expense_submitted', 'Note de frais à valider',
-        `${firstName} a soumis une note de frais.`,
-        'expense', id, 'expenses', 'action');
+      for (const a of admins) {
+        await notify(a.id, 'expense_submitted', 'Note de frais à valider',
+          body, 'expense', id, 'expenses', 'action');
+      }
     }
   } catch (notifErr) {
     console.error('[expenses POST] notification error:', notifErr.message);
