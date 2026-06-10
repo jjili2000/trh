@@ -87,6 +87,21 @@ export default function RealBudgetDetail() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const labelRef = useRef<HTMLInputElement>(null);
 
+  // Dropdown "+Détail" (choix saisie libre vs pré-rempli)
+  const [dropdownLineId, setDropdownLineId] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropdownLineId) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownLineId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropdownLineId]);
+
   // Add line form
   const [showAddLine, setShowAddLine] = useState(false);
   const [addLineForm, setAddLineForm] = useState<AddLineForm>({
@@ -212,15 +227,14 @@ export default function RealBudgetDetail() {
     }
   };
 
-  const openAddDetail = (lineId: string) => {
+  const openAddDetail = (lineId: string, prefill = false) => {
     const line = (budget?.lines ?? []).find(l => l.id === lineId);
     const lineType = line?.type ?? 'expense';
     setDetailModal({ lineId, lineType });
     setDetailError(null);
+    setDropdownLineId(null);
 
-    // Pré-remplir depuis la ligne source si c'est le premier détail
-    const isFirstDetail = (line?.details ?? []).length === 0;
-    if (isFirstDetail && line?.sourceLabel != null) {
+    if (prefill && line?.sourceLabel != null) {
       setDetailForm({
         ...emptyDetailForm(),
         label: line.sourceLabel,
@@ -447,15 +461,52 @@ export default function RealBudgetDetail() {
                     </span>
                     <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate">{line.label}</span>
                     <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                      {canAddDetails && (
-                        <button
-                          className="text-xs btn-secondary py-0.5 px-2"
-                          onClick={e => { e.stopPropagation(); openAddDetail(line.id); }}
-                        >
-                          <Plus size={12} className="inline mr-0.5" />
-                          Détail
-                        </button>
-                      )}
+                      {canAddDetails && (() => {
+                        const isFirst = (line.details ?? []).length === 0;
+                        const hasSource = line.sourceLabel != null;
+                        const showDropdown = isFirst && hasSource;
+                        return showDropdown ? (
+                          <div className="relative" ref={dropdownLineId === line.id ? dropdownRef : undefined}>
+                            <button
+                              className="text-xs btn-secondary py-0.5 px-2 flex items-center gap-0.5"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setDropdownLineId(prev => prev === line.id ? null : line.id);
+                              }}
+                            >
+                              <Plus size={12} />
+                              Détail
+                              <ChevronDown size={10} className="ml-0.5" />
+                            </button>
+                            {dropdownLineId === line.id && (
+                              <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[190px] py-1">
+                                <button
+                                  className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
+                                  onMouseDown={e => { e.stopPropagation(); openAddDetail(line.id, false); }}
+                                >
+                                  <Plus size={11} className="inline mr-1.5 text-gray-400" />
+                                  Saisie libre
+                                </button>
+                                <button
+                                  className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
+                                  onMouseDown={e => { e.stopPropagation(); openAddDetail(line.id, true); }}
+                                >
+                                  <FileText size={11} className="inline mr-1.5 text-tennis-green" />
+                                  Depuis la demande initiale
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            className="text-xs btn-secondary py-0.5 px-2"
+                            onClick={e => { e.stopPropagation(); openAddDetail(line.id, false); }}
+                          >
+                            <Plus size={12} className="inline mr-0.5" />
+                            Détail
+                          </button>
+                        );
+                      })()}
                       {canEdit && (
                         <button
                           className="text-red-400 hover:text-red-600 p-1"
