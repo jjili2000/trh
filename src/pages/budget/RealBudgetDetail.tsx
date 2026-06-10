@@ -28,12 +28,9 @@ function fmtCurrency(n: number) {
   return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 }
 
-const PAYMENT_METHODS = ['Espèces', 'Virement', 'Chèque', 'Carte bancaire', 'Autre'];
-
 interface DetailForm {
   detailDate: string;
   label: string;
-  paymentMethod: string;
   qty: string;
   unitPrice: string;
   receiptFile: string | null;
@@ -44,7 +41,6 @@ interface DetailForm {
 const emptyDetailForm = (): DetailForm => ({
   detailDate: '',
   label: '',
-  paymentMethod: 'Virement',
   qty: '1',
   unitPrice: '',
   receiptFile: null,
@@ -57,7 +53,6 @@ interface AddLineForm {
   label: string;
   forecastAmount: string;
   detailDate: string;
-  paymentMethod: string;
   qty: string;
 }
 
@@ -106,7 +101,7 @@ export default function RealBudgetDetail() {
   const [showAddLine, setShowAddLine] = useState(false);
   const [addLineForm, setAddLineForm] = useState<AddLineForm>({
     type: 'income', label: '', forecastAmount: '',
-    detailDate: todayIso(), paymentMethod: 'Virement', qty: '1',
+    detailDate: todayIso(), qty: '1',
   });
   const [savingLine, setSavingLine] = useState(false);
 
@@ -199,7 +194,6 @@ export default function RealBudgetDetail() {
             {
               detailDate: addLineForm.detailDate,
               label: addLineForm.label,
-              paymentMethod: addLineForm.paymentMethod,
               qty,
               unitPrice,
               amount: forecastAmt,
@@ -217,7 +211,7 @@ export default function RealBudgetDetail() {
       }
       setAddLineForm({
         type: 'income', label: '', forecastAmount: '',
-        detailDate: todayIso(), paymentMethod: 'Virement', qty: '1',
+        detailDate: todayIso(), qty: '1',
       });
       setShowAddLine(false);
     } catch {
@@ -252,7 +246,6 @@ export default function RealBudgetDetail() {
     setDetailForm({
       detailDate: detail.detailDate,
       label: detail.label,
-      paymentMethod: detail.paymentMethod,
       qty: String(detail.qty ?? 1),
       unitPrice: String(detail.unitPrice ?? detail.amount),
       receiptFile: detail.receiptFile,
@@ -279,9 +272,9 @@ export default function RealBudgetDetail() {
     reader.readAsDataURL(file);
   };
 
-  const handleSaveDetail = async () => {
+  const handleSaveDetail = async (andNext = false) => {
     if (!detailModal) return;
-    if (!detailForm.detailDate || !detailForm.label || !detailForm.paymentMethod || !detailForm.unitPrice) {
+    if (!detailForm.detailDate || !detailForm.label || !detailForm.unitPrice) {
       setDetailError('Tous les champs obligatoires doivent être remplis');
       return;
     }
@@ -292,7 +285,6 @@ export default function RealBudgetDetail() {
       const payload = {
         detailDate: detailForm.detailDate,
         label: detailForm.label,
-        paymentMethod: detailForm.paymentMethod,
         qty: parseFloat(detailForm.qty) || 1,
         unitPrice: parseFloat(detailForm.unitPrice) || 0,
         amount: computedAmount,
@@ -334,9 +326,13 @@ export default function RealBudgetDetail() {
           };
         });
         setExpandedLines(prev => new Set([...prev, lineId]));
-        // Keep modal open, reset form, auto-focus label for next entry
-        setDetailForm(emptyDetailForm());
-        setTimeout(() => labelRef.current?.focus(), 50);
+        if (andNext) {
+          // Rester sur la modale pour saisir le suivant
+          setDetailForm(emptyDetailForm());
+          setTimeout(() => labelRef.current?.focus(), 50);
+        } else {
+          setDetailModal(null);
+        }
       }
     } catch {
       setDetailError('Erreur lors de l\'enregistrement');
@@ -539,7 +535,6 @@ export default function RealBudgetDetail() {
                             <tr className="text-gray-500 border-b border-gray-100">
                               <th className="text-left pb-1 pr-3">Date</th>
                               <th className="text-left pb-1 pr-3">Libellé</th>
-                              <th className="text-left pb-1 pr-3">Paiement</th>
                               <th className="text-right pb-1 pr-3">Montant</th>
                               <th className="text-left pb-1 pr-3">Saisi par</th>
                               <th className="text-center pb-1 pr-3">Justif.</th>
@@ -551,7 +546,6 @@ export default function RealBudgetDetail() {
                               <tr key={detail.id} className="border-b border-gray-50">
                                 <td className="py-1 pr-3">{fmtDate(detail.detailDate)}</td>
                                 <td className="py-1 pr-3">{detail.label}</td>
-                                <td className="py-1 pr-3">{detail.paymentMethod}</td>
                                 <td className="py-1 pr-3 text-right font-medium">{fmtCurrency(detail.amount)}</td>
                                 <td className="py-1 pr-3 text-gray-400">{userName(detail.userId)}</td>
                                 <td className="py-1 pr-3 text-center">
@@ -737,16 +731,6 @@ export default function RealBudgetDetail() {
                     onChange={e => setAddLineForm(prev => ({ ...prev, detailDate: e.target.value }))}
                   />
                 </div>
-                <div className="w-36">
-                  <label className="label text-xs">Mode de paiement</label>
-                  <select
-                    className="input text-sm"
-                    value={addLineForm.paymentMethod}
-                    onChange={e => setAddLineForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
-                  >
-                    {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
                 <div className="w-20">
                   <label className="label text-xs">Quantité</label>
                   <input
@@ -895,13 +879,21 @@ export default function RealBudgetDetail() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={e => { if (e.target === e.currentTarget) setDetailModal(null); }}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
           <div className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold">
-                {detailModal.editId
-                  ? `Modifier le détail (${detailModal.lineType === 'income' ? 'recette' : 'dépense'})`
-                  : `Ajouter un détail de ${detailModal.lineType === 'income' ? 'recette' : 'dépense'}`}
-              </h2>
-              <button onClick={() => setDetailModal(null)} className="text-gray-400 hover:text-gray-600">
+            <div className="flex items-start justify-between mb-4 gap-3">
+              <div>
+                <h2 className="text-lg font-bold">
+                  {detailModal.editId
+                    ? `Modifier le détail (${detailModal.lineType === 'income' ? 'recette' : 'dépense'})`
+                    : `Ajouter un détail de ${detailModal.lineType === 'income' ? 'recette' : 'dépense'}`}
+                </h2>
+                {(() => {
+                  const lineLbl = (budget?.lines ?? []).find(l => l.id === detailModal.lineId)?.label;
+                  return lineLbl ? (
+                    <p className="text-sm text-gray-500 mt-0.5">{lineLbl}</p>
+                  ) : null;
+                })()}
+              </div>
+              <button onClick={() => setDetailModal(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
                 <X size={20} />
               </button>
             </div>
@@ -931,18 +923,6 @@ export default function RealBudgetDetail() {
                   onChange={e => setDetailForm(prev => ({ ...prev, label: e.target.value }))}
                   placeholder={detailModal.lineType === 'income' ? 'Description de la recette' : 'Description de la dépense'}
                 />
-              </div>
-              <div>
-                <label className="label">Mode de paiement *</label>
-                <select
-                  className="input"
-                  value={detailForm.paymentMethod}
-                  onChange={e => setDetailForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
-                >
-                  {PAYMENT_METHODS.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
               </div>
               <div className="flex gap-3">
                 <div className="w-24">
@@ -1003,11 +983,20 @@ export default function RealBudgetDetail() {
               </div>
             </div>
 
-            <div className="flex gap-3 justify-end mt-4">
+            <div className="flex gap-2 justify-end mt-4 flex-wrap">
               <button className="btn-secondary" onClick={() => setDetailModal(null)}>
                 Annuler
               </button>
-              <button className="btn-primary" onClick={handleSaveDetail} disabled={savingDetail}>
+              {!detailModal.editId && (
+                <button
+                  className="btn-secondary"
+                  onClick={() => handleSaveDetail(true)}
+                  disabled={savingDetail}
+                >
+                  {savingDetail ? '…' : 'Enregistrer et suivant'}
+                </button>
+              )}
+              <button className="btn-primary" onClick={() => handleSaveDetail(false)} disabled={savingDetail}>
                 {savingDetail ? 'Enregistrement…' : 'Enregistrer'}
               </button>
             </div>

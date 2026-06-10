@@ -195,7 +195,7 @@ export interface BudgetRequest {
 
 export interface BudgetLineDetail {
   id: string; lineId: string; detailDate: string; label: string;
-  paymentMethod: string; qty: number; unitPrice: number; amount: number;
+  qty: number; unitPrice: number; amount: number;
   receiptFile: string | null; receiptFileName: string | null; receiptFileType: string | null;
   userId: string; createdAt: string;
 }
