@@ -441,7 +441,7 @@ export default function RealBudgetDetail() {
           <div className="space-y-2">
             {filtered.map(line => {
               const realized = (line.details || []).reduce((s, d) => s + d.amount, 0);
-              const diff = line.forecastAmount - realized;
+              const diff = realized - line.forecastAmount;
               const isExpanded = expandedLines.has(line.id);
 
               return (
@@ -518,8 +518,13 @@ export default function RealBudgetDetail() {
                       <span className={`text-xs font-medium ${lineType === 'income' ? 'text-green-700' : 'text-red-600'}`}>
                         Réalisé&nbsp;: {fmtCurrency(realized)}
                       </span>
-                      <span className={`text-xs ${diff >= 0 ? 'text-gray-500' : 'text-red-600'}`}>
-                        Écart&nbsp;: {fmtCurrency(diff)}
+                      <span className={`text-xs font-medium ${
+                        diff === 0 ? 'text-gray-400' :
+                        lineType === 'income'
+                          ? (diff > 0 ? 'text-green-600' : 'text-red-600')
+                          : (diff > 0 ? 'text-red-600' : 'text-green-600')
+                      }`}>
+                        Écart&nbsp;: {diff > 0 ? '+' : ''}{fmtCurrency(diff)}
                       </span>
                     </div>
                   </div>
