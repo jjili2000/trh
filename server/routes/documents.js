@@ -113,7 +113,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     // Auto-recognize : on lit le fichier en base64 pour l'envoyer à l'IA
     const fileBuffer = fs.readFileSync(path.join(UPLOADS_DIR, filePath));
     const fileData = fileBuffer.toString('base64');
-    const recognized = await recognizeDocument(fileData, fileType, fileName);
+    const recognized = await recognizeDocument(fileData, fileType, fileName, { userId: req.user.id });
 
     const id = crypto.randomUUID();
     await pool.execute(

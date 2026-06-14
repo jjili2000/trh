@@ -43,6 +43,7 @@ app.use('/api/validation-config', require('./middleware/auth'), require('./route
 app.use('/api/payroll',           require('./middleware/auth'), require('./routes/payroll'));
 app.use('/api/admin/reset',       require('./middleware/auth'), require('./routes/adminReset'));
 app.use('/api/departments',       require('./middleware/auth'), require('./routes/departments'));
+app.use('/api/ai-costs',          require('./middleware/auth'), require('./routes/aiCosts'));
 
 // Serve React frontend in production
 const distPath = path.join(__dirname, '../dist');

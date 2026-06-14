@@ -154,7 +154,7 @@ router.post('/recognize', async (req, res) => {
   try {
     const { fileData, fileType } = req.body;
     if (!fileData || !fileType) return res.status(400).json({ error: 'fileData et fileType requis' });
-    const result = await recognizeExpense(fileData, fileType);
+    const result = await recognizeExpense(fileData, fileType, { userId: req.user.id });
     res.json(result);
   } catch (err) {
     const msg = err?.message || String(err);
