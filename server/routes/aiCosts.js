@@ -23,13 +23,13 @@ router.get('/models', async (req, res) => {
     const { data: models } = await client.models.list({ limit: 50 });
 
     const result = models
-      .filter(m => m.id.startsWith('claude-'))
+      .filter(m => m.id.startsWith('claude-') && PRICING[m.id])
       .map(m => ({
         id:            m.id,
         displayName:   m.display_name || m.id,
-        inputPerMTok:  PRICING[m.id]?.inputPerMTok  ?? null,
-        outputPerMTok: PRICING[m.id]?.outputPerMTok ?? null,
-        pricingKnown:  !!PRICING[m.id],
+        inputPerMTok:  PRICING[m.id].inputPerMTok,
+        outputPerMTok: PRICING[m.id].outputPerMTok,
+        pricingKnown:  true,
       }));
 
     res.json({ models: result, pricingUpdatedAt: '2026-06-14' });
