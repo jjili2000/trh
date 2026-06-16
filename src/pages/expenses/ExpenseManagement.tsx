@@ -167,7 +167,7 @@ function Modal({
               <X size={18} />
             </button>
           </div>
-          <div className="p-6 overflow-y-auto flex-1">{children}</div>
+          <div className="p-6 overflow-y-auto overflow-x-hidden flex-1">{children}</div>
           {footer && (
             <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 flex items-center justify-between gap-3">
               {footer}
@@ -537,17 +537,17 @@ function ExpenseDetailModal({
                 <div className="space-y-2">
                   {form.vatLines.map((line, i) => (
                     <div key={i} className="flex items-center gap-2">
-                      <div className="flex-1 flex items-center gap-1">
-                        <input type="number" className="input py-1.5 text-sm w-20"
+                      <div className="flex-1 min-w-0 flex items-center gap-1">
+                        <input type="number" className="input py-1.5 text-sm w-16 min-w-0"
                           value={line.rate} onChange={e => updateVatLine(i, 'rate', e.target.value)}
                           min="0" step="0.1" placeholder="Taux %" />
-                        <span className="text-gray-400 text-sm">%</span>
+                        <span className="text-gray-400 text-sm shrink-0">%</span>
                       </div>
-                      <div className="flex-1 flex items-center gap-1">
-                        <input type="number" className="input py-1.5 text-sm"
+                      <div className="flex-1 min-w-0 flex items-center gap-1">
+                        <input type="number" className="input py-1.5 text-sm w-full min-w-0"
                           value={line.amount} onChange={e => updateVatLine(i, 'amount', e.target.value)}
                           min="0" step="0.01" placeholder="Montant €" />
-                        <span className="text-gray-400 text-sm">€</span>
+                        <span className="text-gray-400 text-sm shrink-0">€</span>
                       </div>
                       <button type="button" onClick={() => removeVatLine(i)} className="p-1 text-red-400 hover:bg-red-50 rounded">
                         <Trash2 size={14} />
