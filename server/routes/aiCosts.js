@@ -124,20 +124,20 @@ router.get('/stats', async (req, res) => {
 
     res.json({
       totals: {
-        calls:        totals.total_calls   || 0,
-        inputTokens:  totals.total_input   || 0,
-        outputTokens: totals.total_output  || 0,
-        costUsd:      parseFloat(totals.total_cost || 0),
+        calls:        parseInt(totals.total_calls)  || 0,
+        inputTokens:  parseInt(totals.total_input)  || 0,
+        outputTokens: parseInt(totals.total_output) || 0,
+        costUsd:      parseFloat(totals.total_cost  || 0),
       },
       thisMonth: {
         costUsd: parseFloat(thisMonth.cost_usd || 0),
-        calls:   thisMonth.calls || 0,
+        calls:   parseInt(thisMonth.calls)     || 0,
       },
       monthly: monthly.map(r => ({
         month:        r.month,
-        calls:        r.calls,
-        inputTokens:  r.input_tokens,
-        outputTokens: r.output_tokens,
+        calls:        parseInt(r.calls)        || 0,
+        inputTokens:  parseInt(r.input_tokens) || 0,
+        outputTokens: parseInt(r.output_tokens)|| 0,
         costUsd:      parseFloat(r.cost_usd || 0),
       })),
       byFunction: byFunction.map(r => ({
