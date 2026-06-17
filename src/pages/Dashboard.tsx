@@ -1,8 +1,8 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useState, useCallback, ReactNode, ElementType } from 'react';
 import {
   Clock, Calendar, Receipt, Users, TrendingUp, CheckCircle,
-  AlertCircle, FileText, Settings2, X, ArrowUp, ArrowDown,
+  AlertCircle, FileText, Settings2, X, ArrowUp, ArrowDown, ChevronRight,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -339,12 +339,11 @@ export default function Dashboard() {
     return 'Bonsoir';
   };
 
-  const pendingAlertParts = [
-    hasModule('time')     && pendingTime > 0    && `${pendingTime} saisie(s) de temps`,
-    hasModule('absences') && pendingAbsences > 0 && `${pendingAbsences} demande(s) d'absence`,
-    hasModule('expenses') && pendingExpenses > 0 && `${pendingExpenses} note(s) de frais`,
-  ].filter(Boolean) as string[];
-  const showPendingAlert = isManagerOrAdmin && pendingAlertParts.length > 0;
+  const showPendingAlert = isManagerOrAdmin && (
+    (hasModule('time')     && pendingTime > 0)     ||
+    (hasModule('absences') && pendingAbsences > 0) ||
+    (hasModule('expenses') && pendingExpenses > 0)
+  );
 
   // ── Rendu des tuiles ─────────────────────────────────────────────────────
 
@@ -546,13 +545,36 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Bandeau alertes */}
+      {/* Bandeaux alertes — un par type, chacun en lien vers la page de validation */}
       {showPendingAlert && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
-          <AlertCircle size={20} className="text-amber-500 flex-shrink-0" />
-          <p className="text-sm text-amber-800 font-medium">
-            Vous avez {pendingAlertParts.join(', ')} en attente de validation.
-          </p>
+        <div className="mb-6 space-y-2">
+          {hasModule('time') && pendingTime > 0 && (
+            <Link to="/time" className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors">
+              <AlertCircle size={18} className="text-amber-500 flex-shrink-0" />
+              <p className="text-sm text-amber-800 font-medium flex-1">
+                Vous avez <strong>{pendingTime}</strong> saisie(s) de temps en attente de validation.
+              </p>
+              <ChevronRight size={16} className="text-amber-400 flex-shrink-0" />
+            </Link>
+          )}
+          {hasModule('absences') && pendingAbsences > 0 && (
+            <Link to="/absences" className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors">
+              <AlertCircle size={18} className="text-amber-500 flex-shrink-0" />
+              <p className="text-sm text-amber-800 font-medium flex-1">
+                Vous avez <strong>{pendingAbsences}</strong> demande(s) d'absence en attente de validation.
+              </p>
+              <ChevronRight size={16} className="text-amber-400 flex-shrink-0" />
+            </Link>
+          )}
+          {hasModule('expenses') && pendingExpenses > 0 && (
+            <Link to="/expenses" className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors">
+              <AlertCircle size={18} className="text-amber-500 flex-shrink-0" />
+              <p className="text-sm text-amber-800 font-medium flex-1">
+                Vous avez <strong>{pendingExpenses}</strong> note(s) de frais en attente de validation.
+              </p>
+              <ChevronRight size={16} className="text-amber-400 flex-shrink-0" />
+            </Link>
+          )}
         </div>
       )}
 
