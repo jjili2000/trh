@@ -370,27 +370,27 @@ export default function PayrollDetail() {
               ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="flex-1 overflow-y-auto">
               {detailTab === 'heures' && (
                 detailUser.timeEntries.length === 0 ? (
                   <p className="text-gray-400 text-sm text-center py-6">Aucune heure dans cette période</p>
                 ) : (
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 bg-white z-10">
                       <tr className="text-left text-xs font-semibold text-gray-500 uppercase border-b border-gray-100">
-                        <th className="pb-2 pr-4">Date</th>
+                        <th className="pb-2 pr-4 pl-6 pt-4">Date</th>
                         <th className="pb-2 pr-4">Heures</th>
                         <th className="pb-2 pr-4">Description</th>
-                        <th className="pb-2">Validé le</th>
+                        <th className="pb-2 pr-6">Validé le</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {detailUser.timeEntries.map(te => (
-                        <tr key={te.id} className="border-b border-gray-50">
-                          <td className="py-2 pr-4">{fmtDate(te.date)}</td>
+                      {detailUser.timeEntries.map((te, i) => (
+                        <tr key={te.id} className={`border-b border-gray-50 ${i === detailUser.timeEntries.length - 1 ? 'last:border-0' : ''}`}>
+                          <td className="py-2 pr-4 pl-6">{fmtDate(te.date)}</td>
                           <td className="py-2 pr-4 font-medium">{te.hours} h</td>
                           <td className="py-2 pr-4 text-gray-600">{te.description || '—'}</td>
-                          <td className="py-2 text-gray-500 text-xs">
+                          <td className="py-2 pr-6 text-gray-500 text-xs">
                             {te.validatedAt ? new Date(te.validatedAt).toLocaleDateString('fr-FR') : '—'}
                           </td>
                         </tr>
@@ -405,23 +405,23 @@ export default function PayrollDetail() {
                   <p className="text-gray-400 text-sm text-center py-6">Aucune absence dans cette période</p>
                 ) : (
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 bg-white z-10">
                       <tr className="text-left text-xs font-semibold text-gray-500 uppercase border-b border-gray-100">
-                        <th className="pb-2 pr-4">Début</th>
+                        <th className="pb-2 pr-4 pl-6 pt-4">Début</th>
                         <th className="pb-2 pr-4">Fin</th>
                         <th className="pb-2 pr-4">Type</th>
                         <th className="pb-2 pr-4">Raison</th>
-                        <th className="pb-2">Validé le</th>
+                        <th className="pb-2 pr-6">Validé le</th>
                       </tr>
                     </thead>
                     <tbody>
                       {detailUser.absenceRequests.map(ar => (
                         <tr key={ar.id} className="border-b border-gray-50">
-                          <td className="py-2 pr-4">{fmtDate(ar.startDate)}</td>
+                          <td className="py-2 pr-4 pl-6">{fmtDate(ar.startDate)}</td>
                           <td className="py-2 pr-4">{fmtDate(ar.endDate)}</td>
                           <td className="py-2 pr-4 text-gray-600">{ar.type}</td>
                           <td className="py-2 pr-4 text-gray-600">{ar.reason || '—'}</td>
-                          <td className="py-2 text-gray-500 text-xs">
+                          <td className="py-2 pr-6 text-gray-500 text-xs">
                             {ar.validatedAt ? new Date(ar.validatedAt).toLocaleDateString('fr-FR') : '—'}
                           </td>
                         </tr>
@@ -436,21 +436,21 @@ export default function PayrollDetail() {
                   <p className="text-gray-400 text-sm text-center py-6">Aucun frais dans cette période</p>
                 ) : (
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 bg-white z-10">
                       <tr className="text-left text-xs font-semibold text-gray-500 uppercase border-b border-gray-100">
-                        <th className="pb-2 pr-4">Date</th>
+                        <th className="pb-2 pr-4 pl-6 pt-4">Date</th>
                         <th className="pb-2 pr-4">Raison</th>
                         <th className="pb-2 pr-4 text-right">Montant</th>
-                        <th className="pb-2">Validé le</th>
+                        <th className="pb-2 pr-6">Validé le</th>
                       </tr>
                     </thead>
                     <tbody>
                       {detailUser.expenses.map(exp => (
                         <tr key={exp.id} className="border-b border-gray-50">
-                          <td className="py-2 pr-4">{fmtDate(exp.date)}</td>
+                          <td className="py-2 pr-4 pl-6">{fmtDate(exp.date)}</td>
                           <td className="py-2 pr-4 text-gray-600">{exp.reason}</td>
                           <td className="py-2 pr-4 text-right font-medium">{fmtCurrency(exp.amount)}</td>
-                          <td className="py-2 text-gray-500 text-xs">
+                          <td className="py-2 pr-6 text-gray-500 text-xs">
                             {exp.validatedAt ? new Date(exp.validatedAt).toLocaleDateString('fr-FR') : '—'}
                           </td>
                         </tr>

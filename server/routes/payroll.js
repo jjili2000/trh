@@ -98,17 +98,19 @@ router.get('/:id', async (req, res) => {
        FROM time_entries te
        JOIN users u ON u.id = te.user_id
        WHERE te.status IN ('approved', 'paid')
-         AND te.date BETWEEN ? AND ?`,
+         AND te.date BETWEEN ? AND ?
+       ORDER BY te.date ASC`,
       [startStr, endStr]
     );
 
-    // Absences approuvées qui chevauchent la période (début ou fin dans la période)
+    // Absences approuvées qui chevauchent la période
     const [absenceRows] = await pool.execute(
       `SELECT ar.*, u.first_name, u.last_name
        FROM absence_requests ar
        JOIN users u ON u.id = ar.user_id
        WHERE ar.status = 'approved'
-         AND ar.start_date <= ? AND ar.end_date >= ?`,
+         AND ar.start_date <= ? AND ar.end_date >= ?
+       ORDER BY ar.start_date ASC`,
       [endStr, startStr]
     );
 
@@ -118,7 +120,8 @@ router.get('/:id', async (req, res) => {
        FROM expenses e
        JOIN users u ON u.id = e.user_id
        WHERE e.status = 'approved'
-         AND e.date BETWEEN ? AND ?`,
+         AND e.date BETWEEN ? AND ?
+       ORDER BY e.date ASC`,
       [startStr, endStr]
     );
 
