@@ -381,7 +381,7 @@ export default function PayrollDetail() {
                         <th className="pb-2 pr-4 pl-6 pt-4">Date</th>
                         <th className="pb-2 pr-4">Heures</th>
                         <th className="pb-2 pr-4">Description</th>
-                        <th className="pb-2 pr-6">Validé le</th>
+                        <th className="pb-2 pr-6">Validé</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -391,7 +391,7 @@ export default function PayrollDetail() {
                           <td className="py-2 pr-4 font-medium">{te.hours} h</td>
                           <td className="py-2 pr-4 text-gray-600">{te.description || '—'}</td>
                           <td className="py-2 pr-6 text-gray-500 text-xs">
-                            {te.validatedAt ? new Date(te.validatedAt).toLocaleDateString('fr-FR') : '—'}
+                            {te.validatedAt ? `${new Date(te.validatedAt).toLocaleDateString('fr-FR')}${te.validatedByName ? ` par ${te.validatedByName}` : ''}` : '—'}
                           </td>
                         </tr>
                       ))}
@@ -411,7 +411,7 @@ export default function PayrollDetail() {
                         <th className="pb-2 pr-4">Fin</th>
                         <th className="pb-2 pr-4">Type</th>
                         <th className="pb-2 pr-4">Raison</th>
-                        <th className="pb-2 pr-6">Validé le</th>
+                        <th className="pb-2 pr-6">Validé</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -422,7 +422,7 @@ export default function PayrollDetail() {
                           <td className="py-2 pr-4 text-gray-600">{ar.type}</td>
                           <td className="py-2 pr-4 text-gray-600">{ar.reason || '—'}</td>
                           <td className="py-2 pr-6 text-gray-500 text-xs">
-                            {ar.validatedAt ? new Date(ar.validatedAt).toLocaleDateString('fr-FR') : '—'}
+                            {ar.validatedAt ? `${new Date(ar.validatedAt).toLocaleDateString('fr-FR')}${ar.validatedByName ? ` par ${ar.validatedByName}` : ''}` : '—'}
                           </td>
                         </tr>
                       ))}
@@ -441,7 +441,7 @@ export default function PayrollDetail() {
                         <th className="pb-2 pr-4 pl-6 pt-4">Date</th>
                         <th className="pb-2 pr-4">Raison</th>
                         <th className="pb-2 pr-4 text-right">Montant</th>
-                        <th className="pb-2 pr-6">Validé le</th>
+                        <th className="pb-2 pr-6">Validé</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -451,7 +451,7 @@ export default function PayrollDetail() {
                           <td className="py-2 pr-4 text-gray-600">{exp.reason}</td>
                           <td className="py-2 pr-4 text-right font-medium">{fmtCurrency(exp.amount)}</td>
                           <td className="py-2 pr-6 text-gray-500 text-xs">
-                            {exp.validatedAt ? new Date(exp.validatedAt).toLocaleDateString('fr-FR') : '—'}
+                            {exp.validatedAt ? `${new Date(exp.validatedAt).toLocaleDateString('fr-FR')}${exp.validatedByName ? ` par ${exp.validatedByName}` : ''}` : '—'}
                           </td>
                         </tr>
                       ))}

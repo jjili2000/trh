@@ -55,6 +55,7 @@ export interface TimeEntry {
   status: 'pending' | 'approved' | 'rejected' | 'paid';
   rejectionReason?: string | null;
   validatedBy?: string;
+  validatedByName?: string | null;
   validatedAt?: string;
   createdAt: string;
 }
@@ -70,6 +71,7 @@ export interface AbsenceRequest {
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string | null;
   validatedBy?: string;
+  validatedByName?: string | null;
   validatedAt?: string;
   createdAt: string;
 }
@@ -95,6 +97,7 @@ export interface Expense {
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string | null;
   validatedBy?: string;
+  validatedByName?: string | null;
   validatedAt?: string;
   createdAt: string;
 }

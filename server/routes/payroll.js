@@ -94,9 +94,11 @@ router.get('/:id', async (req, res) => {
 
     // Time entries approuvées ou payées dont la date de travail tombe dans la période
     const [timeRows] = await pool.execute(
-      `SELECT te.*, u.first_name, u.last_name
+      `SELECT te.*, u.first_name, u.last_name,
+              vu.first_name AS val_first_name, vu.last_name AS val_last_name
        FROM time_entries te
-       JOIN users u ON u.id = te.user_id
+       JOIN users u  ON u.id  = te.user_id
+       LEFT JOIN users vu ON vu.id = te.validated_by
        WHERE te.status IN ('approved', 'paid')
          AND te.date BETWEEN ? AND ?
        ORDER BY te.date ASC`,
@@ -105,9 +107,11 @@ router.get('/:id', async (req, res) => {
 
     // Absences approuvées qui chevauchent la période
     const [absenceRows] = await pool.execute(
-      `SELECT ar.*, u.first_name, u.last_name
+      `SELECT ar.*, u.first_name, u.last_name,
+              vu.first_name AS val_first_name, vu.last_name AS val_last_name
        FROM absence_requests ar
-       JOIN users u ON u.id = ar.user_id
+       JOIN users u  ON u.id  = ar.user_id
+       LEFT JOIN users vu ON vu.id = ar.validated_by
        WHERE ar.status = 'approved'
          AND ar.start_date <= ? AND ar.end_date >= ?
        ORDER BY ar.start_date ASC`,
@@ -116,9 +120,11 @@ router.get('/:id', async (req, res) => {
 
     // Frais approuvés dont la date tombe dans la période
     const [expenseRows] = await pool.execute(
-      `SELECT e.*, u.first_name, u.last_name
+      `SELECT e.*, u.first_name, u.last_name,
+              vu.first_name AS val_first_name, vu.last_name AS val_last_name
        FROM expenses e
-       JOIN users u ON u.id = e.user_id
+       JOIN users u  ON u.id  = e.user_id
+       LEFT JOIN users vu ON vu.id = e.validated_by
        WHERE e.status = 'approved'
          AND e.date BETWEEN ? AND ?
        ORDER BY e.date ASC`,
@@ -156,6 +162,7 @@ router.get('/:id', async (req, res) => {
         description: row.description || null,
         status: row.status,
         validatedBy: row.validated_by || null,
+        validatedByName: row.val_first_name ? `${row.val_first_name} ${row.val_last_name}` : null,
         validatedAt: mapDateTime(row.validated_at),
         createdAt: mapDateTime(row.created_at),
       });
@@ -177,6 +184,7 @@ router.get('/:id', async (req, res) => {
         reason: row.reason || null,
         status: row.status,
         validatedBy: row.validated_by || null,
+        validatedByName: row.val_first_name ? `${row.val_first_name} ${row.val_last_name}` : null,
         validatedAt: mapDateTime(row.validated_at),
         createdAt: mapDateTime(row.created_at),
       });
@@ -196,6 +204,7 @@ router.get('/:id', async (req, res) => {
         receiptFileType: row.receipt_file_type || null,
         status: row.status,
         validatedBy: row.validated_by || null,
+        validatedByName: row.val_first_name ? `${row.val_first_name} ${row.val_last_name}` : null,
         validatedAt: mapDateTime(row.validated_at),
         createdAt: mapDateTime(row.created_at),
       });
