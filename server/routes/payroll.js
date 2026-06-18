@@ -97,16 +97,20 @@ router.get('/:id', async (req, res) => {
     //     dont la date est ≤ fin de période (rattrapage inclus)
     const [timeRows] = period.status === 'validated'
       ? await pool.execute(
+          // Période validée : saisies liées par payroll_period_id (nouveau)
+          // OU saisies payées dans la plage de dates (rétrocompatibilité historique)
           `SELECT te.*, u.first_name, u.last_name,
                   vu.first_name AS val_first_name, vu.last_name AS val_last_name
            FROM time_entries te
            JOIN users u  ON u.id  = te.user_id
            LEFT JOIN users vu ON vu.id = te.validated_by
            WHERE te.payroll_period_id = ?
+              OR (te.payroll_period_id IS NULL AND te.status = 'paid' AND te.date BETWEEN ? AND ?)
            ORDER BY te.date ASC`,
-          [id]
+          [id, startStr, endStr]
         )
       : await pool.execute(
+          // Période brouillon : toutes saisies approuvées non encore payées (rattrapage inclus)
           `SELECT te.*, u.first_name, u.last_name,
                   vu.first_name AS val_first_name, vu.last_name AS val_last_name
            FROM time_entries te
