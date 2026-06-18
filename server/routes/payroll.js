@@ -306,13 +306,27 @@ router.get('/:id/export', async (req, res) => {
     const endStr = mapDate(period.end_date);
     const endDatetime = endStr + ' 23:59:59';
 
-    const [timeRows] = await pool.execute(
-      `SELECT te.user_id, te.hours, u.first_name, u.last_name
-       FROM time_entries te
-       JOIN users u ON u.id = te.user_id
-       WHERE te.status IN ('approved', 'paid') AND te.date BETWEEN ? AND ?`,
-      [startStr, endStr]
-    );
+    let timeRows;
+    if (period.status === 'draft') {
+      // Draft : toutes les heures approuvées non encore payées avec date <= fin de période
+      [timeRows] = await pool.execute(
+        `SELECT te.user_id, te.hours, u.first_name, u.last_name
+         FROM time_entries te
+         JOIN users u ON u.id = te.user_id
+         WHERE te.status = 'approved' AND te.date <= ?`,
+        [endStr]
+      );
+    } else {
+      // Validée : heures liées à cette période + rétrocompat périodes historiques sans payroll_period_id
+      [timeRows] = await pool.execute(
+        `SELECT te.user_id, te.hours, u.first_name, u.last_name
+         FROM time_entries te
+         JOIN users u ON u.id = te.user_id
+         WHERE te.payroll_period_id = ?
+            OR (te.payroll_period_id IS NULL AND te.status = 'paid' AND te.date BETWEEN ? AND ?)`,
+        [id, startStr, endStr]
+      );
+    }
     const [absenceRows] = await pool.execute(
       `SELECT ar.user_id, ar.start_date, ar.end_date, u.first_name, u.last_name
        FROM absence_requests ar
