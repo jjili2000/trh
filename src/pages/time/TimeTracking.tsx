@@ -481,9 +481,46 @@ export default function TimeTracking() {
     }
   };
 
+  const currentFormFilled = !editingEntry && !!form.date && !!form.activityTypeId && parseFloat(form.hours) > 0;
+
   const handleSubmitAll = async () => {
-    if (pendingEntries.length === 0) return;
-    const entries = pendingEntries.map(e => ({
+    const totalCount = pendingEntries.length + (currentFormFilled ? 1 : 0);
+    if (totalCount === 0) return;
+
+    // Validate current form entry if filled
+    if (currentFormFilled) {
+      setFormError('');
+      const hours = parseFloat(form.hours);
+      if (hours > 24) { setFormError('Les heures doivent être entre 0.1 et 24.'); return; }
+      if (form.startTime && form.endTime) {
+        const s = timeToMins(form.startTime);
+        const end = timeToMins(form.endTime);
+        if (end <= s) { setFormError("L'heure de fin doit être postérieure à l'heure de début."); return; }
+        const savedConflict = allMyEntries.find(e => {
+          if (e.date !== form.date || !e.startTime || !e.endTime) return false;
+          return s < timeToMins(e.endTime) && timeToMins(e.startTime) < end;
+        });
+        if (savedConflict) {
+          const at = activityTypes.find(a => a.id === savedConflict.activityTypeId);
+          setFormError(`Conflit de créneau avec "${at?.name ?? 'une autre activité'}" de ${savedConflict.startTime} à ${savedConflict.endTime}.`);
+          return;
+        }
+        const pendingConflict = pendingEntries.find(p => {
+          if (p.date !== form.date || !p.startTime || !p.endTime) return false;
+          return s < timeToMins(p.endTime) && timeToMins(p.startTime) < end;
+        });
+        if (pendingConflict) {
+          const at = activityTypes.find(a => a.id === pendingConflict.activityTypeId);
+          setFormError(`Conflit de créneau avec une saisie en attente "${at?.name ?? 'une autre activité'}" de ${pendingConflict.startTime} à ${pendingConflict.endTime}.`);
+          return;
+        }
+      }
+    }
+
+    const allEntries = [
+      ...pendingEntries,
+      ...(currentFormFilled ? [form] : []),
+    ].map(e => ({
       userId: currentUser!.id,
       date: e.date,
       hours: parseFloat(e.hours),
@@ -492,7 +529,7 @@ export default function TimeTracking() {
       startTime: e.startTime || undefined,
       endTime: e.endTime || undefined,
     }));
-    await bulkAddTimeEntries(entries);
+    await bulkAddTimeEntries(allEntries);
     setPendingEntries([]);
     setShowForm(false);
   };
@@ -1199,10 +1236,10 @@ export default function TimeTracking() {
                   <button
                     type="button"
                     onClick={handleSubmitAll}
-                    disabled={pendingEntries.length === 0}
+                    disabled={pendingEntries.length === 0 && !currentFormFilled}
                     className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    Soumettre{pendingEntries.length > 0 ? ` (${pendingEntries.length})` : ''}
+                    {(() => { const n = pendingEntries.length + (currentFormFilled ? 1 : 0); return `Soumettre${n > 0 ? ` (${n})` : ''}`; })()}
                   </button>
                 </>
               )}
