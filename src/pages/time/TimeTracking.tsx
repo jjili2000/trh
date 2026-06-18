@@ -70,7 +70,6 @@ export default function TimeTracking() {
     users,
     activityTypes,
     timeEntries,
-    addTimeEntry,
     bulkAddTimeEntries,
     updateTimeEntry,
     deleteTimeEntry,
@@ -86,6 +85,8 @@ export default function TimeTracking() {
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
   const [form, setForm] = useState<EntryFormData>(emptyForm);
   const [formError, setFormError] = useState('');
+  const [pendingEntries, setPendingEntries] = useState<EntryFormData[]>([]);
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const [expandedSection, setExpandedSection] = useState<'mine' | 'team'>('mine');
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [showCalendarEntry, setShowCalendarEntry] = useState(false);
@@ -129,6 +130,12 @@ export default function TimeTracking() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    if (showForm && !editingEntry) {
+      setTimeout(() => dateInputRef.current?.focus(), 50);
+    }
+  }, [showForm, editingEntry]);
 
   // ── Team filters & sort ──────────────────────────────────────────────────────
   const FILTERS_KEY = `trh_team_time_filters_${currentUser?.id ?? 'anon'}`;
@@ -390,7 +397,7 @@ export default function TimeTracking() {
   };
 
   // ── Form handlers ─────────────────────────────────────────────────────────────
-  const openAdd = () => { setForm(emptyForm); setEditingEntry(null); setFormError(''); setShowForm(true); };
+  const openAdd = () => { setForm(emptyForm); setEditingEntry(null); setFormError(''); setPendingEntries([]); setShowForm(true); };
 
   const openEdit = (entry: TimeEntry) => {
     const st = entry.startTime ?? '09:00';
@@ -422,40 +429,71 @@ export default function TimeTracking() {
       const newEnd   = timeToMins(form.endTime);
       if (newEnd <= newStart) { setFormError("L'heure de fin doit être postérieure à l'heure de début."); return; }
 
-      const conflicts = allMyEntries.filter(e => {
-        if (e.id === editingEntry?.id) return false;   // on exclut l'entrée en cours de modif
+      const savedConflict = allMyEntries.find(e => {
+        if (e.id === editingEntry?.id) return false;
         if (e.date !== form.date) return false;
-        if (!e.startTime || !e.endTime) return false;  // pas de créneau → pas de contrôle
+        if (!e.startTime || !e.endTime) return false;
         const eStart = timeToMins(e.startTime);
         const eEnd   = timeToMins(e.endTime);
-        return newStart < eEnd && eStart < newEnd;     // chevauchement partiel ou total
+        return newStart < eEnd && eStart < newEnd;
       });
-
-      if (conflicts.length > 0) {
-        const at = activityTypes.find(a => a.id === conflicts[0].activityTypeId);
+      if (savedConflict) {
+        const at = activityTypes.find(a => a.id === savedConflict.activityTypeId);
         setFormError(
           `Conflit de créneau : cette saisie chevauche "${at?.name ?? 'une autre activité'}" ` +
-          `de ${conflicts[0].startTime} à ${conflicts[0].endTime} le ${new Date(form.date + 'T12:00:00').toLocaleDateString('fr-FR')}.`
+          `de ${savedConflict.startTime} à ${savedConflict.endTime} le ${new Date(form.date + 'T12:00:00').toLocaleDateString('fr-FR')}.`
+        );
+        return;
+      }
+
+      const pendingConflict = pendingEntries.find(p => {
+        if (p.date !== form.date || !p.startTime || !p.endTime) return false;
+        const pStart = timeToMins(p.startTime);
+        const pEnd   = timeToMins(p.endTime);
+        return newStart < pEnd && pStart < newEnd;
+      });
+      if (pendingConflict) {
+        const at = activityTypes.find(a => a.id === pendingConflict.activityTypeId);
+        setFormError(
+          `Conflit de créneau : cette saisie chevauche une saisie en attente "${at?.name ?? 'une autre activité'}" ` +
+          `de ${pendingConflict.startTime} à ${pendingConflict.endTime}.`
         );
         return;
       }
     }
 
-    const payload = {
-      userId: currentUser!.id,
-      date: form.date,
-      hours,
-      activityTypeId: form.activityTypeId,
-      description: form.description || undefined,
-      startTime: form.startTime || undefined,
-      endTime: form.endTime || undefined,
-    };
-
     if (editingEntry) {
+      const payload = {
+        userId: currentUser!.id,
+        date: form.date,
+        hours,
+        activityTypeId: form.activityTypeId,
+        description: form.description || undefined,
+        startTime: form.startTime || undefined,
+        endTime: form.endTime || undefined,
+      };
       updateTimeEntry(editingEntry.id, { ...payload, status: 'pending', validatedBy: undefined, validatedAt: undefined });
+      setShowForm(false);
     } else {
-      addTimeEntry(payload);
+      setPendingEntries(prev => [...prev, { ...form }]);
+      setForm(f => ({ ...emptyForm, date: f.date }));
+      setTimeout(() => dateInputRef.current?.focus(), 30);
     }
+  };
+
+  const handleSubmitAll = async () => {
+    if (pendingEntries.length === 0) return;
+    const entries = pendingEntries.map(e => ({
+      userId: currentUser!.id,
+      date: e.date,
+      hours: parseFloat(e.hours),
+      activityTypeId: e.activityTypeId,
+      description: e.description || undefined,
+      startTime: e.startTime || undefined,
+      endTime: e.endTime || undefined,
+    }));
+    await bulkAddTimeEntries(entries);
+    setPendingEntries([]);
     setShowForm(false);
   };
 
@@ -1072,7 +1110,7 @@ export default function TimeTracking() {
       {showForm && (
         <Modal
           title={editingEntry ? 'Modifier la saisie' : 'Nouvelle saisie de temps'}
-          onClose={() => setShowForm(false)}
+          onClose={() => { setShowForm(false); setPendingEntries([]); }}
         >
           <form onSubmit={handleSubmit} className="space-y-4 w-full min-w-0">
             {formError && (
@@ -1080,7 +1118,7 @@ export default function TimeTracking() {
             )}
             <div className="min-w-0">
               <label className="label">Date *</label>
-              <input type="date" className="input" value={form.date} max={new Date().toISOString().slice(0, 10)} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required />
+              <input ref={dateInputRef} type="date" className="input" value={form.date} max={new Date().toISOString().slice(0, 10)} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required />
             </div>
             {/* Heure début / fin / durée — cascade automatique */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 min-w-0">
@@ -1152,10 +1190,52 @@ export default function TimeTracking() {
               <textarea className="input resize-none" rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Détails sur l'activité..." />
             </div>
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Annuler</button>
-              <button type="submit" className="btn-primary">{editingEntry ? 'Enregistrer' : 'Soumettre'}</button>
+              <button type="button" onClick={() => { setShowForm(false); setPendingEntries([]); }} className="btn-secondary">Annuler</button>
+              {editingEntry ? (
+                <button type="submit" className="btn-primary">Enregistrer</button>
+              ) : (
+                <>
+                  <button type="submit" className="btn-secondary">Ajouter une saisie</button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitAll}
+                    disabled={pendingEntries.length === 0}
+                    className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Soumettre{pendingEntries.length > 0 ? ` (${pendingEntries.length})` : ''}
+                  </button>
+                </>
+              )}
             </div>
           </form>
+
+          {/* Pending entries list */}
+          {!editingEntry && pendingEntries.length > 0 && (
+            <div className="mt-4 border-t pt-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Saisies en attente de soumission :</p>
+              <ul className="space-y-1">
+                {pendingEntries.map((p, i) => {
+                  const at = activityTypes.find(a => a.id === p.activityTypeId);
+                  return (
+                    <li key={i} className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-1.5">
+                      <span className="text-gray-800">
+                        {new Date(p.date + 'T12:00:00').toLocaleDateString('fr-FR')} — {p.hours} h
+                        {p.startTime && p.endTime ? ` (${p.startTime}–${p.endTime})` : ''} — {at?.name ?? '—'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPendingEntries(prev => prev.filter((_, j) => j !== i))}
+                        className="ml-2 text-gray-400 hover:text-red-500"
+                        title="Retirer"
+                      >
+                        <X size={14} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </Modal>
       )}
 
