@@ -89,21 +89,34 @@ router.get('/:id', async (req, res) => {
     const period = periodRows[0];
 
     const startStr = mapDate(period.start_date);
-    const endStr = mapDate(period.end_date);
-    const endDatetime = endStr + ' 23:59:59';
+    const endStr   = mapDate(period.end_date);
 
-    // Time entries approuvées ou payées dont la date de travail tombe dans la période
-    const [timeRows] = await pool.execute(
-      `SELECT te.*, u.first_name, u.last_name,
-              vu.first_name AS val_first_name, vu.last_name AS val_last_name
-       FROM time_entries te
-       JOIN users u  ON u.id  = te.user_id
-       LEFT JOIN users vu ON vu.id = te.validated_by
-       WHERE te.status IN ('approved', 'paid')
-         AND te.date BETWEEN ? AND ?
-       ORDER BY te.date ASC`,
-      [startStr, endStr]
-    );
+    // Time entries :
+    //   - Période validée → on récupère par payroll_period_id (traçabilité exacte)
+    //   - Période brouillon → toutes les saisies approuvées non encore payées
+    //     dont la date est ≤ fin de période (rattrapage inclus)
+    const [timeRows] = period.status === 'validated'
+      ? await pool.execute(
+          `SELECT te.*, u.first_name, u.last_name,
+                  vu.first_name AS val_first_name, vu.last_name AS val_last_name
+           FROM time_entries te
+           JOIN users u  ON u.id  = te.user_id
+           LEFT JOIN users vu ON vu.id = te.validated_by
+           WHERE te.payroll_period_id = ?
+           ORDER BY te.date ASC`,
+          [id]
+        )
+      : await pool.execute(
+          `SELECT te.*, u.first_name, u.last_name,
+                  vu.first_name AS val_first_name, vu.last_name AS val_last_name
+           FROM time_entries te
+           JOIN users u  ON u.id  = te.user_id
+           LEFT JOIN users vu ON vu.id = te.validated_by
+           WHERE te.status = 'approved'
+             AND te.date <= ?
+           ORDER BY te.date ASC`,
+          [endStr]
+        );
 
     // Absences approuvées qui chevauchent la période
     const [absenceRows] = await pool.execute(
@@ -161,6 +174,7 @@ router.get('/:id', async (req, res) => {
         activityTypeId: row.activity_type_id,
         description: row.description || null,
         status: row.status,
+        catchUp: mapDate(row.date) < startStr,
         validatedBy: row.validated_by || null,
         validatedByName: row.val_first_name ? `${row.val_first_name} ${row.val_last_name}` : null,
         validatedAt: mapDateTime(row.validated_at),
@@ -236,10 +250,12 @@ router.put('/:id/validate', async (req, res) => {
       `UPDATE payroll_periods SET status = 'validated', validated_by = ?, validated_at = NOW() WHERE id = ?`,
       [req.user.id, id]
     );
-    // Marquer toutes les saisies approuvées de la période comme "payées"
+    // Marquer toutes les saisies approuvées non encore payées (date ≤ fin période) comme "payées"
+    // et les lier à cette période (rattrapage inclus)
     await pool.execute(
-      `UPDATE time_entries SET status = 'paid' WHERE status = 'approved' AND date BETWEEN ? AND ?`,
-      [startStr, endStr]
+      `UPDATE time_entries SET status = 'paid', payroll_period_id = ?
+       WHERE status = 'approved' AND date <= ?`,
+      [id, endStr]
     );
     const [updatedRows] = await pool.execute('SELECT * FROM payroll_periods WHERE id = ?', [id]);
     res.json(mapPeriod(updatedRows[0]));
@@ -427,10 +443,11 @@ router.put('/:id/reopen', async (req, res) => {
       'UPDATE payroll_periods SET status = ?, validated_by = NULL, validated_at = NULL WHERE id = ?',
       ['draft', id]
     );
-    // Remettre les saisies "payées" à "approuvées"
+    // Remettre les saisies liées à cette période en "approuvées" et effacer le lien
     await pool.execute(
-      `UPDATE time_entries SET status = 'approved' WHERE status = 'paid' AND date BETWEEN ? AND ?`,
-      [startStr, endStr]
+      `UPDATE time_entries SET status = 'approved', payroll_period_id = NULL
+       WHERE payroll_period_id = ?`,
+      [id]
     );
     const [updated] = await pool.execute('SELECT * FROM payroll_periods WHERE id = ?', [id]);
     res.json(mapPeriod(updated[0]));

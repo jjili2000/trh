@@ -363,7 +363,12 @@ export default function PayrollDetail() {
                   }`}
                   onClick={() => setDetailTab(tab)}
                 >
-                  {tab === 'heures' && `Heures (${detailUser.totalHours.toFixed(2)} h)`}
+                  {tab === 'heures' && (() => {
+                    const catchUpHours = detailUser.timeEntries.filter(te => te.catchUp).reduce((s, te) => s + te.hours, 0);
+                    return catchUpHours > 0
+                      ? `Heures (${detailUser.totalHours.toFixed(2)} h dont ${catchUpHours.toFixed(2)} h rattrapage)`
+                      : `Heures (${detailUser.totalHours.toFixed(2)} h)`;
+                  })()}
                   {tab === 'absences' && `Absences (${detailUser.absenceDays} j)`}
                   {tab === 'frais' && `Frais (${fmtCurrency(detailUser.totalExpenses)})`}
                 </button>
@@ -386,8 +391,13 @@ export default function PayrollDetail() {
                     </thead>
                     <tbody>
                       {detailUser.timeEntries.map((te, i) => (
-                        <tr key={te.id} className={`border-b border-gray-50 ${i === detailUser.timeEntries.length - 1 ? 'last:border-0' : ''}`}>
-                          <td className="py-2 pr-4 pl-6">{fmtDate(te.date)}</td>
+                        <tr key={te.id} className={`border-b border-gray-50 ${i === detailUser.timeEntries.length - 1 ? 'last:border-0' : ''} ${te.catchUp ? 'bg-amber-50/50' : ''}`}>
+                          <td className="py-2 pr-4 pl-6">
+                            <span>{fmtDate(te.date)}</span>
+                            {te.catchUp && (
+                              <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Rattrapage</span>
+                            )}
+                          </td>
                           <td className="py-2 pr-4 font-medium">{te.hours} h</td>
                           <td className="py-2 pr-4 text-gray-600">{te.description || '—'}</td>
                           <td className="py-2 pr-6 text-gray-500 text-xs">

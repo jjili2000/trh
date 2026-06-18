@@ -54,6 +54,7 @@ export interface TimeEntry {
   endTime?: string;   // HH:MM
   status: 'pending' | 'approved' | 'rejected' | 'paid';
   rejectionReason?: string | null;
+  catchUp?: boolean;
   validatedBy?: string;
   validatedByName?: string | null;
   validatedAt?: string;
