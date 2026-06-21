@@ -645,8 +645,8 @@ function ExpenseDetailModal({
               )}
             </dl>
 
-            {/* Justificatif */}
-            {(currentFilePath || form.receiptPreview) && (
+            {/* Justificatif — affiché uniquement si le panneau latéral n'est pas visible */}
+            {(currentFilePath || form.receiptPreview) && !sidePreviewUrl && (
               <div>
                 <p className="label">Justificatif</p>
                 {currentFilePath && currentFileType === 'application/pdf' ? (
