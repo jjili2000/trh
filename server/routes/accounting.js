@@ -617,6 +617,198 @@ router.get('/operations', async (req, res) => {
   }
 });
 
+// GET /accounting/operations/export — export Excel avec les mêmes filtres que GET /operations
+// DOIT être avant GET /operations/:id/details (sinon Express intercepterait "export" comme :id)
+router.get('/operations/export', async (req, res) => {
+  try {
+    const { importId, periodId, direction, paymentMethod, category, search, amountMin, amountMax } = req.query;
+
+    let sql = `SELECT bo.*, ar.label AS ruleName,
+                      ap.label AS periodLabel,
+                      bi.label AS importLabel,
+                      COALESCE(bo.periodId, bi.periodId) AS resolvedPeriodId
+               FROM bank_operations bo
+               JOIN bank_imports bi ON bi.id = bo.importId
+               LEFT JOIN accounting_rules ar ON ar.id = bo.ruleId
+               LEFT JOIN accounting_periods ap ON ap.id = COALESCE(bo.periodId, bi.periodId)
+               WHERE bi.userId = ?`;
+    const params = [req.user.id];
+
+    if (importId)  { sql += ' AND bo.importId = ?'; params.push(importId); }
+    if (periodId)  { sql += ' AND COALESCE(bo.periodId, bi.periodId) = ?'; params.push(periodId); }
+    if (direction) { sql += ' AND bo.direction = ?'; params.push(direction); }
+    if (paymentMethod) { sql += ' AND bo.paymentMethod = ?'; params.push(paymentMethod); }
+    if (category === '__none__') { sql += ' AND (bo.category IS NULL OR bo.category = "")'; }
+    else if (category) { sql += ' AND bo.category = ?'; params.push(category); }
+    if (search) {
+      sql += ' AND (bo.rawLabel LIKE ? OR bo.thirdParty LIKE ?)';
+      const s = `%${search}%`;
+      params.push(s, s);
+    }
+    if (amountMin) { sql += ' AND bo.amount >= ?'; params.push(parseFloat(amountMin)); }
+    if (amountMax) { sql += ' AND bo.amount <= ?'; params.push(parseFloat(amountMax)); }
+    sql += ' ORDER BY bo.operationDate DESC, bo.createdAt DESC';
+
+    const [rows] = await pool.execute(sql, params);
+
+    // Charger les détails de toutes les opérations
+    let detailsMap = {};
+    if (rows.length > 0) {
+      const placeholders = rows.map(() => '?').join(',');
+      const [detailRows] = await pool.execute(
+        `SELECT * FROM bank_operation_details WHERE operation_id IN (${placeholders}) ORDER BY created_at ASC`,
+        rows.map(r => r.id)
+      );
+      for (const d of detailRows) {
+        if (!detailsMap[d.operation_id]) detailsMap[d.operation_id] = [];
+        detailsMap[d.operation_id].push(d);
+      }
+    }
+
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Opérations');
+
+    const PM_LABELS = { card: 'Carte', transfer: 'Virement', direct_debit: 'Prélèvement', check: 'Chèque', cash: 'Espèces', other: 'Autre' };
+    const fmtD = (d) => { if (!d) return ''; const s = String(d).slice(0, 10); const [y, m, day] = s.split('-'); return `${day}/${m}/${y}`; };
+
+    sheet.columns = [
+      { header: 'Date',              key: 'date',           width: 13 },
+      { header: 'Import',            key: 'importLabel',    width: 25 },
+      { header: 'Période',           key: 'period',         width: 20 },
+      { header: 'Sens',              key: 'direction',      width: 10 },
+      { header: 'Mode',              key: 'mode',           width: 14 },
+      { header: 'Montant',           key: 'amount',         width: 13 },
+      { header: 'Tiers',             key: 'thirdParty',     width: 30 },
+      { header: 'Libellé brut',      key: 'rawLabel',       width: 40 },
+      { header: 'Catégorie',         key: 'category',       width: 20 },
+      { header: 'Source catégorie',  key: 'catSource',      width: 16 },
+      { header: 'MDT',               key: 'blockMDT',       width: 18 },
+      { header: 'LIB',               key: 'blockLIB',       width: 18 },
+      { header: 'MOTIF',             key: 'blockMOTIF',     width: 18 },
+      { header: 'RNF',               key: 'blockRNF',       width: 18 },
+      { header: 'Détail — Intitulé', key: 'detailLabel',    width: 30 },
+      { header: 'Détail — Montant',  key: 'detailAmount',   width: 14 },
+    ];
+
+    const hdr = sheet.getRow(1);
+    hdr.font = { bold: true };
+    hdr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F0FE' } };
+
+    const SOURCE_LABEL = { manual: 'Manuel', rule: 'Règle', none: '' };
+
+    for (const row of rows) {
+      const details = detailsMap[row.id] || [];
+      const base = {
+        date:        fmtD(row.operationDate),
+        importLabel: row.importLabel || '',
+        period:      row.periodLabel || '',
+        direction:   row.direction === 'credit' ? 'Crédit' : 'Débit',
+        mode:        PM_LABELS[row.paymentMethod] || row.paymentMethod,
+        amount:      parseFloat(row.amount),
+        thirdParty:  row.thirdParty || '',
+        rawLabel:    row.rawLabel || '',
+        category:    row.category || '',
+        catSource:   SOURCE_LABEL[row.categorySource] || '',
+        blockMDT:    row.blockMDT || '',
+        blockLIB:    row.blockLIB || '',
+        blockMOTIF:  row.blockMOTIF || '',
+        blockRNF:    row.blockRNF || '',
+      };
+      if (details.length === 0) {
+        sheet.addRow({ ...base, detailLabel: '', detailAmount: null });
+      } else {
+        for (let i = 0; i < details.length; i++) {
+          sheet.addRow({
+            ...(i === 0 ? base : Object.fromEntries(Object.keys(base).map(k => [k, '']))),
+            detailLabel:  details[i].label,
+            detailAmount: parseFloat(details[i].amount),
+          });
+        }
+      }
+    }
+
+    sheet.getColumn('amount').numFmt      = '#,##0.00';
+    sheet.getColumn('detailAmount').numFmt = '#,##0.00';
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="operations.xlsx"');
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error('[operations export]', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// GET /accounting/operations/:id/details
+router.get('/operations/:id/details', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [op] = await pool.execute(
+      `SELECT bo.id FROM bank_operations bo JOIN bank_imports bi ON bi.id = bo.importId WHERE bo.id = ? AND bi.userId = ?`,
+      [id, req.user.id]
+    );
+    if (op.length === 0) return res.status(404).json({ error: 'Opération non trouvée' });
+
+    const [rows] = await pool.execute(
+      `SELECT * FROM bank_operation_details WHERE operation_id = ? ORDER BY created_at ASC`,
+      [id]
+    );
+    res.json(rows.map(d => ({
+      id: d.id,
+      operationId: d.operation_id,
+      label: d.label,
+      amount: parseFloat(d.amount),
+      createdAt: d.created_at instanceof Date ? d.created_at.toISOString() : String(d.created_at),
+    })));
+  } catch (err) {
+    console.error('[operations details GET]', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// PUT /accounting/operations/:id/details — remplace toutes les lignes de détail
+router.put('/operations/:id/details', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { details } = req.body;
+    if (!Array.isArray(details)) return res.status(400).json({ error: 'details must be an array' });
+
+    const [op] = await pool.execute(
+      `SELECT bo.id FROM bank_operations bo JOIN bank_imports bi ON bi.id = bo.importId WHERE bo.id = ? AND bi.userId = ?`,
+      [id, req.user.id]
+    );
+    if (op.length === 0) return res.status(404).json({ error: 'Opération non trouvée' });
+
+    await pool.execute('DELETE FROM bank_operation_details WHERE operation_id = ?', [id]);
+    for (const d of details) {
+      if (!d.label || String(d.label).trim() === '') continue;
+      const amt = parseFloat(d.amount);
+      if (isNaN(amt)) continue;
+      await pool.execute(
+        'INSERT INTO bank_operation_details (id, operation_id, label, amount) VALUES (?, ?, ?, ?)',
+        [crypto.randomUUID(), id, String(d.label).trim(), amt]
+      );
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT * FROM bank_operation_details WHERE operation_id = ? ORDER BY created_at ASC`,
+      [id]
+    );
+    res.json(rows.map(d => ({
+      id: d.id,
+      operationId: d.operation_id,
+      label: d.label,
+      amount: parseFloat(d.amount),
+      createdAt: d.created_at instanceof Date ? d.created_at.toISOString() : String(d.created_at),
+    })));
+  } catch (err) {
+    console.error('[operations details PUT]', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // PUT /accounting/operations/bulk — catégorie et/ou période sur plusieurs opérations
 // DOIT être avant PUT /operations/:id sinon Express intercepte "bulk" comme un id
 router.put('/operations/bulk', async (req, res) => {

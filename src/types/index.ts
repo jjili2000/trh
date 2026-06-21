@@ -268,6 +268,14 @@ export type PaymentMethod = 'card' | 'transfer' | 'direct_debit' | 'check' | 'ca
 export type OperationDirection = 'credit' | 'debit';
 export type CategorySource = 'manual' | 'rule' | 'none';
 
+export interface BankOperationDetail {
+  id: string;
+  operationId: string;
+  label: string;
+  amount: number;
+  createdAt: string;
+}
+
 export interface BankOperation {
   id: string;
   importId: string;

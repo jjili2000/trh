@@ -21,12 +21,14 @@ import {
   GitMerge,
   FileSpreadsheet,
   FileText,
+  List,
 } from 'lucide-react';
 import { api, getToken } from '../../api/client';
 import {
   AccountingPeriod,
   BankImport,
   BankOperation,
+  BankOperationDetail,
   AccountingRule,
   RuleCondition,
   RuleField,
@@ -810,6 +812,14 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
   const [savedFilterOpen, setSavedFilterOpen] = useState(false);
   const savedFilterRef = useRef<HTMLDivElement>(null);
 
+  // Operation detail modal
+  type DetailRow = { id?: string; label: string; amount: string };
+  const [detailOp, setDetailOp] = useState<BankOperation | null>(null);
+  const [detailRows, setDetailRows] = useState<DetailRow[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailSaving, setDetailSaving] = useState(false);
+  const [detailError, setDetailError] = useState('');
+
   // Persistence des filtres dans localStorage
   const LS_FILTER_KEY = 'accounting_ops_filters';
   const _ls = (() => {
@@ -980,6 +990,56 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
       setApplyingRules(false);
       setTimeout(() => setApplyMsg(null), 8000);
     }
+  };
+
+  const openDetailModal = async (op: BankOperation) => {
+    setDetailOp(op);
+    setDetailError('');
+    setDetailRows([]);
+    setDetailLoading(true);
+    try {
+      const rows = await api.get<BankOperationDetail[]>(`/accounting/operations/${op.id}/details`);
+      setDetailRows(rows.map(r => ({ id: r.id, label: r.label, amount: String(r.amount) })));
+    } catch { /* détails vides */ }
+    setDetailLoading(false);
+  };
+
+  const saveDetailRows = async () => {
+    if (!detailOp) return;
+    setDetailSaving(true);
+    setDetailError('');
+    try {
+      await api.put(`/accounting/operations/${detailOp.id}/details`, {
+        details: detailRows
+          .filter(r => r.label.trim() !== '')
+          .map(r => ({ label: r.label.trim(), amount: parseFloat(r.amount) || 0 })),
+      });
+      setDetailOp(null);
+    } catch {
+      setDetailError("Erreur lors de l'enregistrement.");
+    }
+    setDetailSaving(false);
+  };
+
+  const handleExportExcel = async () => {
+    const token = getToken();
+    const params = new URLSearchParams();
+    if (filterPeriod)    params.set('periodId',     filterPeriod);
+    if (filterImport)    params.set('importId',     filterImport);
+    if (filterDirection) params.set('direction',    filterDirection);
+    if (filterMethod)    params.set('paymentMethod', filterMethod);
+    if (filterCategory)  params.set('category',     filterCategory);
+    if (filterSearch)    params.set('search',        filterSearch);
+    if (filterAmountMin) params.set('amountMin',     filterAmountMin);
+    if (filterAmountMax) params.set('amountMax',     filterAmountMax);
+    const res = await fetch(`/api/accounting/operations/export?${params.toString()}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) { alert("Erreur lors de l'export"); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'operations.xlsx'; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleSaveCategory = async (opId: string, category: string | null) => {
@@ -1314,9 +1374,17 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
           <span className="text-sm font-medium text-gray-600">
             {displayedOps.length} / {totalOps} opération(s)
           </span>
-          {applyMsg && (
-            <p className="text-sm text-tennis-green font-medium">{applyMsg}</p>
-          )}
+          <div className="flex items-center gap-2">
+            {applyMsg && <p className="text-sm text-tennis-green font-medium">{applyMsg}</p>}
+            <button
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-400 rounded-lg px-2.5 py-1.5 transition-colors"
+              onClick={handleExportExcel}
+              title="Exporter les opérations filtrées en Excel"
+            >
+              <FileSpreadsheet size={12} />
+              Exporter Excel
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1499,6 +1567,13 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1.5">
                         <button
+                          className="text-gray-300 hover:text-indigo-500 transition-colors"
+                          title="Saisir / consulter le détail de l'opération"
+                          onClick={() => openDetailModal(op)}
+                        >
+                          <List size={14} />
+                        </button>
+                        <button
                           className="text-gray-300 hover:text-tennis-green transition-colors"
                           title="Créer une règle depuis cette opération"
                           onClick={() => setRuleModalOp(op)}
@@ -1521,6 +1596,19 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
           </div>
         )}
       </div>
+
+      {detailOp && (
+        <OperationDetailModal
+          op={detailOp}
+          rows={detailRows}
+          loading={detailLoading}
+          saving={detailSaving}
+          error={detailError}
+          onChange={setDetailRows}
+          onSave={saveDetailRows}
+          onClose={() => setDetailOp(null)}
+        />
+      )}
 
       {ruleModalOp && (
         <CreateRuleFromOpModal
@@ -1545,6 +1633,140 @@ function OperationsTab({ imports, periods, categories, onCategoriesChange, onDel
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Operation Detail Modal ───────────────────────────────────────────────────
+
+interface OperationDetailModalProps {
+  op: BankOperation;
+  rows: { id?: string; label: string; amount: string }[];
+  loading: boolean;
+  saving: boolean;
+  error: string;
+  onChange: (rows: { id?: string; label: string; amount: string }[]) => void;
+  onSave: () => void;
+  onClose: () => void;
+}
+
+function OperationDetailModal({ op, rows, loading, saving, error, onChange, onSave, onClose }: OperationDetailModalProps) {
+  const total = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const diff  = op.amount - total;
+  const balanced = Math.abs(diff) < 0.005;
+
+  const addRow    = () => onChange([...rows, { label: '', amount: '' }]);
+  const removeRow = (i: number) => onChange(rows.filter((_, j) => j !== i));
+  const updateRow = (i: number, field: 'label' | 'amount', value: string) => {
+    const next = [...rows];
+    next[i] = { ...next[i], [field]: value };
+    onChange(next);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-start justify-between p-6 pb-4 border-b">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Détail de l'opération</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {fmtDate(op.operationDate)} &mdash; <span className={op.direction === 'credit' ? 'text-green-600' : 'text-red-600'}>
+                {op.direction === 'credit' ? '+' : '-'}{fmtCurrency(op.amount)}
+              </span>
+              {op.thirdParty ? ` — ${op.thirdParty}` : op.rawLabel ? ` — ${op.rawLabel.slice(0, 60)}` : ''}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 mt-0.5"><X size={20} /></button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 overflow-y-auto flex-1">
+          {loading ? (
+            <p className="text-center text-gray-400 text-sm py-6">Chargement…</p>
+          ) : (
+            <>
+              {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mb-4">{error}</p>}
+
+              {rows.length > 0 ? (
+                <table className="w-full text-sm mb-3">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 uppercase tracking-wider border-b pb-2">
+                      <th className="pb-2 pr-4 font-medium">Intitulé</th>
+                      <th className="pb-2 pr-2 w-36 text-right font-medium">Montant (€)</th>
+                      <th className="pb-2 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-50">
+                        <td className="py-1.5 pr-3">
+                          <input
+                            className="input text-sm py-1 w-full"
+                            placeholder="Intitulé…"
+                            value={r.label}
+                            onChange={e => updateRow(i, 'label', e.target.value)}
+                          />
+                        </td>
+                        <td className="py-1.5 pr-2">
+                          <input
+                            className="input text-sm py-1 text-right w-full"
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={r.amount}
+                            onChange={e => updateRow(i, 'amount', e.target.value)}
+                          />
+                        </td>
+                        <td className="py-1.5">
+                          <button onClick={() => removeRow(i)} className="text-gray-300 hover:text-red-500 transition-colors">
+                            <X size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-sm text-gray-400 italic mb-3">Aucun détail enregistré. Cliquez sur "Ajouter une ligne" pour commencer.</p>
+              )}
+
+              <button
+                className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 transition-colors"
+                onClick={addRow}
+              >
+                <Plus size={14} />
+                Ajouter une ligne
+              </button>
+
+              {rows.length > 0 && (
+                <div className="mt-4 pt-4 border-t space-y-1.5 text-sm">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Total saisi</span>
+                    <span className="font-medium">{fmtCurrency(total)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Montant de l'opération</span>
+                    <span className="font-medium">{fmtCurrency(op.amount)}</span>
+                  </div>
+                  <div className={`flex justify-between font-semibold ${balanced ? 'text-green-600' : 'text-orange-500'}`}>
+                    <span>Écart</span>
+                    <span>{balanced ? `${fmtCurrency(0)} ✓` : fmtCurrency(Math.abs(diff))}</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 p-6 pt-4 border-t">
+          <button onClick={onClose} className="btn-secondary">Annuler</button>
+          <button onClick={onSave} disabled={saving || loading} className="btn-primary disabled:opacity-50">
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
