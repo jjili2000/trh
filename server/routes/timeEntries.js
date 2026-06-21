@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const pool = require('../db');
 const { notify } = require('../services/notifications');
+const { findValidator, isDesignatedValidator } = require('../services/validatorFinder');
 
 const router = express.Router();
 
@@ -35,23 +36,6 @@ function mapEntry(row) {
   };
 }
 
-// Returns true if userId is the manager of targetUserId
-async function isManagerOf(managerId, targetUserId) {
-  const [rows] = await pool.execute(
-    'SELECT id FROM users WHERE id = ? AND manager_id = ?',
-    [targetUserId, managerId]
-  );
-  return rows.length > 0;
-}
-
-// Returns true if userId has at least one subordinate (i.e. is someone's manager)
-async function isAnyonesManager(userId) {
-  const [rows] = await pool.execute(
-    'SELECT COUNT(*) as cnt FROM users WHERE manager_id = ?',
-    [userId]
-  );
-  return rows[0].cnt > 0;
-}
 
 // GET /api/time-entries/calendar-suggestions
 router.get('/calendar-suggestions', async (req, res) => {
@@ -196,13 +180,14 @@ router.post('/bulk', async (req, res) => {
     return;
   }
 
-  // Notifier le manager — une seule notification groupée, dans un bloc séparé
+  // Notifier le valideur désigné — une seule notification groupée
   try {
-    const [[user]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
-    if (user && user.manager_id) {
+    const [[user]] = await pool.execute('SELECT first_name FROM users WHERE id = ?', [req.user.id]);
+    const validatorId = await findValidator(req.user.id, 'time');
+    if (user && validatorId) {
       const n = createdIds.length;
       await notify(
-        user.manager_id,
+        validatorId,
         'time_entry_submitted',
         'Heures à valider',
         `${user.first_name} a soumis ${n} saisie${n > 1 ? 's' : ''} d'heures.`,
@@ -263,13 +248,14 @@ router.post('/', async (req, res) => {
     return;
   }
 
-  // Notifier le manager
+  // Notifier le valideur désigné
   try {
-    const [[user]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
-    if (user && user.manager_id) {
+    const [[user]] = await pool.execute('SELECT first_name FROM users WHERE id = ?', [req.user.id]);
+    const validatorId = await findValidator(req.user.id, 'time');
+    if (user && validatorId) {
       const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
       await notify(
-        user.manager_id,
+        validatorId,
         'time_entry_submitted',
         'Heures à valider',
         `${user.first_name} a soumis une saisie d'heures pour le ${dateLabel}.`,
@@ -340,7 +326,7 @@ router.put('/bulk/approve', async (req, res) => {
     // Vérifier droits sur chacune
     for (const entry of existing) {
       if (req.user.role !== 'admin') {
-        const ok = await isManagerOf(req.user.id, entry.user_id);
+        const ok = await isDesignatedValidator(req.user.id, entry.user_id, 'time');
         if (!ok) return res.status(403).json({ error: 'Accès refusé sur certaines entrées' });
       }
     }
@@ -405,7 +391,7 @@ router.put('/bulk/reject', async (req, res) => {
 
     for (const entry of existing) {
       if (req.user.role !== 'admin') {
-        const ok = await isManagerOf(req.user.id, entry.user_id);
+        const ok = await isDesignatedValidator(req.user.id, entry.user_id, 'time');
         if (!ok) return res.status(403).json({ error: 'Accès refusé sur certaines entrées' });
       }
     }
@@ -464,8 +450,7 @@ router.put('/:id/approve', async (req, res) => {
     entry = existing[0];
 
     if (req.user.role !== 'admin') {
-      // Only the direct manager of this user can approve
-      const managerOk = await isManagerOf(req.user.id, entry.user_id);
+      const managerOk = await isDesignatedValidator(req.user.id, entry.user_id, 'time');
       if (!managerOk) {
         return res.status(403).json({ error: 'Vous ne pouvez approuver que les entrées de vos subordonnés' });
       }
@@ -515,7 +500,7 @@ router.put('/:id/reject', async (req, res) => {
     entry = existing[0];
 
     if (req.user.role !== 'admin') {
-      const managerOk = await isManagerOf(req.user.id, entry.user_id);
+      const managerOk = await isDesignatedValidator(req.user.id, entry.user_id, 'time');
       if (!managerOk) {
         return res.status(403).json({ error: 'Vous ne pouvez rejeter que les entrées de vos subordonnés' });
       }

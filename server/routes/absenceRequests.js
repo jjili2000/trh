@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const pool = require('../db');
 const { notify } = require('../services/notifications');
+const { findValidator, isDesignatedValidator } = require('../services/validatorFinder');
 
 const router = express.Router();
 
@@ -42,13 +43,6 @@ function mapRequest(row) {
   };
 }
 
-async function isManagerOf(managerId, targetUserId) {
-  const [rows] = await pool.execute(
-    'SELECT id FROM users WHERE id = ? AND manager_id = ?',
-    [targetUserId, managerId]
-  );
-  return rows.length > 0;
-}
 
 // GET /api/absence-requests
 router.get('/', async (req, res) => {
@@ -121,12 +115,13 @@ router.post('/', async (req, res) => {
     return;
   }
 
-  // Notifier le manager
+  // Notifier le valideur désigné
   try {
-    const [[submitter]] = await pool.execute('SELECT first_name, last_name, manager_id FROM users WHERE id = ?', [req.user.id]);
-    if (submitter?.manager_id) {
+    const [[submitter]] = await pool.execute('SELECT first_name FROM users WHERE id = ?', [req.user.id]);
+    const validatorId = await findValidator(req.user.id, 'absences');
+    if (submitter && validatorId) {
       const startLabel = new Date(startDate + 'T12:00:00').toLocaleDateString('fr-FR');
-      await notify(submitter.manager_id, 'absence_submitted', 'Absence à valider',
+      await notify(validatorId, 'absence_submitted', 'Absence à valider',
         `${submitter.first_name} a soumis une demande d'absence à partir du ${startLabel}.`,
         'absence_request', id, 'absences', 'action');
     }
@@ -183,7 +178,7 @@ router.put('/:id/approve', async (req, res) => {
     record = existing[0];
 
     if (req.user.role !== 'admin') {
-      const managerOk = await isManagerOf(req.user.id, record.user_id);
+      const managerOk = await isDesignatedValidator(req.user.id, record.user_id, 'absences');
       if (!managerOk) {
         return res.status(403).json({ error: 'Vous ne pouvez approuver que les demandes de vos subordonnés' });
       }
@@ -224,7 +219,7 @@ router.put('/:id/reject', async (req, res) => {
     record = existing[0];
 
     if (req.user.role !== 'admin') {
-      const managerOk = await isManagerOf(req.user.id, record.user_id);
+      const managerOk = await isDesignatedValidator(req.user.id, record.user_id, 'absences');
       if (!managerOk) {
         return res.status(403).json({ error: 'Vous ne pouvez rejeter que les demandes de vos subordonnés' });
       }

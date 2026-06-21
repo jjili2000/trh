@@ -6,9 +6,10 @@ const router = express.Router();
 function mapSettings(row) {
   return {
     clubName: row.club_name,
-    calendarStartHour: row.calendar_start_hour ?? 8,
-    calendarEndHour:   row.calendar_end_hour   ?? 21,
-    appUrl: row.app_url || null,
+    calendarStartHour:    row.calendar_start_hour ?? 8,
+    calendarEndHour:      row.calendar_end_hour   ?? 21,
+    appUrl:               row.app_url || null,
+    globalValidatorRole:  row.global_validator_role || null,
   };
 }
 
@@ -30,7 +31,7 @@ router.put('/', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const { clubName, calendarStartHour, calendarEndHour, appUrl } = req.body;
+    const { clubName, calendarStartHour, calendarEndHour, appUrl, globalValidatorRole } = req.body;
     if (!clubName) {
       return res.status(400).json({ error: 'Nom du club requis' });
     }
@@ -47,6 +48,12 @@ router.put('/', async (req, res) => {
          app_url = COALESCE(VALUES(app_url), app_url)`,
       [clubName, startH, endH, url, startH, endH]
     );
+    if (globalValidatorRole !== undefined) {
+      await pool.execute(
+        'UPDATE app_settings SET global_validator_role = ? WHERE id = 1',
+        [globalValidatorRole || null]
+      );
+    }
     const [rows] = await pool.execute('SELECT * FROM app_settings WHERE id = 1');
     res.json(mapSettings(rows[0]));
   } catch (err) {

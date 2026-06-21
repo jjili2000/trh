@@ -6,6 +6,7 @@ const multer = require('multer');
 const pool = require('../db');
 const { recognizeExpense } = require('../services/recognition');
 const { notify } = require('../services/notifications');
+const { findValidator, isDesignatedValidator } = require('../services/validatorFinder');
 
 const router = express.Router();
 
@@ -247,44 +248,14 @@ router.post('/', upload.single('receipt'), async (req, res) => {
     return;
   }
 
-  // Notification trésorier(s) — bloc séparé pour ne jamais interférer avec la réponse déjà envoyée
+  // Notifier le valideur désigné
   try {
-    const [[submitter]] = await pool.execute(
-      'SELECT first_name FROM users WHERE id = ?', [req.user.id]
-    );
+    const [[submitter]] = await pool.execute('SELECT first_name FROM users WHERE id = ?', [req.user.id]);
     const firstName = submitter?.first_name ?? 'Un collaborateur';
-    const body = `${firstName} a soumis une note de frais.`;
-
-    const [treasurers] = await pool.execute(
-      "SELECT id FROM users WHERE role = 'treasurer' AND (blocked IS NULL OR blocked = 0)"
-    );
-
-    if (treasurers.length > 0) {
-      // Des trésoriers existent → notifier uniquement les trésoriers
-      // + les admins qui ont eux-mêmes au moins un subordonné (responsables)
-      const [recipients] = await pool.execute(`
-        SELECT DISTINCT u.id FROM users u
-        WHERE (u.blocked IS NULL OR u.blocked = 0)
-          AND (
-            u.role = 'treasurer'
-            OR (u.role = 'admin' AND EXISTS (
-              SELECT 1 FROM users sub WHERE sub.manager_id = u.id
-            ))
-          )
-      `);
-      for (const r of recipients) {
-        await notify(r.id, 'expense_submitted', 'Note de frais à valider',
-          body, 'expense', id, 'expenses', 'action');
-      }
-    } else {
-      // Aucun trésorier défini → fallback sur tous les admins
-      const [admins] = await pool.execute(
-        "SELECT id FROM users WHERE role = 'admin' AND (blocked IS NULL OR blocked = 0)"
-      );
-      for (const a of admins) {
-        await notify(a.id, 'expense_submitted', 'Note de frais à valider',
-          body, 'expense', id, 'expenses', 'action');
-      }
+    const validatorId = await findValidator(req.user.id, 'expenses');
+    if (validatorId) {
+      await notify(validatorId, 'expense_submitted', 'Note de frais à valider',
+        `${firstName} a soumis une note de frais.`, 'expense', id, 'expenses', 'action');
     }
   } catch (notifErr) {
     console.error('[expenses POST] notification error:', notifErr.message);
@@ -377,14 +348,17 @@ router.delete('/:id', async (req, res) => {
 
 // PUT /api/expenses/:id/approve
 router.put('/:id/approve', async (req, res) => {
+  let expenseRecord;
   try {
-    if (!isExpenseValidator(req.user.role)) {
-      const ok = await canValidateExpenses(req.user.id);
-      if (!ok) return res.status(403).json({ error: 'Accès refusé' });
-    }
     const { id } = req.params;
     const [existing] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Dépense non trouvée' });
+    expenseRecord = existing[0];
+
+    if (req.user.role !== 'admin') {
+      const ok = await isDesignatedValidator(req.user.id, expenseRecord.user_id, 'expenses');
+      if (!ok) return res.status(403).json({ error: 'Accès refusé' });
+    }
 
     await pool.execute(
       `UPDATE expenses SET status = 'approved', validated_by = ?, validated_at = NOW() WHERE id = ?`,
@@ -398,11 +372,11 @@ router.put('/:id/approve', async (req, res) => {
     return;
   }
   try {
-    const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
+    const [[validator]] = await pool.execute('SELECT first_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
-    await notify(existing[0].user_id, 'expense_approved', 'Note de frais approuvée',
+    await notify(expenseRecord.user_id, 'expense_approved', 'Note de frais approuvée',
       `Votre note de frais a été approuvée par ${vName}.`,
-      'expense', existing[0].id, 'expenses', 'response');
+      'expense', expenseRecord.id, 'expenses', 'response');
   } catch (notifErr) {
     console.error('[expenses approve] notification error:', notifErr.message);
   }
@@ -410,17 +384,18 @@ router.put('/:id/approve', async (req, res) => {
 
 // PUT /api/expenses/:id/reject
 router.put('/:id/reject', async (req, res) => {
-  let existing0, expId, rejectionReason;
+  let expenseRecord, rejectionReason;
   try {
-    if (!isExpenseValidator(req.user.role)) {
-      const ok = await canValidateExpenses(req.user.id);
-      if (!ok) return res.status(403).json({ error: 'Accès refusé' });
-    }
     const { id } = req.params;
-    expId = id;
     const [existing] = await pool.execute('SELECT * FROM expenses WHERE id = ?', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Dépense non trouvée' });
-    existing0 = existing[0];
+    expenseRecord = existing[0];
+
+    if (req.user.role !== 'admin') {
+      const ok = await isDesignatedValidator(req.user.id, expenseRecord.user_id, 'expenses');
+      if (!ok) return res.status(403).json({ error: 'Accès refusé' });
+    }
+
     rejectionReason = req.body.rejectionReason;
     await pool.execute(
       `UPDATE expenses SET status = 'rejected', rejection_reason = ?, validated_by = ?, validated_at = NOW() WHERE id = ?`,
@@ -434,13 +409,13 @@ router.put('/:id/reject', async (req, res) => {
     return;
   }
   try {
-    const [[validator]] = await pool.execute('SELECT first_name, last_name FROM users WHERE id = ?', [req.user.id]);
+    const [[validator]] = await pool.execute('SELECT first_name FROM users WHERE id = ?', [req.user.id]);
     const vName = validator ? validator.first_name : 'Votre responsable';
     const notifBody = rejectionReason
       ? `Votre note de frais a été refusée par ${vName}. Motif : ${rejectionReason}`
       : `Votre note de frais a été refusée par ${vName}.`;
-    await notify(existing0.user_id, 'expense_rejected', 'Note de frais refusée',
-      notifBody, 'expense', expId, 'expenses', 'response');
+    await notify(expenseRecord.user_id, 'expense_rejected', 'Note de frais refusée',
+      notifBody, 'expense', expenseRecord.id, 'expenses', 'response');
   } catch (notifErr) {
     console.error('[expenses reject] notification error:', notifErr.message);
   }

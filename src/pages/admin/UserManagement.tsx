@@ -41,6 +41,9 @@ interface UserFormData {
   position: string;
   departmentId: string;
   moduleAccess: string[];
+  validatesTime: boolean;
+  validatesAbsences: boolean;
+  validatesExpenses: boolean;
 }
 
 const emptyForm: UserFormData = {
@@ -52,6 +55,9 @@ const emptyForm: UserFormData = {
   position: '',
   departmentId: '',
   moduleAccess: DEFAULT_MODULES,
+  validatesTime: true,
+  validatesAbsences: true,
+  validatesExpenses: true,
 };
 
 interface ModalProps {
@@ -119,6 +125,9 @@ export default function UserManagement() {
       position: user.position ?? '',
       departmentId: user.departmentId ?? '',
       moduleAccess: user.moduleAccess ?? DEFAULT_MODULES,
+      validatesTime:      user.validatesTime      ?? true,
+      validatesAbsences:  user.validatesAbsences  ?? true,
+      validatesExpenses:  user.validatesExpenses  ?? true,
     });
     setEditingUser(user);
     setFormError('');
@@ -160,6 +169,7 @@ export default function UserManagement() {
     setFormSaving(true);
     try {
       if (editingUser) {
+        const isManager = isUserManager(editingUser.id);
         const payload: Partial<UserType> = {
           firstName: form.firstName,
           lastName: form.lastName,
@@ -169,6 +179,11 @@ export default function UserManagement() {
           position: form.position || undefined,
           departmentId: form.departmentId || null,
           moduleAccess: form.role === 'admin' ? undefined : form.moduleAccess,
+          ...(isManager ? {
+            validatesTime:     form.validatesTime,
+            validatesAbsences: form.validatesAbsences,
+            validatesExpenses: form.validatesExpenses,
+          } : {}),
         };
         await updateUser(editingUser.id, payload);
       } else {
@@ -565,6 +580,33 @@ export default function UserManagement() {
                     </label>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Droits de validation — uniquement si l'utilisateur édité est responsable de quelqu'un */}
+            {editingUser && isUserManager(editingUser.id) && (
+              <div>
+                <label className="label">Validation des subordonnés</label>
+                <div className="mt-2 space-y-2">
+                  {[
+                    { key: 'validatesTime',      label: 'Valide les saisies de temps' },
+                    { key: 'validatesAbsences',  label: 'Valide les absences' },
+                    { key: 'validatesExpenses',  label: 'Valide les notes de frais' },
+                  ].map(({ key, label }) => (
+                    <label key={key} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 text-tennis-green rounded border-gray-300"
+                        checked={form[key as keyof UserFormData] as boolean}
+                        onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))}
+                      />
+                      <span className="text-sm text-gray-700">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-gray-400">
+                  Si une case est décochée, la validation remonte au responsable du responsable, puis au valideur global.
+                </p>
               </div>
             )}
 

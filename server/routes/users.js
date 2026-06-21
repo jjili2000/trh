@@ -49,6 +49,9 @@ function mapUser(row, modules) {
     departmentId: row.department_id || null,
     moduleAccess: modules || DEFAULT_MODULES,
     blocked: !!row.blocked,
+    validatesTime:      row.validates_time      !== undefined ? !!row.validates_time      : true,
+    validatesAbsences:  row.validates_absences  !== undefined ? !!row.validates_absences  : true,
+    validatesExpenses:  row.validates_expenses  !== undefined ? !!row.validates_expenses  : true,
     createdAt: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
@@ -117,7 +120,8 @@ router.post('/', async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' });
     }
-    const { firstName, lastName, email, password, role, managerId, position, departmentId, moduleAccess } = req.body;
+    const { firstName, lastName, email, password, role, managerId, position, departmentId, moduleAccess,
+            validatesTime, validatesAbsences, validatesExpenses } = req.body;
     if (!firstName || !lastName || !email || !password || !role) {
       return res.status(400).json({ error: 'Champs requis manquants' });
     }
@@ -129,10 +133,15 @@ router.post('/', async (req, res) => {
     }
     const id = crypto.randomUUID();
     const hash = await bcrypt.hash(password, 10);
+    const vTime      = validatesTime      !== false ? 1 : 0;
+    const vAbsences  = validatesAbsences  !== false ? 1 : 0;
+    const vExpenses  = validatesExpenses  !== false ? 1 : 0;
     await pool.execute(
-      `INSERT INTO users (id, first_name, last_name, email, password, role, manager_id, position, department_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, firstName, lastName, normalizedEmail, hash, role || 'user', managerId || null, position || null, departmentId || null]
+      `INSERT INTO users (id, first_name, last_name, email, password, role, manager_id, position, department_id,
+                          validates_time, validates_absences, validates_expenses)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, firstName, lastName, normalizedEmail, hash, role || 'user',
+       managerId || null, position || null, departmentId || null, vTime, vAbsences, vExpenses]
     );
 
     // Set module access (default if not provided)
@@ -182,7 +191,8 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Accès refusé' });
     }
     const { id } = req.params;
-    const { firstName, lastName, email, password, role, managerId, position, departmentId, moduleAccess } = req.body;
+    const { firstName, lastName, email, password, role, managerId, position, departmentId, moduleAccess,
+            validatesTime, validatesAbsences, validatesExpenses } = req.body;
 
     const updates = [];
     const values = [];
@@ -204,6 +214,9 @@ router.put('/:id', async (req, res) => {
     if (managerId    !== undefined) { updates.push('manager_id = ?');    values.push(managerId || null); }
     if (position     !== undefined) { updates.push('position = ?');      values.push(position || null); }
     if (departmentId !== undefined) { updates.push('department_id = ?'); values.push(departmentId || null); }
+    if (validatesTime     !== undefined) { updates.push('validates_time = ?');     values.push(validatesTime     ? 1 : 0); }
+    if (validatesAbsences !== undefined) { updates.push('validates_absences = ?'); values.push(validatesAbsences ? 1 : 0); }
+    if (validatesExpenses !== undefined) { updates.push('validates_expenses = ?'); values.push(validatesExpenses ? 1 : 0); }
     if (password) {
       const hash = await bcrypt.hash(password, 10);
       updates.push('password = ?');

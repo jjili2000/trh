@@ -2,19 +2,37 @@ import { useState, FormEvent } from 'react';
 import { Save, CheckCircle } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
+const ROLE_LABELS: Record<string, string> = {
+  admin:     'Administrateur',
+  treasurer: 'Trésorier',
+  user:      'Utilisateur',
+};
+
 export default function AppSettings() {
-  const { appSettings, updateSettings, currentUser } = useApp();
+  const { appSettings, updateSettings, currentUser, users } = useApp();
   const [clubName, setClubName] = useState(appSettings.clubName);
   const [calendarStartHour, setCalendarStartHour] = useState(appSettings.calendarStartHour ?? 8);
   const [calendarEndHour,   setCalendarEndHour]   = useState(appSettings.calendarEndHour   ?? 21);
   const [appUrl, setAppUrl] = useState(appSettings.appUrl ?? '');
+  const [globalValidatorRole, setGlobalValidatorRole] = useState(appSettings.globalValidatorRole ?? '');
   const [saved, setSaved] = useState(false);
 
   const isAdmin = currentUser?.role === 'admin';
 
+  // Rôles éligibles au valideur global : rôles ayant au plus 1 utilisateur
+  const roleCounts = users.reduce<Record<string, number>>((acc, u) => {
+    acc[u.role] = (acc[u.role] ?? 0) + 1;
+    return acc;
+  }, {});
+  const eligibleRoles = Object.keys(ROLE_LABELS).filter(r => (roleCounts[r] ?? 0) <= 1);
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    updateSettings({ clubName, calendarStartHour, calendarEndHour, appUrl: appUrl || undefined });
+    updateSettings({
+      clubName, calendarStartHour, calendarEndHour,
+      appUrl: appUrl || undefined,
+      globalValidatorRole: globalValidatorRole || null,
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -100,6 +118,24 @@ export default function AppSettings() {
               </div>
               <p className="text-xs text-gray-400 mt-1">
                 Plage affichée dans les vues calendrier hebdomadaire et semaines type.
+              </p>
+            </div>
+
+            <div>
+              <label className="label">Valideur global</label>
+              <select
+                className="input"
+                value={globalValidatorRole}
+                onChange={e => setGlobalValidatorRole(e.target.value)}
+                disabled={!isAdmin}
+              >
+                <option value="">— Aucun —</option>
+                {eligibleRoles.map(r => (
+                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Rôle dont le titulaire reçoit les demandes de validation lorsqu'aucun responsable n'est habilité dans la chaîne hiérarchique. Seuls les rôles attribués à au plus un utilisateur sont proposés.
               </p>
             </div>
 

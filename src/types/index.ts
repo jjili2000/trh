@@ -12,6 +12,9 @@ export interface User {
   departmentId?: string | null;
   moduleAccess?: string[];
   blocked?: boolean;
+  validatesTime?: boolean;
+  validatesAbsences?: boolean;
+  validatesExpenses?: boolean;
   lastLoginAt?: string | null;
   createdAt: string;
 }
@@ -109,6 +112,7 @@ export interface AppSettings {
   calendarStartHour?: number;
   calendarEndHour?: number;
   appUrl?: string;
+  globalValidatorRole?: string | null;
 }
 
 // ─── Seasons ──────────────────────────────────────────────────────────────────
