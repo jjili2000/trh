@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Upload,
   FileText,
@@ -10,10 +10,13 @@ import {
   Clock,
   X,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   User,
   Loader2,
   Sparkles,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   Package,
 } from 'lucide-react';
@@ -65,6 +68,7 @@ interface ValidationFormData {
 interface ValidationModalProps {
   doc: HRDocument;
   users: { id: string; firstName: string; lastName: string }[];
+  documents: HRDocument[];
   queueIndex?: number;
   queueTotal?: number;
   onClose: () => void;
@@ -98,7 +102,7 @@ function matchUserByName(
   })?.id ?? '';
 }
 
-function ValidationModal({ doc, users, queueIndex, queueTotal, onClose, onValidate, onSave }: ValidationModalProps) {
+function ValidationModal({ doc, users, documents, queueIndex, queueTotal, onClose, onValidate, onSave }: ValidationModalProps) {
   const [form, setForm] = useState<ValidationFormData>({
     documentType: doc.documentType || 'autre',
     userId: doc.userId || matchUserByName(users, doc.detectedEmployeeName),
@@ -107,6 +111,20 @@ function ValidationModal({ doc, users, queueIndex, queueTotal, onClose, onValida
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
+
+  // Détection de doublon sur les critères reconnus (type + employé + période)
+  const duplicateDoc = useMemo(() => {
+    if (!form.documentType || !form.userId || !form.periodStart) return null;
+    return documents.find(d =>
+      d.id !== doc.id &&
+      d.status === 'validated' &&
+      d.documentType === form.documentType &&
+      d.userId === form.userId &&
+      (d.periodStart || '') === form.periodStart &&
+      (d.periodEnd || '') === (form.periodEnd || '')
+    ) ?? null;
+  }, [documents, form, doc.id]);
 
   // ── Prévisualisation (desktop) ──────────────────────────────────────────────
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -135,9 +153,15 @@ function ValidationModal({ doc, users, queueIndex, queueTotal, onClose, onValida
 
   const handleChange = (field: keyof ValidationFormData, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
+    setDuplicateConfirmed(false); // reset si le formulaire change
   };
 
   const handleSave = async (validate: boolean) => {
+    // Si doublon détecté et non confirmé, demander confirmation
+    if (validate && duplicateDoc && !duplicateConfirmed) {
+      setDuplicateConfirmed(true);
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -192,6 +216,19 @@ function ValidationModal({ doc, users, queueIndex, queueTotal, onClose, onValida
                 {error}
               </div>
             )}
+            {duplicateDoc && (
+              <div className="px-4 py-3 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-800 flex items-start gap-2">
+                <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+                <div>
+                  <p className="font-medium">Doublon détecté</p>
+                  <p className="mt-0.5 text-amber-700">
+                    Un document "{DOCUMENT_TYPE_LABELS[duplicateDoc.documentType] || duplicateDoc.documentType}" de même type,
+                    même employé et même période est déjà validé ({duplicateDoc.fileName}).
+                    {duplicateConfirmed && ' Cliquez à nouveau sur "Valider" pour confirmer.'}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="label">Type de document</label>
@@ -243,9 +280,17 @@ function ValidationModal({ doc, users, queueIndex, queueTotal, onClose, onValida
           <div className="flex justify-end gap-3 px-6 pb-6 border-t border-gray-100 pt-4">
             <button onClick={onClose} className="btn-secondary" disabled={saving}>Annuler</button>
             <button onClick={() => handleSave(false)} className="btn-secondary" disabled={saving}>Enregistrer</button>
-            <button onClick={() => handleSave(true)} className="btn-primary flex items-center gap-2" disabled={saving}>
+            <button
+              onClick={() => handleSave(true)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-colors disabled:opacity-60 ${
+                duplicateDoc && duplicateConfirmed
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                  : 'btn-primary'
+              }`}
+              disabled={saving}
+            >
               <CheckCircle size={16} />
-              {saving ? 'Validation…' : 'Valider'}
+              {saving ? 'Validation…' : duplicateDoc && duplicateConfirmed ? 'Valider quand même' : 'Valider'}
             </button>
           </div>
         </div>
@@ -445,6 +490,13 @@ export default function DocumentManagement() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterUser, setFilterUser] = useState('');
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'fileName' | 'documentType' | 'user' | 'periodStart' | 'createdAt'>('createdAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const toggleSort = (col: typeof sortBy) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
 
   // ── Sélection multiple ───────────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -605,18 +657,31 @@ export default function DocumentManagement() {
   };
 
   const pending = documents.filter(d => d.status === 'pending_validation');
-  const validated = documents.filter(d => {
-    if (d.status !== 'validated') return false;
-    const q = search.toLowerCase();
-    const matchSearch =
-      !q ||
-      d.fileName.toLowerCase().includes(q) ||
-      d.documentType?.toLowerCase().includes(q) ||
-      getUserName(d.userId).toLowerCase().includes(q);
-    const matchType = !filterType || d.documentType === filterType;
-    const matchUser = !filterUser || d.userId === filterUser;
-    return matchSearch && matchType && matchUser;
-  });
+  const validated = useMemo(() => {
+    const filtered = documents.filter(d => {
+      if (d.status !== 'validated') return false;
+      const q = search.toLowerCase();
+      const matchSearch =
+        !q ||
+        d.fileName.toLowerCase().includes(q) ||
+        d.documentType?.toLowerCase().includes(q) ||
+        getUserName(d.userId).toLowerCase().includes(q);
+      const matchType = !filterType || d.documentType === filterType;
+      const matchUser = !filterUser || d.userId === filterUser;
+      return matchSearch && matchType && matchUser;
+    });
+    return [...filtered].sort((a, b) => {
+      let av = '', bv = '';
+      if (sortBy === 'fileName')      { av = a.fileName || ''; bv = b.fileName || ''; }
+      if (sortBy === 'documentType')  { av = a.documentType || ''; bv = b.documentType || ''; }
+      if (sortBy === 'user')          { av = getUserName(a.userId); bv = getUserName(b.userId); }
+      if (sortBy === 'periodStart')   { av = a.periodStart || ''; bv = b.periodStart || ''; }
+      if (sortBy === 'createdAt')     { av = a.createdAt || ''; bv = b.createdAt || ''; }
+      const cmp = av.localeCompare(bv, 'fr');
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documents, search, filterType, filterUser, sortBy, sortDir]);
 
   const modalDoc = validationQueue[0] ?? editingDoc ?? null;
 
@@ -825,11 +890,29 @@ export default function DocumentManagement() {
                       className="rounded border-gray-300 text-tennis-green"
                     />
                   </th>
-                  <th className="text-left py-2 pr-4 font-medium text-gray-500">Fichier</th>
-                  <th className="text-left py-2 pr-4 font-medium text-gray-500">Type</th>
-                  <th className="text-left py-2 pr-4 font-medium text-gray-500">Employé</th>
-                  <th className="text-left py-2 pr-4 font-medium text-gray-500">Période</th>
-                  <th className="text-left py-2 pr-4 font-medium text-gray-500">Date</th>
+                  {([
+                    { key: 'fileName',     label: 'Fichier' },
+                    { key: 'documentType', label: 'Type' },
+                    { key: 'user',         label: 'Employé' },
+                    { key: 'periodStart',  label: 'Période' },
+                    { key: 'createdAt',    label: 'Date' },
+                  ] as { key: typeof sortBy; label: string }[]).map(col => (
+                    <th
+                      key={col.key}
+                      className="text-left py-2 pr-4 font-medium text-gray-500 cursor-pointer select-none hover:text-gray-800 transition-colors"
+                      onClick={() => toggleSort(col.key)}
+                    >
+                      <span className="flex items-center gap-1">
+                        {col.label}
+                        {sortBy === col.key
+                          ? sortDir === 'asc'
+                            ? <ChevronUp size={13} className="text-tennis-green" />
+                            : <ChevronDown size={13} className="text-tennis-green" />
+                          : <ChevronsUpDown size={13} className="text-gray-300" />
+                        }
+                      </span>
+                    </th>
+                  ))}
                   <th className="text-right py-2 font-medium text-gray-500">Actions</th>
                 </tr>
               </thead>
@@ -964,6 +1047,7 @@ export default function DocumentManagement() {
           key={modalDoc.id}
           doc={modalDoc}
           users={users}
+          documents={documents}
           queueIndex={
             validationQueue.length > 0 && validationQueueSizeRef.current > 1
               ? validationQueueSizeRef.current - validationQueue.length
